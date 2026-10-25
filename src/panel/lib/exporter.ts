@@ -93,11 +93,12 @@ export async function runExport(req: ExportRequest, info: DocInfo, onProgress: (
 	if (st.state === "error") throw new Error(st.message || "Extraction failed");
 
 	onProgress(0.82, "Compiling SVG");
-	const sceneDir = node.path.join(work, "scene");
-	const model: SceneModel = JSON.parse(node.fs.readFileSync(node.path.join(sceneDir, "scene.json"), "utf8"));
+	const nd = node;
+	const sceneDir = nd.path.join(work, "scene");
+	const model: SceneModel = JSON.parse(nd.fs.readFileSync(nd.path.join(sceneDir, "scene.json"), "utf8"));
 	const files = {
-		readText: (rel: string) => node.fs.readFileSync(node.path.join(sceneDir, rel), "utf8"),
-		readBinary: (rel: string) => node.fs.readFileSync(node.path.join(sceneDir, rel)),
+		readText: (rel: string) => nd.fs.readFileSync(nd.path.join(sceneDir, rel), "utf8"),
+		readBinary: (rel: string) => nd.fs.readFileSync(nd.path.join(sceneDir, rel)),
 	};
 	const settings: Partial<ExportSettings> = { ...req.settings };
 	if (req.frames === "current") {

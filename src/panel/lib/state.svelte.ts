@@ -67,7 +67,7 @@ export function applyPartial(json: string) {
 		const s = JSON.parse(json) as Partial<PanelSettings>;
 		if (s.export) Object.assign(panel.export, s.export);
 		for (const k of ["source", "frames", "rangeStart", "rangeEnd", "output"] as const) {
-			if (s[k] !== undefined) (panel as Record<string, unknown>)[k] = s[k];
+			if (s[k] !== undefined) (panel as unknown as Record<string, unknown>)[k] = s[k];
 		}
 	} catch {
 		/* ignore */
