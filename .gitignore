@@ -1,5 +1,14 @@
-/bin
-/html/org.tbyrne.SvgAnimationForFlash.bundle.mxi
-/build/tools
-/build/cert.p12
-/build/password.txt
+node_modules/
+dist/
+.vitest/
+*.log
+
+# Build secrets
+cert/*.p12
+cert/password.txt
+
+# Generated test material
+tests/fixtures/fla/
+tests/out/
+tools/probe/out*/
+tools/probe/*-result.txt

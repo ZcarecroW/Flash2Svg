@@ -1,0 +1,34 @@
+{
+  "name": "flash2svg",
+  "version": "4.0.0-alpha.1",
+  "description": "Animated SVG exporter for Adobe Animate (SMIL, CSS and JS-player output)",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "bin": {
+    "flash2svg": "./dist/cli/flash2svg.js"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "watch": "node scripts/build.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "e2e": "node scripts/e2e.mjs",
+    "package": "node scripts/package-zxp.mjs",
+    "dev:install": "node scripts/dev-install.mjs",
+    "format": "prettier --write \"src/**/*.{ts,svelte,css}\" \"scripts/**/*.mjs\" \"tests/**/*.ts\""
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "esbuild": "^0.28.2",
+    "esbuild-svelte": "^0.9.5",
+    "prettier": "^3.9.10",
+    "svelte": "^5.57.2",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  }
+}
