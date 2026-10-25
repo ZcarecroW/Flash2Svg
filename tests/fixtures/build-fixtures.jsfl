@@ -517,6 +517,34 @@
 		}
 	});
 
+	// ---------------------------------------------------------------- f17: stress (performance)
+	build("f17-stress", function () {
+		newDoc("timeline", 640, 480, 30);
+		// 40 symbols, each with a small tweened inner animation
+		for (var s = 0; s < 40; s++) {
+			(function (s) {
+				symbol("sym" + s, "movie clip", function () {
+					rect(-10, -10, 10, 10, "#" + (0x100000 + ((s * 99991) % 0xEFFFFF)).toString(16));
+					var t = tl();
+					t.insertKeyframe(9);
+					t.setSelectedFrames(0, 1);
+					t.createMotionTween();
+				});
+			})(s);
+		}
+		layer("fbf");
+		var t = tl();
+		var li = t.currentLayer;
+		for (var f = 0; f < 150; f++) {
+			if (f > 0) t.insertBlankKeyframe(f);
+			t.currentFrame = f;
+			oval(20 + f * 4, 300 + Math.sin(f / 8) * 60, 40 + f * 4, 320 + Math.sin(f / 8) * 60, "#" + (0x200000 + f * 4321).toString(16).substr(0, 6));
+		}
+		layer("symbols");
+		for (s = 0; s < 40; s++) place("sym" + s, 20 + (s % 10) * 60, 40 + Math.floor(s / 10) * 60, 0);
+		extendAll(150);
+	});
+
 	FLfile.write(outDir + "/build-log.txt", log.join("\n"));
 	fl.closeAll(false);
 	fl.quit(false);

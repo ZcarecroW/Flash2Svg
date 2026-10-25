@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Template: {version} is filled in by scripts/build.mjs -->
+<ExtensionManifest Version="7.0"ExtensionBundleId="org.flash2svg" ExtensionBundleVersion="{version}" ExtensionBundleName="Flash2SVG" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<Author><![CDATA[Flash2SVG contributors (fork of TomByrne/Flash2Svg)]]></Author>
+	<ExtensionList>
+		<Extension Id="org.flash2svg.panel" Version="{version}" />
+	</ExtensionList>
+	<ExecutionEnvironment>
+		<HostList>
+			<!-- Animate 2022 (22.0, CEP 11) and later; tested with Animate 2024 (24.0.x, CEP 12) -->
+			<Host Name="FLPR" Version="[22.0,99.9]" />
+		</HostList>
+		<LocaleList>
+			<Locale Code="All" />
+		</LocaleList>
+		<RequiredRuntimeList>
+			<RequiredRuntime Name="CSXS" Version="9.0" />
+		</RequiredRuntimeList>
+	</ExecutionEnvironment>
+	<DispatchInfoList>
+		<Extension Id="org.flash2svg.panel">
+			<DispatchInfo>
+				<Resources>
+					<MainPath>./panel/index.html</MainPath>
+					<CEFCommandLine>
+						<Parameter>--enable-nodejs</Parameter>
+						<Parameter>--mixed-context</Parameter>
+						<Parameter>--allow-file-access-from-files</Parameter>
+					</CEFCommandLine>
+				</Resources>
+				<Lifecycle>
+					<AutoVisible>true</AutoVisible>
+				</Lifecycle>
+				<UI>
+					<Type>Panel</Type>
+					<Menu>Flash2SVG (SVG Animation)</Menu>
+					<Geometry>
+						<Size>
+							<Height>620</Height>
+							<Width>300</Width>
+						</Size>
+						<MinSize>
+							<Height>260</Height>
+							<Width>240</Width>
+						</MinSize>
+						<MaxSize>
+							<Height>4000</Height>
+							<Width>1200</Width>
+						</MaxSize>
+					</Geometry>
+					<Icons>
+						<Icon Type="Normal">./icons/icon-light.png</Icon>
+						<Icon Type="RollOver">./icons/icon-light.png</Icon>
+						<Icon Type="DarkNormal">./icons/icon-dark.png</Icon>
+						<Icon Type="DarkRollOver">./icons/icon-dark.png</Icon>
+					</Icons>
+				</UI>
+			</DispatchInfo>
+		</Extension>
+	</DispatchInfoList>
+</ExtensionManifest>

@@ -1,0 +1,264 @@
+:root {
+	--bg: #323232;
+	--fg: #d6d6d6;
+	--muted: #9a9a9a;
+	--field: #262626;
+	--line: #4a4a4a;
+	--accent: #2f8cf0;
+	--accent-fg: #ffffff;
+	--danger: #ff6b6b;
+	--radius: 4px;
+	color-scheme: dark;
+}
+:root[data-theme="light"] {
+	--fg: #222;
+	--muted: #666;
+	--field: #ffffff;
+	--line: #c8c8c8;
+	color-scheme: light;
+}
+* {
+	box-sizing: border-box;
+}
+html,
+body {
+	margin: 0;
+	background: var(--bg);
+	color: var(--fg);
+	font: 12px/1.4 system-ui, "Segoe UI", -apple-system, sans-serif;
+}
+main {
+	padding: 8px 8px 16px;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+header {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	position: sticky;
+	top: 0;
+	background: var(--bg);
+	z-index: 2;
+	padding-bottom: 6px;
+	border-bottom: 1px solid var(--line);
+}
+.doc {
+	color: var(--muted);
+	font-size: 11px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.bar {
+	display: flex;
+	gap: 6px;
+}
+.presets {
+	flex: 1;
+	min-width: 0;
+}
+button,
+select,
+input {
+	font: inherit;
+	color: inherit;
+}
+button {
+	border: 1px solid var(--line);
+	background: transparent;
+	border-radius: var(--radius);
+	padding: 4px 10px;
+	cursor: pointer;
+}
+button:hover:not(:disabled) {
+	border-color: var(--muted);
+}
+button:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+button.primary {
+	background: var(--accent);
+	border-color: var(--accent);
+	color: var(--accent-fg);
+	font-weight: 600;
+	padding: 4px 16px;
+}
+button.icon {
+	padding: 2px 7px;
+}
+button.link {
+	border: none;
+	padding: 2px 0;
+	color: var(--muted);
+	text-decoration: underline;
+	align-self: flex-start;
+}
+button:focus-visible,
+select:focus-visible,
+input:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 1px;
+}
+select,
+input[type="text"],
+input[type="number"] {
+	background: var(--field);
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+	padding: 3px 6px;
+	min-width: 0;
+}
+input[type="number"] {
+	width: 70px;
+}
+.progress {
+	position: relative;
+	height: 18px;
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+	overflow: hidden;
+}
+.progress > div {
+	position: absolute;
+	inset: 0 auto 0 0;
+	background: var(--accent);
+	opacity: 0.45;
+	transition: width 0.2s;
+}
+.progress > span {
+	position: relative;
+	padding: 0 6px;
+	font-size: 11px;
+	line-height: 16px;
+}
+.error {
+	color: var(--danger);
+	font-size: 11px;
+}
+section {
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+}
+section h2 {
+	margin: 0;
+	font-size: 12px;
+}
+section h2 button {
+	width: 100%;
+	text-align: left;
+	border: none;
+	padding: 6px 8px;
+	font-weight: 600;
+}
+.chev {
+	display: inline-block;
+	width: 14px;
+	color: var(--muted);
+}
+.body {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 2px 8px 8px;
+}
+.row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+.row > span:first-child {
+	width: 62px;
+	flex: none;
+	color: var(--muted);
+}
+.row > select,
+.row > input[type="text"] {
+	flex: 1;
+}
+.row.range span:not(:first-child) {
+	color: var(--muted);
+}
+.file {
+	display: flex;
+	flex: 1;
+	gap: 4px;
+	min-width: 0;
+}
+.file input {
+	flex: 1;
+}
+.check {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+.formats {
+	display: grid;
+	grid-template-columns: repeat(4, 1fr);
+	gap: 4px;
+}
+.formats button {
+	padding: 5px 2px;
+	font-size: 11px;
+}
+.formats button.on {
+	background: var(--accent);
+	border-color: var(--accent);
+	color: var(--accent-fg);
+}
+.hint {
+	margin: 0;
+	color: var(--muted);
+	font-size: 11px;
+}
+.preset-add input {
+	flex: 1;
+}
+.preset {
+	justify-content: space-between;
+}
+.preset > span:first-child {
+	width: auto;
+	color: var(--fg);
+}
+.stats {
+	color: var(--muted);
+}
+.actions {
+	display: flex;
+	gap: 6px;
+	flex-wrap: wrap;
+}
+.preview iframe {
+	width: 100%;
+	aspect-ratio: 4 / 3;
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+	background: repeating-conic-gradient(#8884 0% 25%, transparent 0% 50%) 50% / 16px 16px;
+}
+.controls {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+.controls input[type="range"] {
+	flex: 1;
+}
+.time {
+	font-variant-numeric: tabular-nums;
+	color: var(--muted);
+	width: 44px;
+	text-align: right;
+}
+.warnings summary {
+	cursor: pointer;
+	color: var(--muted);
+}
+.warnings ul {
+	margin: 4px 0 0;
+	padding-left: 16px;
+	font-size: 11px;
+}

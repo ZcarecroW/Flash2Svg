@@ -324,7 +324,8 @@
 
 	/** Makes `id` the timeline being edited in the copy document and returns it. */
 	function editTimeline(id) {
-		fl.setActiveWindow(job.doc);
+		// setActiveWindow is slow (~0.25 s): only switch when needed
+		if (fl.getDocumentDOM() != job.doc) fl.setActiveWindow(job.doc);
 		if (id.indexOf("scene:") == 0) {
 			var idx = parseInt(id.substr(6), 10);
 			if (job.doc.timelines.length > 1) {
@@ -519,7 +520,8 @@
 			var it = el.instanceType;
 			if (it == "symbol" && el.libraryItem) {
 				var symId = "sym:" + el.libraryItem.name;
-				queueTimeline(symId);
+				// the camera's own frame graphic is never drawn
+				if (el.libraryItem.name != "___Camera___") queueTimeline(symId);
 				var tp = get(el, "transformationPoint", { x: 0, y: 0 });
 				var d = {
 					kind: "instance",
@@ -755,30 +757,83 @@
 
 	// ------------------------------------------------------------------ atlas
 
+	/** Timeline object of the copy document, without entering edit mode. */
+	function sourceTimeline(id) {
+		if (!job.tlCache) job.tlCache = {};
+		if (job.tlCache[id]) return job.tlCache[id];
+		var tl;
+		if (id.indexOf("scene:") == 0) tl = job.doc.timelines[parseInt(id.substr(6), 10)];
+		else {
+			var item = job.lib.items[job.lib.findItemIndex(id.substr(4))];
+			// hidden system symbols (e.g. the camera) are not listed: fall back to edit mode
+			tl = item ? item.timeline : editTimeline(id);
+		}
+		job.tlCache[id] = tl;
+		return tl;
+	}
+
+	/**
+	 * Takes the next atlas job plus following jobs that can be copied in the same go: same
+	 * timeline and layer, contiguous frames, whole-frame shape runs (no isolation needed).
+	 */
+	function nextBatch() {
+		var first = job.atlasJobs[job.atlasIndex];
+		if (!first) return null;
+		var batch = [first];
+		job.atlasIndex++;
+		if (!wholeFrame(first)) return batch;
+		var last = first;
+		while (job.atlasIndex < job.atlasJobs.length && batch.length < 500) {
+			var j = job.atlasJobs[job.atlasIndex];
+			if (j.tl != first.tl || j.layer != first.layer || j.frame != last.frame + last.count || !wholeFrame(j)) break;
+			batch.push(j);
+			last = j;
+			job.atlasIndex++;
+		}
+		return batch;
+	}
+
+	function wholeFrame(j) {
+		if (j.what == "text") return false;
+		if (j.startElement < 0) return true; // shape tween span
+		var els = sourceTimeline(j.tl).layers[j.layer].frames[j.frame].elements;
+		return j.startElement == 0 && j.endElement == els.length - 1;
+	}
+
 	function nextAtlasJob() {
-		var j = job.atlasJobs[job.atlasIndex++];
-		if (!j) {
+		var T = job.timing || (job.timing = {});
+		var t0 = new Date().getTime();
+		function lap(name) { var n = new Date().getTime(); T[name] = (T[name] || 0) + (n - t0); t0 = n; }
+		var batch = nextBatch();
+		if (!batch) {
 			job.queue.push(exportAtlas);
 			return;
 		}
+		var first = batch[0];
+		var lastJob = batch[batch.length - 1];
+		var count = lastJob.frame + lastJob.count - first.frame;
 		job.message = "Collecting artwork " + job.atlasIndex + "/" + job.atlasJobs.length;
-		var tl = editTimeline(j.tl);
-		tl.setSelectedLayers(j.layer);
+
+		if (fl.getDocumentDOM() != job.atlasDoc) fl.setActiveWindow(job.atlasDoc);
+		var tl = sourceTimeline(first.tl);
+		tl.setSelectedLayers(first.layer);
 		// Remember where the first copied element sits: pasting symbol frames into a scene moves
 		// them (Animate re-centres symbol content), so we measure and record the shift.
-		var srcEls = tl.layers[j.layer].frames[j.frame].elements;
-		var ref = srcEls[j.startElement >= 0 ? j.startElement : 0];
+		var srcEls = tl.layers[first.layer].frames[first.frame].elements;
+		var ref = srcEls[first.startElement >= 0 ? first.startElement : 0];
 		var refPos = ref ? { x: ref.left, y: ref.top } : null;
-		tl.copyFrames(j.frame, j.frame + j.count);
+		tl.copyFrames(first.frame, first.frame + count);
+		lap("copy");
 
-		fl.setActiveWindow(job.atlasDoc);
 		var at = job.atlasDoc.getTimeline();
 		var k = job.atlasFrame;
 		if (k > 0) {
 			if (at.layers[0].frameCount <= k) at.insertFrames(k - at.layers[0].frameCount + 1, false, at.layers[0].frameCount);
 			at.insertBlankKeyframe(k);
 		}
+		lap("insert");
 		at.pasteFrames(k);
+		lap("paste");
 		if (at.layers.length > 1) {
 			// pasteFrames may create layers if the clipboard holds several; keep the first only.
 			for (var x = at.layers.length - 1; x > 0; x--) at.deleteLayer(x);
@@ -791,38 +846,49 @@
 		if (al.locked) al.locked = false;
 		if (al.outline) al.outline = false;
 		var offset = { x: 0, y: 0 };
-		var pasted = at.layers[0].frames[k].elements[j.startElement >= 0 ? j.startElement : 0];
+		var pasted = at.layers[0].frames[k].elements[first.startElement >= 0 ? first.startElement : 0];
 		if (refPos && pasted) offset = { x: round(pasted.left - refPos.x), y: round(pasted.top - refPos.y) };
-		if (j.startElement >= 0) {
-			at.currentFrame = k;
-			var els = at.layers[0].frames[k].elements;
-			var del = [];
-			for (var i = 0; i < els.length; i++) if (i < j.startElement || i > j.endElement) del.push(els[i]);
-			if (del.length) {
-				at.layers[0].locked = false;
-				job.atlasDoc.selectNone();
-				job.atlasDoc.selection = del;
-				job.atlasDoc.deleteSelection();
-			}
-			if (j.what == "text") {
-				// Animate writes text as SVG fonts, which browsers ignore: convert to outlines.
-				for (var pass = 0; pass < 2; pass++) {
-					var left = at.layers[0].frames[k].elements;
-					if (!left.length) break;
-					job.atlasDoc.selectNone();
-					job.atlasDoc.selection = left;
-					try { job.atlasDoc.breakApart(); } catch (e) { warn("Could not convert text to outlines: " + e); break; }
+
+		for (var b = 0; b < batch.length; b++) {
+			var j = batch[b];
+			var kk = k + (j.frame - first.frame);
+			if (j.startElement >= 0) {
+				if (batch.length == 1) isolate(at, kk, j);
+				job.model.atlas[j.id] = { file: "atlas/a" + (kk + 1) + ".svg", source: j.tl + " layer " + j.layer + " frame " + j.frame, offset: offset };
+			} else {
+				// shape tween span: one item per frame
+				for (var s = 0; s < j.frameIds.length; s++) {
+					job.model.atlas[j.frameIds[s]] = { file: "atlas/a" + (kk + s + 1) + ".svg", source: j.tl + " layer " + j.layer + " frame " + (j.frame + s), offset: offset };
 				}
 			}
-			job.model.atlas[j.id] = { file: "atlas/a" + (k + 1) + ".svg", source: j.tl + " layer " + j.layer + " frame " + j.frame, offset: offset };
-		} else {
-			// shape tween span: one item per frame
-			for (var s = 0; s < j.frameIds.length; s++) {
-				job.model.atlas[j.frameIds[s]] = { file: "atlas/a" + (k + s + 1) + ".svg", source: j.tl + " layer " + j.layer + " frame " + (j.frame + s), offset: offset };
+			job.doneCount++;
+		}
+		lap("isolate");
+		job.atlasFrame = k + count;
+		job.queue.unshift(nextAtlasJob);
+	}
+
+	/** Keeps only the job's elements in atlas frame k (and outlines text). */
+	function isolate(at, k, j) {
+		at.currentFrame = k;
+		var els = at.layers[0].frames[k].elements;
+		var del = [];
+		for (var i = 0; i < els.length; i++) if (i < j.startElement || i > j.endElement) del.push(els[i]);
+		if (del.length) {
+			job.atlasDoc.selectNone();
+			job.atlasDoc.selection = del;
+			job.atlasDoc.deleteSelection();
+		}
+		if (j.what == "text") {
+			// Animate writes text as SVG fonts, which browsers ignore: convert to outlines.
+			for (var pass = 0; pass < 2; pass++) {
+				var left = at.layers[0].frames[k].elements;
+				if (!left.length) break;
+				job.atlasDoc.selectNone();
+				job.atlasDoc.selection = left;
+				try { job.atlasDoc.breakApart(); } catch (e) { warn("Could not convert text to outlines: " + e); break; }
 			}
 		}
-		job.atlasFrame = k + j.count;
-		job.queue.unshift(nextAtlasJob);
 	}
 
 	function exportAtlas() {
@@ -830,7 +896,9 @@
 		job.message = "Exporting artwork through Animate";
 		if (job.atlasFrame > 0) {
 			fl.setActiveWindow(job.atlasDoc);
+			var te = new Date().getTime();
 			job.atlasDoc.exportSVG(job.outDir + "/atlas/a", true, false);
+			(job.timing || (job.timing = {})).exportSVG = new Date().getTime() - te;
 			// A one-frame document is written without the frame number.
 			var single = job.outDir + "/atlas/a.svg";
 			if (FLfile.exists(single) && !FLfile.exists(job.outDir + "/atlas/a1.svg")) {
@@ -844,6 +912,7 @@
 	function writeModel() {
 		job.phase = "write";
 		job.message = "Writing scene";
+		if (job.timing) job.model.timing = job.timing;
 		if (!FLfile.write(job.outDir + "/scene.json", stringify(job.model))) {
 			throw new Error("Could not write scene.json");
 		}

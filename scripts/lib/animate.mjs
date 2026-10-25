@@ -2,6 +2,7 @@
 // instance; our scripts end with fl.quit(false) so the process exits when the work is done.
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 export function findAnimate() {
@@ -43,7 +44,8 @@ export function runJsfl(jsflPath, { timeoutMs = 10 * 60 * 1000 } = {}) {
 	const exe = findAnimate();
 	return new Promise((resolve, reject) => {
 		const started = Date.now();
-		const child = spawn(exe, [jsflPath], { stdio: "ignore", windowsHide: false });
+		// Animate drops temp folders into its working directory: keep that out of the repo
+		const child = spawn(exe, [jsflPath], { stdio: "ignore", windowsHide: false, cwd: tmpdir() });
 		const timer = setTimeout(() => {
 			child.kill();
 			reject(new Error(`Animate timed out after ${timeoutMs / 1000}s running ${jsflPath}`));
