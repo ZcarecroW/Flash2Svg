@@ -143,8 +143,14 @@ export interface SerializeOptions {
 	pretty?: boolean;
 }
 
+/** A CDATA section (used for scripts and styles so they work both as .svg and inline in HTML). */
+export function cdata(text: string): XmlNode {
+	return { name: "#cdata", attrs: {}, children: [text] };
+}
+
 export function serialize(node: XmlChild, opts: SerializeOptions = {}, depth = 0): string {
 	if (typeof node === "string") return escapeText(node);
+	if (node.name === "#cdata") return "<![CDATA[" + String(node.children[0] ?? "").split("]]>").join("]]]]><![CDATA[>") + "]]>";
 	const ind = opts.pretty ? "\n" + "  ".repeat(depth) : "";
 	let s = ind + "<" + node.name;
 	for (const k in node.attrs) s += " " + k + '="' + escapeAttr(node.attrs[k]!) + '"';

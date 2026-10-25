@@ -43,8 +43,10 @@ async function shot(file: string, width: number, height: number, seek: { format:
 				svg.pauseAnimations?.();
 				svg.setCurrentTime?.(time);
 			} else if (format === "player") {
-				const p = (svg as unknown as { flash2svg?: { seek(t: number): void } }).flash2svg;
+				const p = (svg as unknown as { flash2svg?: { seek(t: number): void; pause(): void } }).flash2svg;
+				p?.pause();
 				p?.seek(time);
+				p?.pause();
 			}
 		}, seek);
 		await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));

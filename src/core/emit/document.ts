@@ -6,7 +6,7 @@ import type { Artwork } from "../artwork.ts";
 import type { Context } from "../context.ts";
 import { fmt } from "../geom.ts";
 import type { FilterData } from "../model.ts";
-import { el, serialize, type XmlNode } from "../xml.ts";
+import { cdata, el, serialize, type XmlNode } from "../xml.ts";
 import { buildFilters, colorMatrix, matrixString, type ColorMatrixValues } from "./filters.ts";
 
 export interface Asset {
@@ -134,10 +134,10 @@ export class OutputDoc {
 
 	toString(root: XmlNode, opts: { pretty?: boolean; xmlDeclaration?: boolean } = {}): string {
 		const children: XmlNode[] = [];
-		if (this.styles.length) children.push(el("style", {}, [this.styles.join("\n")]));
+		if (this.styles.length) children.push(el("style", {}, [cdata(this.styles.join("\n"))]));
 		if (this.defs.length) children.push(el("defs", {}, this.defs));
 		const svg = { ...root, children: [...children, ...root.children] };
-		for (const s of this.scripts) svg.children.push(el("script", {}, [s]));
+		for (const s of this.scripts) svg.children.push(el("script", {}, [cdata(s)]));
 		let out = serialize(svg, { pretty: opts.pretty });
 		if (opts.xmlDeclaration !== false) out = '<?xml version="1.0" encoding="UTF-8"?>\n' + out;
 		return out;
