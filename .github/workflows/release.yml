@@ -1,0 +1,51 @@
+﻿name: Release
+
+# Push a tag like v4.0.0 to build, sign and publish the extension.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+      - name: Get Adobe ZXPSignCmd
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $files = gh api repos/Adobe-CEP/CEP-Resources/contents/ZXPSignCMD/4.1.3/x64 | ConvertFrom-Json
+          $exe = $files | Where-Object { $_.name -like "*.exe" } | Select-Object -First 1
+          if (-not $exe) { throw "ZXPSignCmd not found in Adobe-CEP/CEP-Resources" }
+          New-Item -ItemType Directory -Force tools | Out-Null
+          Invoke-WebRequest $exe.download_url -OutFile tools/ZXPSignCmd.exe
+
+      - name: Package (zip + self-signed zxp)
+        shell: pwsh
+        env:
+          ZXP_PASSWORD: ${{ secrets.ZXP_PASSWORD }}
+          ZXP_TSA: http://timestamp.digicert.com
+        run: |
+          if (-not $env:ZXP_PASSWORD) { $env:ZXP_PASSWORD = [guid]::NewGuid().ToString("N") }
+          node scripts/package-zxp.mjs
+
+      - name: Publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $files = Get-ChildItem dist -File | Where-Object { $_.Extension -in ".zxp", ".zip" } | ForEach-Object { $_.FullName }
+          Compress-Archive -Path dist/cli/* -DestinationPath dist/flash2svg-cli.zip -Force
+          gh release create $env:GITHUB_REF_NAME @files dist/flash2svg-cli.zip --title "Flash2SVG $env:GITHUB_REF_NAME" --generate-notes --prerelease
