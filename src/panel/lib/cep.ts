@@ -27,12 +27,17 @@ declare global {
 
 export const inCep = typeof window !== "undefined" && !!window.__adobe_cep__;
 
+const ERR = "__flash2svg_error__:";
+
+/** Evaluates JSFL in Animate. Exceptions come back with their message (CEP alone only says "EvalScript error."). */
 export function evalScript(script: string): Promise<string> {
+	const wrapped = `(function(){try{var __r=eval(${JSON.stringify(script)});return __r===undefined||__r===null?"":String(__r);}catch(e){return ${JSON.stringify(ERR)}+e+(e&&e.lineNumber?" (line "+e.lineNumber+")":"");}})()`;
 	return new Promise((resolve, reject) => {
 		const cep = window.__adobe_cep__;
 		if (!cep) return reject(new Error("Not running inside Adobe Animate"));
-		cep.evalScript(script, (r) => {
-			if (r === "EvalScript error.") reject(new Error("Animate reported a script error"));
+		cep.evalScript(wrapped, (r) => {
+			if (r === "EvalScript error.") reject(new Error(`Animate could not run: ${script.slice(0, 120)}`));
+			else if (typeof r === "string" && r.startsWith(ERR)) reject(new Error(`${r.slice(ERR.length)} — in: ${script.slice(0, 120)}`));
 			else resolve(r);
 		});
 	});
@@ -48,8 +53,14 @@ export async function evalJson<T>(script: string): Promise<T> {
 	}
 }
 
+/** Folder of the installed extension as a platform path (CEP returns a file:/// URI). */
 export function extensionPath(): string {
-	return window.__adobe_cep__?.getSystemPath("extension") ?? "";
+	let p = window.__adobe_cep__?.getSystemPath("extension") ?? "";
+	if (p.startsWith("file:")) {
+		p = decodeURIComponent(p.replace(/^file:\/\//, ""));
+		if (/^\/[A-Za-z]:/.test(p)) p = p.slice(1); // "/C:/Users/..." -> "C:/Users/..."
+	}
+	return p;
 }
 
 export function onHostEvent(type: string, cb: () => void) {

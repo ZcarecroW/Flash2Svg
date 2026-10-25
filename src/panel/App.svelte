@@ -5,6 +5,7 @@
 	import { applyPartial, applyPreset, BUILTIN_PRESETS, deletePreset, panel, persist, resetSettings, savePreset, userPresets } from "./lib/state.svelte.ts";
 	import Section from "./Section.svelte";
 	import Preview from "./Preview.svelte";
+	import { runSelfTestIfRequested } from "./lib/selftest.ts";
 
 	let info = $state<DocInfo>({ open: false });
 	let busy = $state(false);
@@ -61,6 +62,7 @@
 			onHostEvent(`com.adobe.events.flash.${ev}`, refresh);
 		}
 		refresh();
+		if (inCep) runSelfTestIfRequested().catch((e) => (error = "Self-test: " + (e as Error).message));
 	});
 
 	$effect(() => {

@@ -1,4 +1,4 @@
-// Packages dist/extension:
+﻿// Packages dist/extension:
 //   dist/Flash2SVG-<version>.zip  (always; unpack into the CEP extensions folder)
 //   dist/Flash2SVG-<version>.zxp  (when Adobe's ZXPSignCmd is available: signed with a self-signed
 //                                  certificate, installable with ExManCmd / UPIA / Anastasiy's EM)
@@ -80,7 +80,7 @@ const n = zipDir(ext, zipOut);
 console.log(`zip: ${zipOut} (${n} files)`);
 
 // ---------------------------------------------------------------- signed ZXP
-const candidates = [process.env.ZXPSIGNCMD, join(repo, "tools", "ZXPSignCmd.exe"), join(repo, "tools", "ZXPSignCmd")].filter(Boolean);
+const candidates = [process.env.ZXPSIGNCMD, join(repo, "tools", "zxpsign", "ZXPSignCmd.exe"), join(repo, "tools", "ZXPSignCmd.exe"), join(repo, "tools", "ZXPSignCmd")].filter(Boolean);
 const signer = candidates.find((c) => existsSync(c));
 if (!signer) {
 	console.log("ZXPSignCmd not found: skipping the signed .zxp (set ZXPSIGNCMD to build it).");

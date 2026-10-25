@@ -3,8 +3,8 @@
 // and prints how to enable it.
 // Usage: node scripts/dev-install.mjs [--uninstall]
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
-import { homedir } from "node:os";
+import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -21,12 +21,34 @@ if (process.argv.includes("--uninstall")) {
 	console.log(`Removed ${target}`);
 	process.exit(0);
 }
+mkdirSync(base, { recursive: true });
+rmSync(target, { recursive: true, force: true });
+const zxpArg = process.argv.find((a) => a.startsWith("--zxp"));
+if (zxpArg) {
+	// Install a signed package: a ZXP is a zip with META-INF/signatures.xml; CEP checks it on load
+	const zxp = zxpArg.includes("=")
+		? zxpArg.slice(6)
+		: join(repo, "dist", readdirSync(join(repo, "dist")).find((f) => f.endsWith(".zxp")) ?? "missing.zxp");
+	if (!existsSync(zxp)) {
+		console.error("No signed .zxp found: npm run package");
+		process.exit(1);
+	}
+	const tmpZip = join(tmpdir(), `flash2svg-${Date.now()}.zip`);
+	copyFileSync(zxp, tmpZip);
+	if (process.platform === "win32") {
+		execFileSync("powershell", ["-NoProfile", "-Command", `Expand-Archive -LiteralPath '${tmpZip}' -DestinationPath '${target}' -Force`], { stdio: "inherit" });
+	} else {
+		execFileSync("unzip", ["-o", tmpZip, "-d", target], { stdio: "inherit" });
+	}
+	rmSync(tmpZip, { force: true });
+	console.log(`Installed signed ${zxp} to ${target}`);
+	console.log("Restart Animate, then open Window > Extensions > Flash2SVG.");
+	process.exit(0);
+}
 if (!existsSync(join(src, "CSXS", "manifest.xml"))) {
 	console.error("Build first: npm run build");
 	process.exit(1);
 }
-mkdirSync(base, { recursive: true });
-rmSync(target, { recursive: true, force: true });
 cpSync(src, target, { recursive: true });
 console.log(`Installed to ${target}`);
 

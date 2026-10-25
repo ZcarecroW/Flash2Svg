@@ -1,6 +1,6 @@
-<?xml version="1.0" encoding="UTF-8"?>
+﻿<?xml version="1.0" encoding="UTF-8"?>
 <!-- Template: {version} is filled in by scripts/build.mjs -->
-<ExtensionManifest Version="7.0"ExtensionBundleId="org.flash2svg" ExtensionBundleVersion="{version}" ExtensionBundleName="Flash2SVG" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<ExtensionManifest Version="7.0" ExtensionBundleId="org.flash2svg" ExtensionBundleVersion="{version}" ExtensionBundleName="Flash2SVG" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
 	<Author><![CDATA[Flash2SVG contributors (fork of TomByrne/Flash2Svg)]]></Author>
 	<ExtensionList>
 		<Extension Id="org.flash2svg.panel" Version="{version}" />

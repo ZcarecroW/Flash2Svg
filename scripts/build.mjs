@@ -57,7 +57,14 @@ const cliBuild = {
 function copyStatic() {
 	copyFileSync(join(repo, "src/panel/index.html"), join(ext, "panel/index.html"));
 	copyFileSync(join(repo, "src/jsfl/flash2svg.jsfl"), join(ext, "jsfl/flash2svg.jsfl"));
-	const manifest = readFileSync(join(repo, "extension/CSXS/manifest.xml"), "utf8").replaceAll("{version}", version);
+	let manifest = readFileSync(join(repo, "extension/CSXS/manifest.xml"), "utf8").replaceAll("{version}", version);
+	if (process.argv.includes("--selftest")) {
+		// Test builds start with Animate so the self-test (src/panel/lib/selftest.ts) can run unattended
+		manifest = manifest.replace(
+			"<AutoVisible>true</AutoVisible>",
+			"<AutoVisible>true</AutoVisible>\n\t\t\t\t\t<StartOn>\n\t\t\t\t\t\t<Event>com.adobe.csxs.events.ApplicationActivate</Event>\n\t\t\t\t\t\t<Event>com.adobe.events.flash.documentOpened</Event>\n\t\t\t\t\t\t<Event>com.adobe.events.flash.documentNew</Event>\n\t\t\t\t\t</StartOn>",
+		);
+	}
 	writeFileSync(join(ext, "CSXS/manifest.xml"), manifest);
 	cpSync(join(repo, "LICENSE"), join(ext, "LICENSE"));
 	writeIcons(join(ext, "icons"));
