@@ -65,6 +65,17 @@ export class StaticRenderer {
 			this.warn("Symbols nested too deeply (recursive symbol?)");
 			return [];
 		}
+		if (prog.view) {
+			const p = {} as Record<TransformProp, number>;
+			for (const k of TRANSFORM_PROPS) p[k] = valueAt(prog.view[k], frame);
+			const t = fmtMatrix(fromProps(p), this.ctx.digits);
+			const inner = this.layers(prog, frame, ticks, depth);
+			return t ? [el("g", { transform: t }, inner)] : inner;
+		}
+		return this.layers(prog, frame, ticks, depth);
+	}
+
+	private layers(prog: Program, frame: number, ticks: number, depth: number): XmlNode[] {
 		const out: XmlNode[] = [];
 		const masks = new Map<number, string>();
 		// mask layers come after their masked layers in bottom-to-top order; render them first

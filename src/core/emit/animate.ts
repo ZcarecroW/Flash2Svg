@@ -63,6 +63,7 @@ class Writer {
 	private shared = new Map<string, string>();
 	private inlined = new Map<string, XmlNode>();
 	private cssClassCount = 0;
+	private buttons = false;
 
 	private copyWithFreshIds(tpl: XmlNode): XmlNode {
 		const copy = cloneNode(tpl);
@@ -115,6 +116,19 @@ class Writer {
 	// ------------------------------------------------------------------ structure
 
 	timeline(bt: BakedTimeline): XmlNode[] {
+		const content = this.layers(bt);
+		if (!bt.view) return content;
+		const v = bt.view;
+		const comps: Comp[] = [
+			{ type: "translate", tracks: [v.x, v.y] },
+			{ type: "rotate", tracks: [v.rot] },
+			{ type: "skewX", tracks: [v.skw] },
+			{ type: "scale", tracks: [v.sx, v.sy] },
+		];
+		return [this.transformChain(comps, el("g", {}, content), v)];
+	}
+
+	private layers(bt: BakedTimeline): XmlNode[] {
 		const out: XmlNode[] = [];
 		const masks = new Map<number, string>();
 		for (const bl of bt.layers) {
@@ -189,6 +203,13 @@ class Writer {
 	private instance(n: BakedInstance): XmlNode | null {
 		if (!n.item.visible || !n.child) return null;
 		let inner: XmlNode = this.childRef(n.child);
+		if (n.states?.length) {
+			// Button states driven by CSS :hover / :active (works wherever the SVG is interactive)
+			const names = ["up", "over", "down"];
+			const parts = [el("g", { class: "f2s-up" }, [inner]), ...n.states.map((s, i) => el("g", { class: `f2s-${names[i + 1]}` }, [this.childRef(s)]))];
+			inner = el("g", { class: "f2s-btn", style: "cursor:pointer" }, parts);
+			this.buttons = true;
+		}
 
 		// transform components, innermost first: translate(-tp) scale skewX rotate translate(x,y)
 		const t = n.transform;
@@ -583,6 +604,14 @@ class Writer {
 	}
 
 	finish(svg: XmlNode) {
+		if (this.buttons) {
+			const s = `#${this.svgId}`;
+			this.doc.styles.push(
+				`${s} .f2s-over,${s} .f2s-down{display:none}` +
+					`${s} .f2s-btn:hover>.f2s-over{display:inline}${s} .f2s-btn:hover>.f2s-up{display:none}` +
+					`${s} .f2s-btn:active>.f2s-down{display:inline}${s} .f2s-btn:active>.f2s-over,${s} .f2s-btn:active>.f2s-up{display:none}`,
+			);
+		}
 		if (this.css && (this.keyframes.length || this.rules.length)) {
 			const play =
 				this.opts.begin === "auto"

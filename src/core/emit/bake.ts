@@ -44,6 +44,8 @@ export interface BakedTimeline {
 	layers: BakedLayer[];
 	/** True if anything inside changes over time. */
 	animated: boolean;
+	/** Camera transform (root scenes). */
+	view?: Record<TransformProp, GTrack>;
 }
 
 export interface BakedLayer {
@@ -71,6 +73,8 @@ export interface BakedInstance extends NodeBase {
 	color: Record<ColorProp, GTrack> | null;
 	filters: { t: number; filters: FilterData[] }[];
 	child: BakedTimeline | null;
+	/** Buttons: Over and Down states (Up is `child`). */
+	states?: BakedTimeline[];
 }
 export type BakedNode = BakedArt | BakedStatic | BakedInstance;
 
@@ -164,6 +168,14 @@ class Baker {
 		const bt: BakedTimeline = { key, program: prog, layers: [], animated: false };
 		this.cache.set(key, bt);
 		if (depth > 48) return bt;
+		if (prog.view) {
+			const runs = this.runs(frames, 0, prog.frameCount);
+			bt.view = {} as Record<TransformProp, GTrack>;
+			for (const p of TRANSFORM_PROPS) {
+				bt.view[p] = this.mapTrack(prog.view[p], runs);
+				if (bt.view[p].length > 1) bt.animated = true;
+			}
+		}
 		for (const layer of prog.layers) {
 			const bl: BakedLayer = { layer, nodes: [] };
 			for (const item of layer.items) this.item(bt, bl, item, frames, depth);
@@ -232,7 +244,13 @@ class Baker {
 					child = this.timeline(childProg, cf, depth + 1);
 					if (child.animated) bt.animated = true;
 				}
-				bl.nodes.push({ kind: "instance", item, vis, uid: item.uid, transform, color, filters, child });
+				const node: BakedInstance = { kind: "instance", item, vis, uid: item.uid, transform, color, filters, child };
+				if (item.symbolType === "button" && childProg && childProg.frameCount > 1) {
+					node.states = [1, 2]
+						.filter((f) => f < childProg.frameCount)
+						.map((f) => this.timeline(childProg, new Int32Array(this.H).fill(f), depth + 1));
+				}
+				bl.nodes.push(node);
 				return;
 			}
 		}

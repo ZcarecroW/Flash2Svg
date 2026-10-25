@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Turns the scene model into "programs": per timeline, the list of things drawn on each layer,
  * with animation tracks in the timeline's own frame time.
  *
@@ -6,7 +6,7 @@
  * per-frame samples Animate computed; anything that doesn't match (motion guides, motion
  * objects, exotic options) falls back to the samples themselves, simplified.
  */
-import { classicEase, easePieces, evalEase, isLinear, type EaseCurve } from "./easing.ts";
+import { classicEase, easePieces, evalBezier as evalEaseBezier, evalEase, isLinear, type EaseCurve } from "./easing.ts";
 import { compose, decompose, nearestAngle } from "./geom.ts";
 import type {
 	BitmapElement,
@@ -126,6 +126,8 @@ export interface Program {
 	labels: { frame: number; name: string }[];
 	actions: Record<number, FrameAction[]>;
 	camera?: TimelineData["camera"];
+	/** Camera (root scenes): transform applied to all layers, in this timeline's frame time. */
+	view?: TransformTracks;
 }
 
 export interface CompileResult {
@@ -177,7 +179,7 @@ export function buildPrograms(model: SceneModel, opts: CompileOptions): CompileR
 	const warnings: string[] = [...model.warnings];
 	const programs: Record<string, Program> = {};
 	for (const id in model.timelines) {
-		programs[id] = buildProgram(model.timelines[id]!, opts, warnings);
+		programs[id] = buildProgram(model.timelines[id]!, opts, warnings, model.doc);
 	}
 	return { programs, warnings };
 }
@@ -201,7 +203,7 @@ function layerIncluded(layers: LayerData[], i: number, opts: CompileOptions): bo
 	return true;
 }
 
-function buildProgram(tl: TimelineData, opts: CompileOptions, warnings: string[]): Program {
+function buildProgram(tl: TimelineData, opts: CompileOptions, warnings: string[], doc: SceneModel["doc"]): Program {
 	const prog: Program = {
 		id: tl.id,
 		name: tl.name,
@@ -237,7 +239,82 @@ function buildProgram(tl: TimelineData, opts: CompileOptions, warnings: string[]
 		prog.layers.push(pl);
 	}
 	prog.labels.sort((a, b) => a.frame - b.frame);
+	const camLayer = tl.layers.findIndex((l) => l.type === "camera");
+	if (camLayer >= 0) prog.view = cameraView(tl, camLayer, opts, warnings, doc);
 	return prog;
+}
+
+/**
+ * The Animate camera is a hidden movie clip instance on the camera layer: its matrix places the
+ * camera frame in the world. The view transform is translate(stage centre) * inverse(camera).
+ */
+function cameraView(tl: TimelineData, li: number, opts: CompileOptions, warnings: string[], doc: SceneModel["doc"]): TransformTracks | undefined {
+	const layer = tl.layers[li]!;
+	const items = buildLayerItems(tl, layer, li, { ...opts, smooth: true }, warnings).filter((i): i is InstanceItem => i.kind === "instance");
+	if (!items.length) return undefined;
+	const cx = doc.width / 2,
+		cy = doc.height / 2;
+	const view = emptyTracks(TRANSFORM_PROPS);
+	let prevRot: number | undefined, prevSkw: number | undefined;
+	let lastFrame = -1;
+	for (let f = 0; f < tl.frameCount; f++) {
+		const it = items.find((i) => f >= i.start && f < i.end);
+		if (!it) continue;
+		const p = {} as Record<TransformProp, number>;
+		for (const k of TRANSFORM_PROPS) p[k] = valueAtTrack(it.transform[k], f);
+		const cam = fromProps(p);
+		const v = concatM(invertM(cam), [1, 0, 0, 1, cx, cy]);
+		const props = toProps(v, { x: 0, y: 0 });
+		if (prevRot !== undefined) props.rot = nearestAngle(props.rot, prevRot);
+		if (prevSkw !== undefined) props.skw = nearestAngle(props.skw, prevSkw);
+		prevRot = props.rot;
+		prevSkw = props.skw;
+		for (const k of TRANSFORM_PROPS) view[k].push({ t: f, v: props[k], ease: opts.smooth ? "linear" : "hold" });
+		lastFrame = f;
+	}
+	if (lastFrame < 0) return undefined;
+	for (const k of TRANSFORM_PROPS) {
+		view[k] = simplify(view[k], TOL[k] / 2);
+		closeTrack(view[k]);
+	}
+	return view;
+}
+
+function valueAtTrack(t: Track, f: number): number {
+	if (!t.length) return 0;
+	if (f <= t[0]!.t) return t[0]!.v;
+	for (let i = 0; i < t.length - 1; i++) {
+		const a = t[i]!,
+			b = t[i + 1]!;
+		if (f < b.t) {
+			if (a.ease === "hold") return a.v;
+			const u = (f - a.t) / (b.t - a.t);
+			const p = a.ease === "linear" ? u : evalEaseBezier(a.ease, u);
+			return a.v + (b.v - a.v) * p;
+		}
+	}
+	return t[t.length - 1]!.v;
+}
+
+function invertM(m: Mat): Mat {
+	const [a, b, c, d, tx, ty] = m;
+	const det = a * d - b * c || 1e-12;
+	const ia = d / det,
+		ib = -b / det,
+		ic = -c / det,
+		id = a / det;
+	return [ia, ib, ic, id, -(ia * tx + ic * ty), -(ib * tx + id * ty)];
+}
+
+function concatM(first: Mat, then: Mat): Mat {
+	return [
+		then[0] * first[0] + then[2] * first[1],
+		then[1] * first[0] + then[3] * first[1],
+		then[0] * first[2] + then[2] * first[3],
+		then[1] * first[2] + then[3] * first[3],
+		then[0] * first[4] + then[2] * first[5] + then[4],
+		then[1] * first[4] + then[3] * first[5] + then[5],
+	];
 }
 
 /** Recognises the frame actions that matter for playback (AS3 and HTML5 Canvas syntax). */

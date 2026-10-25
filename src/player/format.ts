@@ -36,6 +36,8 @@ export interface PTimeline {
 	ly: PLayer[];
 	/** frame sounds: [frame, soundId, sync(0 event,1 start,2 stop,3 stream), loops, durationFrames] */
 	sd?: [number, string, number, number, number][];
+	/** camera view transform tracks (x y rot skw sx sy), root scenes */
+	vw?: PTrack[];
 }
 
 export interface PLayer {

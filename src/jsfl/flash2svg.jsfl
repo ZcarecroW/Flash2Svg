@@ -388,7 +388,7 @@
 			var kf = readKeyframe(tlId, tl, layer, li, frame, f, guided);
 			out.keyframes.push(kf);
 			if (layer.getRigParentAtFrame) {
-				try { if (layer.getRigParentAtFrame(f)) hasRig = true; } catch (e) {}
+				try { if (isRigParent(layer.getRigParentAtFrame(f))) hasRig = true; } catch (e) {}
 			}
 			f += Math.max(1, frame.duration);
 		}
@@ -396,12 +396,19 @@
 			out.rig = [];
 			for (f = 0; f < layer.frameCount; f++) {
 				var m = null;
-				try { if (layer.getRigParentAtFrame(f)) m = mat(layer.getRigMatrixAtFrame(f)); } catch (e) {}
+				try { if (isRigParent(layer.getRigParentAtFrame(f))) m = mat(layer.getRigMatrixAtFrame(f)); } catch (e) {}
 				out.rig.push(m);
 			}
 		}
 		readLayerEffects(layer, out);
 		return out;
+	}
+
+	/** getRigParentAtFrame() returns a layer (index or object) or nothing. */
+	function isRigParent(p) {
+		if (p === undefined || p === null || p === false) return false;
+		if (typeof p == "number") return p >= 0;
+		return true;
 	}
 
 	function readLayerEffects(layer, out) {

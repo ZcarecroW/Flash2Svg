@@ -207,6 +207,8 @@ class Clip {
 	/** Updates attributes; `frac` = progress (0..1) towards the next frame. */
 	render(frac: number) {
 		const t = this.frame + (this.adv ? frac : 0);
+		const vw = this.tl.vw;
+		if (vw) this.node.setAttribute("transform", matrixOf(this.P, vw, t, 0, 0));
 		for (const inst of this.items.values()) inst.render(t, frac, this);
 	}
 
@@ -302,22 +304,7 @@ class Inst {
 		}
 		if (it.k !== "i") return;
 		const tr = it.tr;
-		const x = trackAt(P, tr[0], t, 0),
-			y = trackAt(P, tr[1], t, 0),
-			rot = trackAt(P, tr[2], t, 0) * RAD,
-			skw = Math.tan(trackAt(P, tr[3], t, 0) * RAD),
-			sx = trackAt(P, tr[4], t, 1),
-			sy = trackAt(P, tr[5], t, 1),
-			tpx = trackAt(P, tr[6], t, 0),
-			tpy = trackAt(P, tr[7], t, 0);
-		const cos = Math.cos(rot),
-			sin = Math.sin(rot);
-		const a = cos * sx,
-			b = sin * sx,
-			c = (cos * skw - sin) * sy,
-			d = (sin * skw + cos) * sy;
-		const m = `matrix(${r4(a)} ${r4(b)} ${r4(c)} ${r4(d)} ${r4(x - (a * tpx + c * tpy))} ${r4(y - (b * tpx + d * tpy))})`;
-		this.node.setAttribute("transform", m);
+		this.node.setAttribute("transform", matrixOf(P, tr, t, trackAt(P, tr[6], t, 0), trackAt(P, tr[7], t, 0)));
 
 		if (it.c) {
 			const cv = it.c.map((tk, i) => trackAt(P, tk, t, i < 4 ? 100 : 0));
@@ -362,6 +349,23 @@ class Inst {
 		while (this.node.firstChild) g.appendChild(this.node.firstChild);
 		this.node.appendChild(g);
 	}
+}
+
+/** translate(x,y) rotate(rot) skewX(skw) scale(sx,sy) translate(-tp) as a matrix() string. */
+function matrixOf(P: PProgram, tr: PTrack[], t: number, tpx: number, tpy: number): string {
+	const x = trackAt(P, tr[0], t, 0),
+		y = trackAt(P, tr[1], t, 0),
+		rot = trackAt(P, tr[2], t, 0) * RAD,
+		skw = Math.tan(trackAt(P, tr[3], t, 0) * RAD),
+		sx = trackAt(P, tr[4], t, 1),
+		sy = trackAt(P, tr[5], t, 1);
+	const cos = Math.cos(rot),
+		sin = Math.sin(rot);
+	const a = cos * sx,
+		b = sin * sx,
+		c = (cos * skw - sin) * sy,
+		d = (sin * skw + cos) * sy;
+	return `matrix(${r4(a)} ${r4(b)} ${r4(c)} ${r4(d)} ${r4(x - (a * tpx + c * tpy))} ${r4(y - (b * tpx + d * tpy))})`;
 }
 
 function r4(v: number): string {

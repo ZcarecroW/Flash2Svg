@@ -414,6 +414,109 @@
 		t2.layers[t2.currentLayer].frames[11].actionScript = "stop();";
 	});
 
+	// ---------------------------------------------------------------- f13: camera
+	build("f13-camera", function () {
+		newDoc("timeline", 400, 300, 24);
+		boxSymbol();
+		layer("bg");
+		rect(0, 0, 400, 300, "#DDEEFF");
+		rect(20, 20, 120, 100, "#FF9900");
+		rect(280, 180, 380, 280, "#33AA33");
+		layer("box");
+		place("box", 200, 150, 0);
+		extendAll(24);
+		var t = tl();
+		var cam = t.camera;
+		cam.cameraEnabled = true;
+		var types = [];
+		for (var i = 0; i < t.layers.length; i++) types.push(t.layers[i].name + ":" + t.layers[i].layerType);
+		log.push("f13 layers after enabling camera: " + types.join(", "));
+		// camera keyframes at 0 and 23, tweened
+		var ci = -1;
+		for (i = 0; i < t.layers.length; i++) if (t.layers[i].layerType == "camera" || /camera/i.test(t.layers[i].name)) ci = i;
+		log.push("f13 camera layer index " + ci);
+		if (ci >= 0) {
+			t.setSelectedLayers(ci);
+			t.insertKeyframe(23);
+		}
+		t.currentFrame = 23;
+		try { cam.setZoom(23, 150); } catch (e) { log.push("setZoom: " + e); }
+		try { cam.setRotation(23, 15); } catch (e) { log.push("setRotation: " + e); }
+		// no setPosition() in the API: move the camera instance itself
+		try {
+			var ce = t.layers[ci].frames[23].elements[0];
+			ce.x = ce.x + 60;
+			ce.y = ce.y + 30;
+		} catch (e) { log.push("camera move: " + e); }
+		if (ci >= 0) {
+			t.setSelectedLayers(ci);
+			t.setSelectedFrames(0, 1);
+			try { t.createMotionTween(); } catch (e) { log.push("camera tween: " + e); }
+		}
+		var cams = [];
+		for (var f = 0; f < 24; f += 11) {
+			var p = cam.getPosition(f);
+			cams.push(f + ":" + p.x + "," + p.y + " z" + cam.getZoom(f) + " r" + cam.getRotation(f));
+		}
+		log.push("f13 camera: " + cams.join(" | "));
+	});
+
+	// ---------------------------------------------------------------- f14: layer parenting
+	build("f14-parenting", function () {
+		newDoc("timeline", 400, 300, 24);
+		boxSymbol();
+		symbol("dot", "movie clip", function () { oval(-10, -10, 10, 10, "#CC0000"); });
+		layer("arm");
+		classicTween("box", 150, 150, 23, function (el) { el.rotation = 90; }, function (f) {
+			f.elements[0].setTransformationPoint({ x: -30, y: 0 });
+		});
+		var t = tl();
+		var armIdx = t.currentLayer;
+		layer("hand");
+		place("dot", 200, 150, 0);
+		extendAll(24);
+		var handIdx = t.currentLayer;
+		try {
+			t.layers[handIdx].setRigParentAtFrame(0, armIdx);
+			var rp = t.layers[handIdx].getRigParentAtFrame(0);
+			var rm = t.layers[handIdx].getRigMatrixAtFrame(12);
+			log.push("f14 rig parent: " + rp + " (" + typeof rp + "), rig matrix@12: " + [rm.a, rm.b, rm.c, rm.d, rm.tx, rm.ty].join(","));
+		} catch (e) { log.push("f14 rig: " + e); }
+	});
+
+	// ---------------------------------------------------------------- f15: button
+	build("f15-button", function () {
+		newDoc("timeline", 300, 200, 24);
+		symbol("btn", "button", function () {
+			var t = tl();
+			var colors = ["#CC3333", "#33CC33", "#3333CC", "#000000"];
+			for (var i = 0; i < 4; i++) {
+				if (i > 0) t.insertBlankKeyframe(i);
+				t.currentFrame = i;
+				rect(-50, -25, 50, 25, colors[i]);
+			}
+		});
+		layer("ui");
+		place("btn", 150, 100, 0);
+	});
+
+	// ---------------------------------------------------------------- f16: sound
+	build("f16-sound", function () {
+		newDoc("timeline", 300, 200, 24);
+		var wav = root + "/assets/beep.wav";
+		doc.importFile(wav, true);
+		var item = null;
+		for (var i = 0; i < lib.items.length; i++) if (lib.items[i].itemType == "sound") item = lib.items[i];
+		log.push("f16 sound item: " + (item ? item.name : "none"));
+		rect(100, 50, 200, 150, "#996600");
+		extendAll(24);
+		var t = tl();
+		if (item) {
+			t.layers[0].frames[0].soundLibraryItem = item;
+			t.layers[0].frames[0].soundSync = "event";
+		}
+	});
+
 	FLfile.write(outDir + "/build-log.txt", log.join("\n"));
 	fl.closeAll(false);
 	fl.quit(false);

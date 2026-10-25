@@ -135,6 +135,7 @@ export function renderPlayer(ctx: Context, rootId: string, s: ExportSettings): {
 				t.ac[+f] = list.map((a) => (a.type === "stop" ? [0] : a.type === "play" ? [1] : [2, typeof a.target === "number" ? a.target - 1 : a.target, a.play ? 1 : 0]));
 			}
 		}
+		if (prog.view) t.vw = (["x", "y", "rot", "skw", "sx", "sy"] as const).map((k) => track(prog.view![k], k === "sx" || k === "sy" ? 4 : 3));
 		const indexOfLayer = new Map(prog.layers.map((l, i) => [l.index, i]));
 		for (const l of prog.layers) {
 			const items = l.items.map(item).filter((x): x is PItem => !!x);
