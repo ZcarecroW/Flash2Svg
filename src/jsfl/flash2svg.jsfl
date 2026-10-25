@@ -459,6 +459,10 @@
 				if (run && !data.containsInstances && !run.containsInstances) {
 					run.endElement = i;
 					mergeBounds(run.data.bounds, data.bounds);
+					if (data.linearRGB) {
+						if (!run.data.linearRGB) run.data.linearRGB = [];
+						for (var g = 0; g < data.linearRGB.length; g++) run.data.linearRGB.push(data.linearRGB[g]);
+					}
 					continue;
 				}
 				run = addAtlasJob(tlId, li, f, i, i, 1, "shape");
@@ -552,6 +556,10 @@
 			if (hasInst) warn("A group contains symbols or text; its content is exported as static artwork");
 			var s = { kind: "shape", atlas: "", bounds: boundsOf(el) };
 			if (hasInst) s.containsInstances = true;
+			// Animate's SVG export drops the "Linear RGB" gradient option: record it here.
+			var lin = [];
+			linearGradients(el, lin, 0);
+			if (lin.length) s.linearRGB = lin;
 			return s;
 		}
 		if (type == "text" || type == "tlfText") {
@@ -592,6 +600,28 @@
 		}
 		warn("Unsupported element type: " + type);
 		return { kind: "unsupported", what: String(type), bounds: boundsOf(el) };
+	}
+
+	/** Signatures ("#rrggbb,#rrggbb|0,255") of gradient fills that use linear RGB interpolation. */
+	function linearGradients(el, out, depth) {
+		if (depth > 8) return;
+		var contours = get(el, "contours", null);
+		if (contours) {
+			for (var i = 0; i < contours.length; i++) {
+				var f = get(contours[i], "fill", null);
+				if (!f || !get(f, "linearRGB", false)) continue;
+				if (f.style != "linearGradient" && f.style != "radialGradient") continue;
+				var cols = [], pos = [];
+				for (var c = 0; c < f.colorArray.length; c++) {
+					cols.push(String(f.colorArray[c]).substr(0, 7).toLowerCase());
+					pos.push(f.posArray[c]);
+				}
+				var sig = cols.join(",") + "|" + pos.join(",");
+				if (indexOf(out, sig) < 0) out.push(sig);
+			}
+		}
+		var members = get(el, "members", null);
+		if (members) for (var m = 0; m < members.length; m++) linearGradients(members[m], out, depth + 1);
 	}
 
 	function readTween(tlId, tl, layer, li, frame, f, tt, guided) {
@@ -727,6 +757,11 @@
 		job.message = "Collecting artwork " + job.atlasIndex + "/" + job.atlasJobs.length;
 		var tl = editTimeline(j.tl);
 		tl.setSelectedLayers(j.layer);
+		// Remember where the first copied element sits: pasting symbol frames into a scene moves
+		// them (Animate re-centres symbol content), so we measure and record the shift.
+		var srcEls = tl.layers[j.layer].frames[j.frame].elements;
+		var ref = srcEls[j.startElement >= 0 ? j.startElement : 0];
+		var refPos = ref ? { x: ref.left, y: ref.top } : null;
 		tl.copyFrames(j.frame, j.frame + j.count);
 
 		fl.setActiveWindow(job.atlasDoc);
@@ -741,6 +776,16 @@
 			// pasteFrames may create layers if the clipboard holds several; keep the first only.
 			for (var x = at.layers.length - 1; x > 0; x--) at.deleteLayer(x);
 		}
+		// Pasting frames from a guide/mask layer converts the target layer: guides are never
+		// exported, so force a plain visible layer every time.
+		var al = at.layers[0];
+		if (al.layerType != "normal") al.layerType = "normal";
+		if (!al.visible) al.visible = true;
+		if (al.locked) al.locked = false;
+		if (al.outline) al.outline = false;
+		var offset = { x: 0, y: 0 };
+		var pasted = at.layers[0].frames[k].elements[j.startElement >= 0 ? j.startElement : 0];
+		if (refPos && pasted) offset = { x: round(pasted.left - refPos.x), y: round(pasted.top - refPos.y) };
 		if (j.startElement >= 0) {
 			at.currentFrame = k;
 			var els = at.layers[0].frames[k].elements;
@@ -762,11 +807,11 @@
 					try { job.atlasDoc.breakApart(); } catch (e) { warn("Could not convert text to outlines: " + e); break; }
 				}
 			}
-			job.model.atlas[j.id] = { file: "atlas/a" + (k + 1) + ".svg", source: j.tl + " layer " + j.layer + " frame " + j.frame };
+			job.model.atlas[j.id] = { file: "atlas/a" + (k + 1) + ".svg", source: j.tl + " layer " + j.layer + " frame " + j.frame, offset: offset };
 		} else {
 			// shape tween span: one item per frame
 			for (var s = 0; s < j.frameIds.length; s++) {
-				job.model.atlas[j.frameIds[s]] = { file: "atlas/a" + (k + s + 1) + ".svg", source: j.tl + " layer " + j.layer + " frame " + (j.frame + s) };
+				job.model.atlas[j.frameIds[s]] = { file: "atlas/a" + (k + s + 1) + ".svg", source: j.tl + " layer " + j.layer + " frame " + (j.frame + s), offset: offset };
 			}
 		}
 		job.atlasFrame = k + j.count;

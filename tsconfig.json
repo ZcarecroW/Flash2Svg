@@ -11,6 +11,7 @@
     "exactOptionalPropertyTypes": false,
     "isolatedModules": true,
     "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
     "noEmit": true,

@@ -212,9 +212,24 @@
 			f.motionTweenRotate = "counter-clockwise"; f.motionTweenRotateTimes = 1;
 		});
 		layer("tint-skew");
-		classicTween("box", 80, 240, 30, function (el) {
+		var f0 = classicTween("box", 80, 240, 30, function (el) {
 			el.x = 300; el.skewX = 30; el.skewY = 10;
-			el.colorMode = "tint"; el.tintColor = "#FF0000"; el.tintPercent = 80;
+			doc.selectNone(); el.selected = true;
+			doc.setInstanceTint("#FF0000", 80);
+		});
+		// start keyframe semi-transparent so colour samples are checked against a non-identity start
+		var t3 = tl();
+		t3.currentFrame = 0;
+		doc.selectNone();
+		var e0 = t3.layers[t3.currentLayer].frames[0].elements[0];
+		e0.selected = true;
+		doc.setInstanceAlpha(50);
+		layer("offcenter-tp");
+		classicTween("box", 200, 40, 30, function (el) {
+			el.rotation = 120;
+		}, function (f) {
+			var e = f.elements[0];
+			e.setTransformationPoint({ x: 25, y: 15 });
 		});
 		extendAll(40);
 	});
@@ -320,18 +335,19 @@
 			["shadow", function () { doc.addFilter("dropShadowFilter"); doc.setFilterProperty("distance", 0, 8); }],
 			["bevel", function () { doc.addFilter("bevelFilter"); }],
 			["adjust", function () { doc.addFilter("adjustColorFilter"); doc.setFilterProperty("hue", 0, 90); doc.setFilterProperty("saturation", 0, -50); }],
-			["multiply", function () { doc.setBlendMode("multiply"); }],
-			["screen", function () { doc.setBlendMode("screen"); }],
-			["add", function () { doc.setBlendMode("add"); }],
-			["subtract", function () { doc.setBlendMode("subtract"); }],
+			["multiply", function (el) { el.blendMode = "multiply"; }],
+			["screen", function (el) { el.blendMode = "screen"; }],
+			["add", function (el) { el.blendMode = "add"; }],
+			["overlay", function (el) { el.blendMode = "overlay"; }],
 			["innerShadow", function () { doc.addFilter("dropShadowFilter"); doc.setFilterProperty("inner", 0, true); }]
 		];
 		for (var i = 0; i < defs.length; i++) {
 			layer(defs[i][0]);
 			var el = place("box", 60 + (i % 5) * 95, 80 + Math.floor(i / 5) * 130, 0);
 			doc.selectNone();
-			doc.selection = [el];
-			defs[i][1]();
+			el.selected = true;
+			defs[i][1](el);
+			doc.selectNone();
 		}
 		extendAll(1);
 	});

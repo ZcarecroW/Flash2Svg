@@ -122,6 +122,8 @@ export interface ShapeElement extends ElementBase {
 	atlas: string;
 	/** Group/drawing object members that are symbol instances cannot be animated; flagged here. */
 	containsInstances?: boolean;
+	/** Gradients drawn with "Linear RGB" interpolation, as "#rrggbb,#rrggbb|0,255" signatures. */
+	linearRGB?: string[];
 }
 
 export interface BitmapElement extends ElementBase {
@@ -228,6 +230,8 @@ export interface AtlasItem {
 	file: string;
 	/** Where the artwork came from, for diagnostics. */
 	source: string;
+	/** How far Animate moved the artwork when it was pasted into the atlas (subtract it). */
+	offset?: Point;
 }
 
 export interface BitmapData {
