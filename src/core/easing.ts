@@ -219,6 +219,26 @@ export function evalBezier(b: readonly [number, number, number, number], x: numb
 	);
 }
 
+/**
+ * The part of a timing function between times u0 and u1 (0 <= u0 < u1 <= 1), renormalised to
+ * its own box. Returns the new timing function and the progress values at u0 and u1, so that
+ * value(t) = v0 + (v1 - v0) * (p0 + (p1 - p0) * sub(t')) stays exactly the same curve.
+ */
+export function subBezier(b: readonly [number, number, number, number], u0: number, u1: number): { bezier: [number, number, number, number]; p0: number; p1: number } {
+	let seg: Segment = { p0: { x: 0, y: 0 }, c1: { x: b[0], y: b[1] }, c2: { x: b[2], y: b[3] }, p1: { x: 1, y: 1 } };
+	if (u1 < 1) {
+		const s1 = solveX(seg, u1);
+		seg = splitSegment(seg, s1)[0];
+	}
+	if (u0 > 0) {
+		// re-solve on the (possibly shortened) segment
+		const s0 = solveX(seg, u0);
+		seg = splitSegment(seg, s0)[1];
+	}
+	const p = normalise(seg, false);
+	return { bezier: p.bezier, p0: seg.p0.y, p1: seg.p1.y };
+}
+
 export function isLinearBezier(b: readonly number[], eps = 1e-4): boolean {
 	return Math.abs(b[0]! - b[1]!) < eps && Math.abs(b[2]! - b[3]!) < eps;
 }
