@@ -30,6 +30,9 @@ documents.
 - **HTML5 Canvas documents** (v3 refused them), frame scripts `stop()`, `play()`,
   `gotoAndPlay()`, `gotoAndStop()` in AS3 or JavaScript syntax.
 - **Camera** (pan, zoom, rotate, tweened), **buttons** (Up / Over / Down), **frame sounds**.
+- **9-slice scaling** of movie clips (corners keep their size, like in Animate; rotated
+  instances scale normally, as in Flash) and **layer effects** of advanced layers (colour
+  effect, filters and blend mode on a layer).
 - **Filters**: blur, glow, drop shadow, inner shadow, bevel, gradient glow / bevel, adjust colour;
   blend modes multiply, screen, overlay, lighten, darken, difference, hard light, add, layer.
 - **Your document is never modified.** The exporter works on a temporary copy (v3 created and
@@ -49,6 +52,11 @@ Requires **Adobe Animate 2022 or later** (tested with Animate 2024, 24.0.x on Wi
   Unsigned installs need CEP debug mode, see [Development](#development).
 
 Restart Animate and open **Window › Extensions › Flash2SVG (SVG Animation)**.
+
+**Uninstalling:** close the Flash2SVG panel and quit Animate *before* you remove the extension.
+Animate 2024 remembers open panels in its workspace and, if the extension of a remembered panel
+is gone, quits whenever a document window opens. If that happened: install the extension again,
+close the panel, quit Animate, then remove it.
 
 ## Use
 
@@ -90,7 +98,7 @@ anim.on("end", () => {});
 
 ## Command line
 
-The panel's compiler also runs in Node (22+): it turns the scene data the extractor writes into
+The panel's compiler also runs in Node (24+, tested with 26 LTS): it turns the scene data the extractor writes into
 SVG, so you can re-export with other settings without Animate.
 
 ```bash
@@ -102,13 +110,21 @@ node dist/cli/flash2svg.js path/to/scene.json -o out.svg --format css --loop alw
 
 ## Limitations
 
-- Animate's filters run on bitmaps with box blurs; SVG uses Gaussian blurs, so bevels and
-  shadows can differ slightly at the edges. Blend modes *subtract*, *alpha*, *erase* and
-  *invert* have no CSS/SVG equivalent (warned).
+- Filters are checked against Animate's own rendering in the end-to-end tests (blur, glow,
+  drop/inner shadow, bevel inner/outer/full, knockout, hide object, gradient glow and bevel,
+  adjust colour): in the browser they match within a fraction of a percent of the pixels. Blend
+  modes *subtract*, *alpha*, *erase* and *invert* have no CSS/SVG equivalent (warned).
+- Animate adds the temporary copy each export works on to its *Recent files* list (JSFL can't
+  open a document without doing so).
 - 3D transforms export as their 2D projection. IK armatures, video and components are not
-  exported. Layer parenting is read from Animate's rig data but could not be tested with
-  scripted fixtures yet — please report results.
+  exported. Layer parenting follows Animate's per-frame rig matrices (between frames they are
+  interpolated linearly).
 - Shape tweens become one drawing per frame.
+- 9-slice: an animated scale is sliced frame by frame for symbols that only contain drawings;
+  named instances and symbols with nested symbols keep normal scaling then (warned). Nested
+  movie clips, bitmaps and text inside 9-slice symbols scale normally, as in Flash.
+- Only the current scene is exported (Flash plays all scenes in a row): a warning tells you when
+  the document has more than one. Put scenes into one timeline, or export them one by one.
 - In SMIL/CSS output a movie clip that is visible for the whole timeline keeps running across
   the loop; one that appears and disappears restarts each time it appears (like Flash). Very long
   timelines with many short nested loops make big SMIL/CSS files — use the JS player then.
@@ -119,10 +135,11 @@ node dist/cli/flash2svg.js path/to/scene.json -o out.svg --format css --loop alw
 npm install
 npm run build          # dist/extension (CEP panel) and dist/cli
 npm test               # unit tests (Vitest)
-npm run typecheck      # TypeScript 7
+npm run typecheck      # TypeScript 7 (+ svelte-check for the panel components)
 npm run dev:install    # copy dist/extension into your CEP extensions folder
 npm run package        # dist/Flash2SVG-<version>.zip (+ signed .zxp if ZXPSignCmd is available)
 npm run e2e            # end-to-end: drives Animate + Edge (see below)
+npm run e2e:panel      # the panel itself inside Animate (signed self-test build, removed afterwards)
 ```
 
 Unsigned development installs need CEP debug mode (once per machine):
@@ -137,7 +154,13 @@ reg add HKCU\Software\Adobe\CSXS.12 /v PlayerDebugMode /t REG_SZ /d 1 /f
 extractor on each inside Animate (command line, Animate must not be running) together with
 Animate's own PNG export of every frame, renders our static frames with resvg and compares them
 pixel by pixel, then plays the SMIL, CSS and player outputs in Edge (playwright-core, no browser
-download) and compares them frame by frame. See [docs/architecture.md](docs/architecture.md).
+download) and compares them frame by frame (smooth and stepped, plus the end state), and finally
+drives the JS player's API, buttons and sounds, and inlines several exports into one HTML page
+(ids are unique per export, so they don't clash).
+
+`npm run e2e:panel` tests the panel inside Animate: it builds a self-test version, signs it with
+Adobe's `ZXPSignCmd` (put it into `tools/zxpsign/`; no CEP debug mode needed), installs it, lets
+it export a set of fixtures through the real Export path and uninstalls it again. See [docs/architecture.md](docs/architecture.md).
 
 ## Credits
 

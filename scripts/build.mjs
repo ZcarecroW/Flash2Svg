@@ -38,7 +38,7 @@ const panelBuild = {
 	mainFields: ["svelte", "browser", "module", "main"],
 	conditions: ["svelte", "browser"],
 	plugins: [sveltePlugin({ compilerOptions: { css: "external" } })],
-	define: { __VERSION__: JSON.stringify(pkg.version) },
+	define: { __VERSION__: JSON.stringify(pkg.version), __SELFTEST__: String(process.argv.includes("--selftest")) },
 	logLevel: "info",
 	legalComments: "none",
 };
@@ -48,9 +48,9 @@ const cliBuild = {
 	bundle: true,
 	platform: "node",
 	format: "esm",
-	target: "node22",
+	target: "node24",
 	outfile: join(dist, "cli/flash2svg.js"),
-	banner: { js: "#!/usr/bin/env node" },
+	// the shebang comes from src/cli/flash2svg.ts (esbuild keeps it); a banner would duplicate it
 	logLevel: "info",
 };
 

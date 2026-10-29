@@ -115,7 +115,8 @@ export function toFileUri(p: string): string {
 }
 
 export function fromFileUri(uri: string): string {
-	let s = decodeURI(uri.replace(/^file:\/\//, ""));
+	// decodeURIComponent: decodeURI would leave "%23" (#, see toFileUri) encoded
+	let s = decodeURIComponent(uri.replace(/^file:\/\//, ""));
 	if (/^\/[A-Za-z][|:]/.test(s)) s = s[1] + ":" + s.slice(3);
 	return node?.path ? node.path.normalize(s) : s;
 }

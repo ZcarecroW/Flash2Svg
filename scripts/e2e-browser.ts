@@ -1,7 +1,8 @@
 ﻿// E2E step 3: checks the animated outputs (SMIL, CSS, player) in a real browser (Edge/Chrome via
 // playwright-core). At sampled frame times the animation is paused & seeked, screenshotted and
 // compared with the static renderer's frame rendered in the same browser.
-// Usage: node scripts/e2e-browser.ts [name,...] [--formats=smil,css] [--every=4] [--browser=msedge]
+// --steps: export without interpolation (one step per frame) and check halfway between frames.
+// Usage: node scripts/e2e-browser.ts [name,...] [--formats=smil,css] [--every=4] [--browser=msedge] [--steps] [--threshold=0.0015]
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -17,7 +18,12 @@ const args = process.argv.slice(2);
 const opt = (k: string, d: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d;
 const formats = opt("formats", "smil,css").split(",") as OutputFormat[];
 const every = parseInt(opt("every", "4"), 10);
-const threshold = parseFloat(opt("threshold", "0.01"));
+// Animated and static output come from the same compiler, so they must agree almost exactly:
+// 0.15% of the pixels is about a 15 px object on a 400x300 stage.
+const threshold = parseFloat(opt("threshold", "0.0015"));
+const TOLERANCE: Record<string, number> = {};
+const limit = (name: string, format: string) => TOLERANCE[`${name}/${format}`] ?? threshold;
+const steps = args.includes("--steps");
 const list = args.find((a) => !a.startsWith("--"));
 const names = list ? list.split(",") : readdirSync(out).filter((d) => existsSync(join(out, d, "model", "scene.json")));
 
@@ -36,9 +42,14 @@ async function shot(file: string, width: number, height: number, seek: { format:
 				svg.pauseAnimations();
 				svg.setCurrentTime(time);
 			} else if (format === "css") {
+				// Commit the seeked values as static styles: Edge rasterises running CSS animations on the
+				// compositor with its own sub-pixel snap (a moving box lands 1 px off), which would hide
+				// real differences behind a looser tolerance.
 				for (const a of document.getAnimations()) {
 					a.pause();
 					a.currentTime = time * 1000;
+					a.commitStyles();
+					a.cancel();
 				}
 				svg.pauseAnimations?.();
 				svg.setCurrentTime?.(time);
@@ -65,8 +76,8 @@ for (const name of names) {
 	const statics = compileScene(model, files, { format: "static", includeBackground: true });
 	const frameCount = statics.files.length;
 	for (const format of formats) {
-		const anim = compileScene(model, files, { format, includeBackground: true });
-		const file = join(dir, `${format}.svg`);
+		const anim = compileScene(model, files, { format, includeBackground: true, smooth: !steps });
+		const file = join(dir, `${format}${steps ? "-steps" : ""}.svg`);
 		writeFileSync(file, anim.files[0]!.svg);
 		const horizon = Math.round(anim.stats.durationSeconds * frameRate);
 		let worst = 0,
@@ -77,12 +88,12 @@ for (const name of names) {
 			const sfile = join(dir, `static-${f + 1}.svg`);
 			writeFileSync(sfile, statics.files[f]!.svg);
 			const ref = await shot(sfile, width, height, null);
-			const got = await shot(file, width, height, { format, time: (f + 0.02) / frameRate });
+			const got = await shot(file, width, height, { format, time: (f + (steps ? 0.5 : 0.02)) / frameRate });
 			const diff = new PNG({ width: ref.width, height: ref.height });
 			const bad = pixelmatch(ref.data, got.data, diff.data, ref.width, ref.height, { threshold: 0.15, includeAA: false });
 			const ratio = bad / (ref.width * ref.height);
 			n++;
-			if (ratio <= threshold) ok++;
+			if (ratio <= limit(name, format)) ok++;
 			else {
 				writeFileSync(join(dir, `${format}-f${f + 1}-got.png`), PNG.sync.write(got));
 				writeFileSync(join(dir, `${format}-f${f + 1}-diff.png`), PNG.sync.write(diff));
@@ -92,8 +103,27 @@ for (const name of names) {
 				worstFrame = f + 1;
 			}
 		}
-		if (ok < n) failures++;
-		console.log(`${name.padEnd(18)} ${format.padEnd(6)} ${ok}/${n} frames ok, worst frame ${worstFrame}: ${(worst * 100).toFixed(2)}%  (${(anim.stats.bytes / 1024).toFixed(1)} KB)`);
+		// the end state of a non-looping export: everything holds the last frame
+		const once = compileScene(model, files, { format, includeBackground: true, smooth: !steps, loop: "never" });
+		const onceFile = join(dir, `${format}${steps ? "-steps" : ""}-once.svg`);
+		writeFileSync(onceFile, once.files[0]!.svg);
+		const lastFrame = Math.min(frameCount, Math.round(once.stats.durationSeconds * frameRate) || frameCount) - 1;
+		const lastFile = join(dir, `static-${lastFrame + 1}.svg`);
+		writeFileSync(lastFile, statics.files[lastFrame]!.svg);
+		const ref = await shot(lastFile, width, height, null);
+		const got = await shot(onceFile, width, height, { format, time: once.stats.durationSeconds + 0.5 });
+		const diff = new PNG({ width: ref.width, height: ref.height });
+		const endRatio = pixelmatch(ref.data, got.data, diff.data, ref.width, ref.height, { threshold: 0.15, includeAA: false }) / (ref.width * ref.height);
+		const endOk = endRatio <= limit(name, format);
+		if (!endOk) {
+			writeFileSync(join(dir, `${format}-end-got.png`), PNG.sync.write(got));
+			writeFileSync(join(dir, `${format}-end-diff.png`), PNG.sync.write(diff));
+		}
+		if (ok < n || !endOk) failures++;
+		console.log(
+			`${name.padEnd(18)} ${(format + (steps ? "/st" : "")).padEnd(9)} ${ok}/${n} frames ok, worst frame ${worstFrame}: ${(worst * 100).toFixed(2)}%, ` +
+				`end ${endOk ? "ok" : "FAIL"} ${(endRatio * 100).toFixed(2)}%  (${(anim.stats.bytes / 1024).toFixed(1)} KB)`,
+		);
 	}
 }
 await browser.close();

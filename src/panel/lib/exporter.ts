@@ -2,7 +2,7 @@
  * Runs an export from the panel: JSFL extraction (in steps, with progress), then compilation
  * in the panel, then writing the SVG(s) and assets.
  */
-import { compileScene, type CompileOutput, type ExportSettings } from "../../core/compile.ts";
+import { compileScene, type CompileOutput, type ExportSettings, type OutputFormat } from "../../core/compile.ts";
 import type { SceneModel } from "../../core/model.ts";
 import { evalJson, evalScript, extensionPath, fromFileUri, node, toFileUri } from "./cep.ts";
 
@@ -42,6 +42,8 @@ export interface ExportRequest {
 
 export interface ExportResult {
 	files: string[];
+	/** Format actually written ("current frame" exports are always static). */
+	format: OutputFormat;
 	output: CompileOutput[];
 	warnings: string[];
 	seconds: number;
@@ -73,11 +75,37 @@ export function defaultOutput(info: DocInfo, symbol?: string): string {
 	return node.path.join(dir, `${base}${suffix ? "_" + suffix.replace(/[\\/:*?"<>|]+/g, "_") : ""}.svg`);
 }
 
-export async function runExport(req: ExportRequest, info: DocInfo, onProgress: (p: number, msg: string) => void, isCancelled: () => boolean): Promise<ExportResult> {
+export async function runExport(
+	req: ExportRequest,
+	info: DocInfo,
+	onProgress: (p: number, msg: string) => void,
+	isCancelled: () => boolean,
+): Promise<ExportResult> {
 	if (!node) throw new Error("Node.js is not available in this panel.");
 	const t0 = Date.now();
 	await ensureJsfl();
 	const work = node.fs.mkdtempSync(node.path.join(node.os.tmpdir(), "flash2svg-"));
+	try {
+		return await exportInto(work, req, info, onProgress, isCancelled, t0);
+	} finally {
+		// also after errors and cancels: the scene data can be large
+		try {
+			node.fs.rmSync(work, { recursive: true, force: true });
+		} catch {
+			/* temp folder cleanup is best effort */
+		}
+	}
+}
+
+async function exportInto(
+	work: string,
+	req: ExportRequest,
+	info: DocInfo,
+	onProgress: (p: number, msg: string) => void,
+	isCancelled: () => boolean,
+	t0: number,
+): Promise<ExportResult> {
+	const node = nodeOrThrow();
 	const items = req.source === "library" ? (info.selectedSymbols ?? []) : [];
 	if (req.source === "library" && !items.length) throw new Error("Select one or more symbols in the Library first.");
 	const opts = { outDir: toFileUri(node.path.join(work, "scene")), items };
@@ -102,7 +130,7 @@ export async function runExport(req: ExportRequest, info: DocInfo, onProgress: (
 	};
 	const settings: Partial<ExportSettings> = { ...req.settings };
 	if (req.frames === "current") {
-		settings.startFrame = (info.currentFrame ?? 0);
+		settings.startFrame = info.currentFrame ?? 0;
 		settings.endFrame = settings.startFrame + 1;
 		if (settings.format !== "static") settings.format = "static";
 	} else if (req.frames === "range") {
@@ -138,13 +166,19 @@ export async function runExport(req: ExportRequest, info: DocInfo, onProgress: (
 			node.fs.copyFileSync(node.path.join(sceneDir, a.source), dst);
 		}
 	}
-	try {
-		node.fs.rmSync(work, { recursive: true, force: true });
-	} catch {
-		/* temp folder cleanup is best effort */
-	}
 	onProgress(1, "Done");
-	return { files: written, output: outputs, warnings: [...warnings], seconds: (Date.now() - t0) / 1000 };
+	return {
+		files: written,
+		format: settings.format ?? req.settings.format,
+		output: outputs,
+		warnings: [...warnings],
+		seconds: (Date.now() - t0) / 1000,
+	};
+}
+
+function nodeOrThrow() {
+	if (!node) throw new Error("Node.js is not available in this panel.");
+	return node;
 }
 
 /** Per-document settings (stored inside the FLA through JSFL document data). */

@@ -24,6 +24,7 @@ const HELP = `flash2svg <scene.json> [options]
   --no-hidden-layers      skip hidden layers
   --poster <first|last>   frame shown where animation does not run
   --digits <n>            decimal places (default 2)
+  --id-prefix <p>         start of every id (default: a short hash, unique per export)
   --pretty                indented output
   -h, --help
 `;
@@ -44,29 +45,43 @@ function main(argv: string[]) {
 			if (v === undefined) throw new Error(`Missing value for ${a}`);
 			return v;
 		};
+		const oneOf = <T extends string>(...allowed: T[]): T => {
+			const v = val();
+			if (!(allowed as string[]).includes(v)) throw new Error(`${a} expects one of: ${allowed.join(", ")}`);
+			return v as T;
+		};
+		const num = (min: number, max: number, int = false) => {
+			const raw = val();
+			const v = Number(raw);
+			if (!raw.trim() || !Number.isFinite(v) || v < min || v > max || (int && !Number.isInteger(v))) {
+				throw new Error(`${a} expects ${int ? "an integer" : "a number"} from ${min} to ${max}`);
+			}
+			return v;
+		};
 		switch (a) {
 			case "-o":
 			case "--out":
 				out = val();
 				break;
 			case "--format":
-				s.format = val() as ExportSettings["format"];
+				s.format = oneOf("smil", "css", "player", "static");
 				break;
 			case "--frames": {
 				const m = /^(\d+)(?:-(\d+))?$/.exec(val());
 				if (!m) throw new Error("--frames expects a-b");
 				s.startFrame = parseInt(m[1]!, 10) - 1;
 				s.endFrame = m[2] ? parseInt(m[2], 10) : s.startFrame + 1;
+				if (s.startFrame < 0 || s.endFrame <= s.startFrame) throw new Error("--frames expects a-b with 1 <= a <= b");
 				break;
 			}
 			case "--loop":
-				s.loop = val() as ExportSettings["loop"];
+				s.loop = oneOf("auto", "always", "never");
 				break;
 			case "--begin":
-				s.begin = val() as ExportSettings["begin"];
+				s.begin = oneOf("auto", "click", "hover", "manual");
 				break;
 			case "--delay":
-				s.delay = parseFloat(val());
+				s.delay = num(0, 86400);
 				break;
 			case "--steps":
 				s.smooth = false;
@@ -84,11 +99,17 @@ function main(argv: string[]) {
 				s.includeHiddenLayers = false;
 				break;
 			case "--poster":
-				s.posterFrame = val() as ExportSettings["posterFrame"];
+				s.posterFrame = oneOf("first", "last");
 				break;
 			case "--digits":
-				s.digits = parseInt(val(), 10);
+				s.digits = num(0, 6, true);
 				break;
+			case "--id-prefix": {
+				const p = val();
+				if (!/^[A-Za-z_][A-Za-z0-9_-]*$/.test(p)) throw new Error("--id-prefix expects letters, digits, _ or - (not starting with a digit)");
+				s.idPrefix = p;
+				break;
+			}
 			case "--pretty":
 				s.pretty = true;
 				break;
@@ -101,10 +122,14 @@ function main(argv: string[]) {
 	const sceneFile = resolve(input);
 	const base = dirname(sceneFile);
 	const model: SceneModel = JSON.parse(readFileSync(sceneFile, "utf8"));
-	const result = compileScene(model, {
-		readText: (rel) => readFileSync(join(base, rel), "utf8"),
-		readBinary: (rel) => readFileSync(join(base, rel)),
-	}, s);
+	const result = compileScene(
+		model,
+		{
+			readText: (rel) => readFileSync(join(base, rel), "utf8"),
+			readBinary: (rel) => readFileSync(join(base, rel)),
+		},
+		s,
+	);
 	const target = resolve(out || join(base, "..", basename(model.doc.name, extname(model.doc.name)) + ".svg"));
 	mkdirSync(dirname(target), { recursive: true });
 	const ext = extname(target) || ".svg";

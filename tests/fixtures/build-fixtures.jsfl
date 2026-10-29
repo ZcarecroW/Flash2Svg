@@ -352,6 +352,36 @@
 		extendAll(1);
 	});
 
+	// ---------------------------------------------------------------- f19: filter variants
+	build("f19-filters2", function () {
+		newDoc("timeline", 500, 300, 24);
+		boxSymbol();
+		layer("bg");
+		rect(0, 0, 500, 300, "#88CC88");
+		function prop(k, v) { doc.setFilterProperty(k, 0, v); }
+		var defs = [
+			["bevelOuter", function () { doc.addFilter("bevelFilter"); prop("type", "outer"); prop("distance", 6); }],
+			["bevelFull", function () { doc.addFilter("bevelFilter"); prop("type", "full"); prop("angle", 120); prop("strength", 200); }],
+			["bevelKnockout", function () { doc.addFilter("bevelFilter"); prop("knockout", true); }],
+			["glowInner", function () { doc.addFilter("glowFilter"); prop("inner", true); prop("color", "#0000FF"); prop("blurX", 10); prop("blurY", 10); }],
+			["glowKnockout", function () { doc.addFilter("glowFilter"); prop("knockout", true); prop("color", "#FFFF00"); }],
+			["blurHigh", function () { doc.addFilter("blurFilter"); prop("blurX", 12); prop("blurY", 4); prop("quality", "high"); }],
+			["shadowHide", function () { doc.addFilter("dropShadowFilter"); prop("hideObject", true); prop("angle", 200); prop("distance", 6); }],
+			["shadowStrong", function () { doc.addFilter("dropShadowFilter"); prop("strength", 300); prop("blurX", 2); prop("blurY", 2); prop("quality", "medium"); }],
+			["gradientGlow", function () { doc.addFilter("gradientGlowFilter"); prop("distance", 0); }],
+			["gradientBevel", function () { doc.addFilter("gradientBevelFilter"); }]
+		];
+		for (var i = 0; i < defs.length; i++) {
+			layer(defs[i][0]);
+			var el = place("box", 60 + (i % 5) * 95, 80 + Math.floor(i / 5) * 130, 0);
+			doc.selectNone();
+			el.selected = true;
+			defs[i][1](el);
+			doc.selectNone();
+		}
+		extendAll(1);
+	});
+
 	// ---------------------------------------------------------------- f09: motion guide
 	build("f09-guide", function () {
 		newDoc("timeline", 400, 300, 24);
@@ -471,16 +501,29 @@
 			f.elements[0].setTransformationPoint({ x: -30, y: 0 });
 		});
 		var t = tl();
-		var armIdx = t.currentLayer;
 		layer("hand");
-		place("dot", 200, 150, 0);
+		// the child has its own tween on top of the parent's motion
+		classicTween("box", 210, 150, 23, function (el) { el.y = 175; el.scaleX = el.scaleY = 0.5; }, function (f) {
+			f.elements[0].scaleX = f.elements[0].scaleY = 0.5;
+		});
+		layer("fixed");
+		place("box", 300, 60, 0);
 		extendAll(24);
-		var handIdx = t.currentLayer;
+		var idx = {};
+		for (var j = 0; j < t.layers.length; j++) idx[t.layers[j].name] = j;
+		// Animate 24: setRigParentAtFrame(parentLayer, frame) takes the layer object first (the
+		// documentation shows (frame, index), which does nothing)
+		var pairs = [["hand", 0], ["hand", 23], ["fixed", 0]];
+		for (j = 0; j < pairs.length; j++) {
+			try {
+				t.layers[idx[pairs[j][0]]].setRigParentAtFrame(t.layers[idx.arm], pairs[j][1]);
+			} catch (e) { log.push("f14 rig " + pairs[j][0] + ": " + e); }
+		}
 		try {
-			t.layers[handIdx].setRigParentAtFrame(0, armIdx);
-			var rp = t.layers[handIdx].getRigParentAtFrame(0);
-			var rm = t.layers[handIdx].getRigMatrixAtFrame(12);
-			log.push("f14 rig parent: " + rp + " (" + typeof rp + "), rig matrix@12: " + [rm.a, rm.b, rm.c, rm.d, rm.tx, rm.ty].join(","));
+			var hand = t.layers[idx.hand];
+			var rp = hand.getRigParentAtFrame(0);
+			var rm = hand.getRigMatrixAtFrame(12);
+			log.push("f14 rig parent: " + (rp && rp.name ? rp.name : rp) + " (" + typeof rp + "), rig matrix@12: " + [rm.a, rm.b, rm.c, rm.d, rm.tx, rm.ty].join(","));
 		} catch (e) { log.push("f14 rig: " + e); }
 	});
 
@@ -515,6 +558,228 @@
 			t.layers[0].frames[0].soundLibraryItem = item;
 			t.layers[0].frames[0].soundSync = "event";
 		}
+	});
+
+	// ---------------------------------------------------------------- f18: bitmaps
+	build("f18-bitmap", function () {
+		newDoc("timeline", 400, 300, 24);
+		doc.importFile(root + "/assets/checker.png", true);
+		var item = null;
+		for (var i = 0; i < lib.items.length; i++) if (lib.items[i].itemType == "bitmap") item = lib.items[i];
+		log.push("f18 bitmap item: " + (item ? item.name : "none"));
+		if (!item) throw new Error("bitmap import failed");
+		// on the stage, rotated and scaled
+		lib.addItemToDocument({ x: 70, y: 70 }, item.name);
+		var b = doc.selection[0];
+		b.rotation = 25;
+		b.scaleX = 1.5;
+		// inside a movie clip with a classic tween
+		symbol("pic", "movie clip", function () {
+			lib.addItemToDocument({ x: 0, y: 0 }, item.name);
+		});
+		layer("tween");
+		classicTween("pic", 120, 200, 23, function (el) {
+			el.x = 320;
+			el.rotation = -40;
+		});
+		extendAll(24);
+	});
+
+	// ---------------------------------------------------------------- f20: reverse loops, colour effects, visibility, 9-slice, filter tween
+	build("f20-misc", function () {
+		newDoc("timeline", 500, 300, 24);
+		boxSymbol();
+		symbol("counter", "graphic", function () {
+			for (var i = 0; i < 6; i++) {
+				var t = tl();
+				if (i > 0) t.insertBlankKeyframe(i);
+				t.currentFrame = i;
+				rect(0, 0, 10 + i * 10, 10, "#0066FF");
+			}
+		});
+		symbol("panel", "movie clip", function () {
+			rect(0, 0, 60, 40, "#996633", "#000000");
+			rect(4, 4, 14, 14, "#FFFFFF");
+			rect(46, 26, 56, 36, "#FF0000");
+		});
+		var panel = lib.items[lib.findItemIndex("panel")];
+		panel.scalingGrid = true;
+		panel.scalingGridRect = { left: 16, top: 12, right: 44, bottom: 28 };
+		layer("g-rev");
+		var g = place("counter", 30, 40, 0); g.loop = "loop reverse"; g.firstFrame = 3;
+		layer("g-oncerev");
+		g = place("counter", 150, 40, 0); g.loop = "play once reverse"; g.firstFrame = 4;
+		layer("bright");
+		var el = place("box", 300, 50, 0);
+		doc.selectNone(); el.selected = true; doc.setInstanceBrightness(-60); doc.selectNone();
+		layer("advanced");
+		el = place("box", 420, 50, 0);
+		el.colorMode = "advanced";
+		el.colorRedPercent = 40; el.colorGreenPercent = 100; el.colorBluePercent = 60; el.colorAlphaPercent = 80;
+		el.colorRedAmount = 120; el.colorGreenAmount = -40; el.colorBlueAmount = 30; el.colorAlphaAmount = 0;
+		layer("invisible");
+		el = place("box", 60, 150, 0);
+		el.visible = false;
+		layer("hidden");
+		rect(110, 120, 170, 180, "#FF00FF");
+		var t = tl();
+		t.layers[t.currentLayer].visible = false;
+		layer("nineslice");
+		el = place("panel", 220, 120, 0);
+		el.scaleX = 3; el.scaleY = 1.5;
+		layer("nineslice-rotated");
+		el = place("panel", 420, 130, 0);
+		el.scaleX = 1.8; el.rotation = 20;
+		layer("nineslice-small");
+		el = place("panel", 350, 190, 0);
+		el.scaleX = 0.4; el.scaleY = 0.5;
+		layer("dashed");
+		doc.selectNone();
+		doc.setCustomStroke({ style: "dashed", color: "#003366", thickness: 4, dash1: 6, dash2: 4, capType: "none", joinType: "miter" });
+		doc.addNewLine({ x: 20, y: 280 }, { x: 480, y: 280 });
+		layer("blurTween");
+		classicTween("box", 60, 230, 23, function (e) {
+			e.x = 420;
+			doc.selectNone(); e.selected = true;
+			doc.addFilter("blurFilter"); doc.setFilterProperty("blurX", 0, 12); doc.setFilterProperty("blurY", 0, 4);
+			doc.addFilter("glowFilter"); doc.setFilterProperty("color", 1, "#FF0000"); doc.setFilterProperty("blurX", 1, 10); doc.setFilterProperty("blurY", 1, 10);
+			doc.selectNone();
+		});
+		extendAll(24);
+	});
+
+	// ---------------------------------------------------------------- f22: layer effects, gradient shape tween, last frame, text, 9-slice with a nested clip
+	build("f22-layers", function () {
+		newDoc("timeline", 500, 300, 24);
+		boxSymbol();
+		log.push("f22 advanced layers: " + doc.useAdvancedLayers);
+		symbol("counter", "graphic", function () {
+			for (var i = 0; i < 6; i++) {
+				var t = tl();
+				if (i > 0) t.insertBlankKeyframe(i);
+				t.currentFrame = i;
+				rect(0, 0, 10 + i * 10, 10, "#0066FF");
+			}
+		});
+		symbol("panel2", "movie clip", function () {
+			rect(0, 0, 60, 40, "#669933", "#000000");
+			place("box", 30, 20, 0);
+			var e = doc.selection[0];
+			e.scaleX = e.scaleY = 0.3;
+		});
+		var p2 = lib.items[lib.findItemIndex("panel2")];
+		p2.scalingGrid = true;
+		p2.scalingGridRect = { left: 12, top: 10, right: 48, bottom: 30 };
+		var t = tl();
+		// layer effects (advanced layers): filter, colour and blend mode on the layer itself
+		layer("fxFilter");
+		var el = place("box", 60, 50, 0);
+		doc.selectNone(); el.selected = true;
+		doc.addFilter("dropShadowFilter"); doc.setFilterProperty("distance", 0, 6); doc.setFilterProperty("color", 0, "#000080");
+		var fs = el.filters;
+		doc.removeAllFilters(); doc.selectNone();
+		try { t.layers[t.currentLayer].setFiltersAtFrame(0, fs); } catch (e) { log.push("f22 setFiltersAtFrame: " + e); }
+		layer("fxColor");
+		place("box", 170, 50, 0);
+		try {
+			var ly = t.layers[t.currentLayer];
+			var ct = ly.getColorTransformAtFrame(0);
+			var keys = [];
+			for (var k in ct) keys.push(k + "=" + ct[k]);
+			log.push("f22 colour transform: " + keys.join(","));
+			ct.colorAlphaPercent = 60; ct.colorRedAmount = 100; ct.colorMode = "advanced";
+			ly.setColorTransformAtFrame(0, ct);
+		} catch (e) { log.push("f22 setColorTransformAtFrame: " + e); }
+		layer("fxBlend");
+		place("box", 280, 50, 0);
+		try { t.layers[t.currentLayer].setBlendModeAtFrame(0, "multiply"); } catch (e) { log.push("f22 setBlendModeAtFrame: " + e); }
+		layer("lastFrame");
+		var g = place("counter", 370, 40, 0); g.loop = "loop"; g.firstFrame = 1;
+		try { g.lastFrame = 3; } catch (e) { log.push("f22 lastFrame: " + e); }
+		layer("text");
+		doc.selectNone();
+		doc.addNewText({ left: 20, top: 110, right: 200, bottom: 170 }, "Centred dynamic\rtext on two lines");
+		doc.setElementProperty("textType", "dynamic");
+		doc.setElementProperty("lineType", "multiline");
+		doc.setElementTextAttr("alignment", "center");
+		doc.setElementTextAttr("size", 16);
+		doc.setElementTextAttr("fillColor", "#004400");
+		layer("nineslice");
+		el = place("panel2", 330, 140, 0);
+		el.scaleX = 2.5; el.scaleY = 1.5;
+		// shape tween between gradient-filled, stroked shapes with alpha
+		layer("gradTween");
+		doc.selectNone();
+		doc.setCustomFill({ style: "linearGradient", colorArray: ["#FF0000", "#FFFF00"], posArray: [0, 255], matrix: { a: 0.05, b: 0, c: 0, d: 0.05, tx: 80, ty: 240 } });
+		stroke("#000000", 3);
+		doc.addNewRectangle({ left: 30, top: 200, right: 130, bottom: 280 }, 0, false, false);
+		var lt = tl();
+		var li = lt.currentLayer;
+		lt.insertBlankKeyframe(23);
+		lt.currentFrame = 23;
+		doc.selectNone();
+		doc.setCustomFill({ style: "radialGradient", colorArray: ["#0000FF", "#00FFFF"], posArray: [0, 255], alphaArray: [100, 40], matrix: { a: 0.06, b: 0, c: 0, d: 0.06, tx: 400, ty: 240 } });
+		stroke("#CC00CC", 6);
+		doc.addNewOval({ left: 340, top: 190, right: 460, bottom: 290 }, false, false);
+		lt.setSelectedLayers(li);
+		lt.setSelectedFrames(0, 1);
+		lt.setFrameProperty("tweenType", "shape");
+		extendAll(24);
+	});
+
+	// ---------------------------------------------------------------- f23: 9-slice panel with an animated (eased) scale
+	build("f23-nineslice-tween", function () {
+		newDoc("timeline", 400, 250, 24);
+		symbol("panel", "movie clip", function () {
+			rect(0, 0, 60, 40, "#996633", "#000000");
+			rect(4, 4, 14, 14, "#FFFFFF");
+			rect(46, 26, 56, 36, "#FF0000");
+		});
+		var panel = lib.items[lib.findItemIndex("panel")];
+		panel.scalingGrid = true;
+		panel.scalingGridRect = { left: 16, top: 12, right: 44, bottom: 28 };
+		layer("grow");
+		classicTween("panel", 60, 60, 23, function (e) { e.scaleX = 4; e.scaleY = 2.5; e.x = 200; e.y = 140; }, function (f) { f.tweenEasing = -60; });
+		layer("shrink");
+		classicTween("panel", 330, 200, 23, function (e) { e.scaleX = 0.5; e.scaleY = 0.6; });
+		extendAll(24);
+	});
+
+	// ---------------------------------------------------------------- f21: one mask over several layers, mask inside a tweened symbol
+	build("f21-masks2", function () {
+		newDoc("timeline", 400, 300, 24);
+		boxSymbol();
+		symbol("window", "movie clip", function () {
+			var t = tl();
+			rect(-50, -50, 50, 50, "#33AA33");
+			rect(-50, -10, 50, 10, "#FFFFFF");
+			var maskIdx = t.addNewLayer("m", "mask", true);
+			t.setSelectedLayers(maskIdx);
+			t.currentLayer = maskIdx;
+			oval(-35, -35, 35, 35, "#000000");
+			t.layers[maskIdx + 1].layerType = "masked";
+			t.layers[maskIdx + 1].parentLayer = t.layers[maskIdx];
+		});
+		layer("bg");
+		rect(0, 0, 400, 300, "#DDDDDD");
+		layer("stripes");
+		for (var i = 0; i < 8; i++) rect(i * 50, 0, i * 50 + 25, 300, "#3366CC");
+		layer("mover");
+		classicTween("box", 40, 100, 23, function (e) { e.x = 360; e.rotation = 90; });
+		layer("maskLayer");
+		oval(100, 40, 300, 200, "#000000");
+		var t = tl();
+		var idx = {};
+		for (var j = 0; j < t.layers.length; j++) idx[t.layers[j].name] = j;
+		t.layers[idx.maskLayer].layerType = "mask";
+		var masked = ["stripes", "mover"];
+		for (j = 0; j < masked.length; j++) {
+			t.layers[idx[masked[j]]].layerType = "masked";
+			t.layers[idx[masked[j]]].parentLayer = t.layers[idx.maskLayer];
+		}
+		layer("windowTween");
+		classicTween("window", 80, 240, 23, function (e) { e.x = 320; e.scaleX = e.scaleY = 0.6; e.rotation = 45; });
+		extendAll(24);
 	});
 
 	// ---------------------------------------------------------------- f17: stress (performance)

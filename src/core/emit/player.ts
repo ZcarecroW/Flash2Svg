@@ -4,7 +4,7 @@
  */
 import type { ExportSettings } from "../compile.ts";
 import type { Context } from "../context.ts";
-import { fmt, fmtMatrix } from "../geom.ts";
+import { fmt } from "../geom.ts";
 import { COLOR_PROPS, TRANSFORM_PROPS, type InstanceItem, type Item, type Program } from "../program.ts";
 import type { Track } from "../tracks.ts";
 import { cdata, serialize, el, type XmlNode } from "../xml.ts";
@@ -19,7 +19,7 @@ import { playhead } from "./timing.ts";
 const LOOP_CODES: Record<string, number> = { loop: 0, "play once": 1, "single frame": 2, "loop reverse": 3, "play once reverse": 4 };
 
 export function renderPlayer(ctx: Context, rootId: string, s: ExportSettings): { svg: string; assets: OutputDoc["assets"] } {
-	const doc = new OutputDoc(ctx, { embedImages: s.embedImages, idPrefix: "" });
+	const doc = new OutputDoc(ctx, { embedImages: s.embedImages, idPrefix: s.idPrefix ?? "" });
 	const svgId = doc.uid("player");
 	const d = ctx.model.doc;
 	const P: PProgram = { v: 1, fps: d.frameRate || 24, w: d.width, h: d.height, root: rootId, bz: [], tl: {}, snd: {}, mf: "" };
@@ -68,9 +68,8 @@ export function renderPlayer(ctx: Context, rootId: string, s: ExportSettings): {
 				return { k: "q", s: it.start, e: it.end, rs };
 			}
 			case "bitmap": {
-				const b = doc.bitmap(it.bitmap);
-				if (!b) return null;
-				const node = el("image", { "xlink:href": b.href, width: b.width, height: b.height, transform: fmtMatrix(it.matrix, ctx.digits) || undefined });
+				const node = doc.image(it.bitmap, it.matrix);
+				if (!node) return null;
 				const id = doc.uid("bmp");
 				doc.defs.push(el("g", { id }, [node]));
 				return { k: "a", s: it.start, e: it.end, r: id };
@@ -142,7 +141,6 @@ export function renderPlayer(ctx: Context, rootId: string, s: ExportSettings): {
 			const pl: PTimeline["ly"][number] = { it: items };
 			if (l.type === "mask") pl.m = 1;
 			if (l.maskedBy >= 0 && indexOfLayer.has(l.maskedBy)) pl.mb = indexOfLayer.get(l.maskedBy)!;
-			if (l.rig) warn("Layer parenting is baked per frame only in SMIL/CSS output");
 			t.ly.push(pl);
 		}
 		return t;
@@ -150,8 +148,9 @@ export function renderPlayer(ctx: Context, rootId: string, s: ExportSettings): {
 
 	for (const id in ctx.programs) P.tl[id] = timeline(ctx.programs[id]!);
 	// frame sounds
-	for (const id in ctx.model.timelines) {
-		const tl = ctx.model.timelines[id]!;
+	for (const id in ctx.programs) {
+		const tl = ctx.model.timelines[ctx.programs[id]!.source ?? id];
+		if (!tl) continue;
 		const sd: NonNullable<PTimeline["sd"]> = [];
 		for (const layer of tl.layers)
 			for (const kf of layer.keyframes)

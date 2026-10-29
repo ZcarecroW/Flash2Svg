@@ -62,7 +62,7 @@
 			onHostEvent(`com.adobe.events.flash.${ev}`, refresh);
 		}
 		refresh();
-		if (inCep) runSelfTestIfRequested().catch((e) => (error = "Self-test: " + (e as Error).message));
+		if (__SELFTEST__ && inCep) runSelfTestIfRequested().catch((e) => (error = "Self-test: " + (e as Error).message));
 	});
 
 	$effect(() => {
@@ -265,7 +265,7 @@
 				<button class="secondary" onclick={() => openInBrowser(result!.files[0]!)}>Open in browser</button>
 				<button class="secondary" onclick={() => revealInExplorer(result!.files[0]!)}>Show file</button>
 			</div>
-			<Preview file={result.files[0]!} format={panel.export.format} />
+			<Preview file={result.files[0]!} format={result.format} />
 			{#if result.warnings.length}
 				<details class="warnings">
 					<summary>{result.warnings.length} warning{result.warnings.length > 1 ? "s" : ""}</summary>

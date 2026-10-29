@@ -28,6 +28,11 @@ export interface ExportSettings {
 	posterFrame: "first" | "last";
 	digits: number;
 	pretty: boolean;
+	/**
+	 * Start of every id in the output, so several SVGs can be inlined into one page. Default: a
+	 * short hash of the document, timeline and settings (the same export gives the same ids).
+	 */
+	idPrefix?: string;
 }
 
 export const DEFAULT_SETTINGS: ExportSettings = {
@@ -62,6 +67,9 @@ export interface CompileOutput {
 
 export function compileScene(model: SceneModel, files: FileSource, partial: Partial<ExportSettings> = {}, rootIndex = 0): CompileOutput {
 	const s: ExportSettings = { ...DEFAULT_SETTINGS, ...partial };
+	// number fields can arrive empty (null) or out of range from the panel
+	s.digits = Number.isFinite(s.digits) ? Math.max(0, Math.min(6, Math.round(s.digits))) : DEFAULT_SETTINGS.digits;
+	s.delay = Number.isFinite(s.delay) && s.delay > 0 ? s.delay : 0;
 	const ctx = createContext(model, files, {
 		smooth: s.smooth,
 		includeHiddenLayers: s.includeHiddenLayers,
@@ -71,6 +79,7 @@ export function compileScene(model: SceneModel, files: FileSource, partial: Part
 	const rootId = model.roots[rootIndex];
 	if (!rootId) throw new Error("Nothing to export");
 	const prog = ctx.programs[rootId]!;
+	const prefixFor = (extra: string) => s.idPrefix ?? autoPrefix(model, rootId, s, extra);
 	const fps = model.doc.frameRate || 24;
 	const out: CompileOutput = { files: [], assets: [], warnings: ctx.warnings, stats: { durationSeconds: 0, frames: 0, bytes: 0 } };
 	const assets = new Map<string, { path: string; source: string }>();
@@ -81,6 +90,7 @@ export function compileScene(model: SceneModel, files: FileSource, partial: Part
 		const frames = s.frames ?? Array.from({ length: Math.max(1, end - start) }, (_, i) => start + i);
 		for (const f of frames) {
 			const r = renderStatic(ctx, rootId, {
+				idPrefix: prefixFor(String(f)),
 				frame: f,
 				movieClips: "play",
 				includeBackground: s.includeBackground,
@@ -93,13 +103,14 @@ export function compileScene(model: SceneModel, files: FileSource, partial: Part
 		}
 		out.stats.frames = frames.length;
 	} else if (s.format === "player") {
-		const r = renderPlayer(ctx, rootId, s);
+		const r = renderPlayer(ctx, rootId, { ...s, idPrefix: prefixFor("") });
 		out.files.push({ suffix: "", svg: r.svg });
 		r.assets.forEach((a) => assets.set(a.path, a));
 		out.stats.frames = prog.frameCount;
 		out.stats.durationSeconds = prog.frameCount / fps;
 	} else {
 		const r = renderAnimated(ctx, rootId, {
+			idPrefix: prefixFor(""),
 			format: s.format,
 			smooth: s.smooth,
 			loop: s.loop,
@@ -121,4 +132,13 @@ export function compileScene(model: SceneModel, files: FileSource, partial: Part
 	out.assets = [...assets.values()];
 	out.stats.bytes = out.files.reduce((n, f) => n + f.svg.length, 0);
 	return out;
+}
+
+/** Deterministic id prefix ("f" + 5 base-36 chars + "_") from what makes this output unique. */
+function autoPrefix(model: SceneModel, rootId: string, s: ExportSettings, extra: string): string {
+	const { idPrefix: _, ...settings } = s;
+	const key = JSON.stringify([model.doc.name, rootId, settings, extra]);
+	let h = 0x811c9dc5;
+	for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 0x01000193);
+	return "f" + (h >>> 0).toString(36).padStart(7, "0").slice(-5) + "_";
 }

@@ -290,6 +290,11 @@
 			job.model.roots.push(id);
 			queueTimeline(id);
 		}
+		var scenes = src.timelines ? src.timelines.length : 1;
+		if (scenes > 1 && roots[0].scene !== undefined) {
+			// Flash plays all scenes in a row; only the one being edited is exported
+			warn("The document has " + scenes + " scenes: only the current scene (" + src.timelines[roots[0].scene].name + ") is exported");
+		}
 		job.phase = "timelines";
 		job.message = "Reading timelines";
 		job.queue.push(nextTimeline);
@@ -414,7 +419,7 @@
 
 	function readLayerEffects(layer, out) {
 		if (!layer.getColorTransformAtFrame) return;
-		var effects = [];
+		var effects = [], used = false;
 		for (var i = 0; i < out.keyframes.length; i++) {
 			var f = out.keyframes[i].index;
 			var e = { frame: f };
@@ -431,9 +436,11 @@
 				var b = layer.getBlendModeAtFrame(f);
 				if (b && b != "normal") { e.blendMode = b; any = true; }
 			} catch (x) {}
-			if (any) effects.push(e);
+			// keyframes without effects are kept too: they end the previous keyframe's effects
+			effects.push(e);
+			if (any) used = true;
 		}
-		if (effects.length) out.effects = effects;
+		if (used) out.effects = effects;
 	}
 
 	function readKeyframe(tlId, tl, layer, li, frame, f, guided) {
@@ -675,10 +682,14 @@
 				tl.currentFrame = Math.min(f + 1, tl.frameCount - 1); // forces Animate to (re)compute the tween
 				var t = frame.tweenObj;
 				var base = els[0].matrix;
+				// filters tween in from nothing when only the end keyframe has some
+				var nextKf = layer.frames[f + frame.duration];
+				var nextEls = nextKf && nextKf.startFrame == f + frame.duration ? nextKf.elements : [];
+				var hasFilters = get(els[0], "filters", []).length || (nextEls.length == 1 && get(nextEls[0], "filters", []).length);
 				for (var s = 0; s < frame.duration; s++) {
 					// getGeometricTransform() is the change since the keyframe, applied in parent space.
 					var sample = { matrix: mat(concat(base, t.getGeometricTransform(s))), color: colorOf(t.getColorTransform(s)) };
-					if (get(els[0], "filters", []).length) {
+					if (hasFilters) {
 						try { sample.filters = filtersOf(t.getFilters(s)); } catch (e) {}
 					}
 					tw.samples.push(sample);
@@ -814,12 +825,21 @@
 		var count = lastJob.frame + lastJob.count - first.frame;
 		job.message = "Collecting artwork " + job.atlasIndex + "/" + job.atlasJobs.length;
 
+		// Shape tweens are baked into keyframes of the working copy first: a pasted tween is not
+		// always recomputed in the atlas document (from the second document of an Animate session
+		// on, every in-between came out as the start shape).
+		var bake = first.startElement < 0 && first.count > 2;
 		if (fl.getDocumentDOM() != job.atlasDoc) fl.setActiveWindow(job.atlasDoc);
 		var tl = sourceTimeline(first.tl);
 		tl.setSelectedLayers(first.layer);
+		if (bake) {
+			try { tl.convertToKeyframes(first.frame + 1, first.frame + first.count - 1); } catch (e) { warn("Could not bake a shape tween: " + e); }
+		}
 		// Remember where the first copied element sits: pasting symbol frames into a scene moves
-		// them (Animate re-centres symbol content), so we measure and record the shift.
-		var srcEls = tl.layers[first.layer].frames[first.frame].elements;
+		// them (Animate re-centres symbol content), so we measure and record the shift. The bounds
+		// of a shape tween's start keyframe span the whole tween: measure on a baked frame then.
+		var refFrame = bake ? first.frame + 1 : first.frame;
+		var srcEls = tl.layers[first.layer].frames[refFrame].elements;
 		var ref = srcEls[first.startElement >= 0 ? first.startElement : 0];
 		var refPos = ref ? { x: ref.left, y: ref.top } : null;
 		tl.copyFrames(first.frame, first.frame + count);
@@ -846,7 +866,7 @@
 		if (al.locked) al.locked = false;
 		if (al.outline) al.outline = false;
 		var offset = { x: 0, y: 0 };
-		var pasted = at.layers[0].frames[k].elements[first.startElement >= 0 ? first.startElement : 0];
+		var pasted = at.layers[0].frames[k + (refFrame - first.frame)].elements[first.startElement >= 0 ? first.startElement : 0];
 		if (refPos && pasted) offset = { x: round(pasted.left - refPos.x), y: round(pasted.top - refPos.y) };
 
 		for (var b = 0; b < batch.length; b++) {

@@ -18,7 +18,7 @@ export interface Artwork {
 
 export interface ArtworkOptions {
 	digits: number;
-	/** Gradient signatures ("#rrggbb,..|0,255") that Animate interpolates in linear RGB. */
+	/** Gradient signatures ("#rrggbb,..|0,255") that Animate interpolates in linear RGB; "*" = all. */
 	linearRGB?: Set<string>;
 }
 
@@ -196,7 +196,8 @@ export function importArtwork(svgText: string, id: string, opts: ArtworkOptions)
 
 	if (opts.linearRGB?.size) {
 		for (const d of keptDefs) {
-			if ((d.name === "linearGradient" || d.name === "radialGradient") && opts.linearRGB.has(gradientSignature(d))) expandLinearRGB(d);
+			const gradient = d.name === "linearGradient" || d.name === "radialGradient";
+			if (gradient && (opts.linearRGB.has("*") || opts.linearRGB.has(gradientSignature(d)))) expandLinearRGB(d);
 		}
 	}
 
@@ -244,6 +245,23 @@ function hasDrawing(node: XmlNode): boolean {
 		if (n.name === "path" || n.name === "use" || n.name === "image" || n.name === "rect" || n.name === "circle" || n.name === "ellipse" || n.name === "polygon" || n.name === "polyline" || n.name === "line" || n.name === "text") found = true;
 	});
 	return found;
+}
+
+/** A copy of the artwork whose ids (and references to them) start with `prefix`. */
+export function prefixArtwork(a: Artwork, prefix: string): Artwork {
+	if (!prefix) return a;
+	const defs = a.defs.map(clone);
+	const body = clone(a.body);
+	const map = new Map<string, string>();
+	for (const root of [...defs, body])
+		walk(root, (n) => {
+			if (n.attrs.id) {
+				map.set(n.attrs.id, prefix + n.attrs.id);
+				n.attrs.id = prefix + n.attrs.id;
+			}
+		});
+	if (map.size) for (const root of [...defs, body]) renameRefs(root, map);
+	return { ...a, id: prefix + a.id, defs, body };
 }
 
 /** Canonical text of an artwork with ids replaced, used to find duplicates. */

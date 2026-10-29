@@ -1,12 +1,12 @@
 {
   "name": "flash2svg",
-  "version": "4.0.0-alpha.1",
+  "version": "4.0.0-alpha.2",
   "description": "Animated SVG exporter for Adobe Animate (SMIL, CSS and JS-player output)",
   "license": "MIT",
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=22.12"
+    "node": ">=24"
   },
   "bin": {
     "flash2svg": "./dist/cli/flash2svg.js"
@@ -14,26 +14,33 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "watch": "node scripts/build.mjs --watch",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "node node_modules/@typescript/native/bin/tsc --noEmit && svelte-check --tsgo --tsconfig ./tsconfig.json --fail-on-warnings",
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "node scripts/e2e.mjs",
+    "e2e:panel": "node scripts/e2e-panel.mjs",
     "package": "node scripts/package-zxp.mjs",
     "dev:install": "node scripts/dev-install.mjs",
-    "format": "prettier --write \"src/**/*.{ts,svelte,css}\" \"scripts/**/*.mjs\" \"tests/**/*.ts\""
+    "format": "prettier --write \"src/**/*.{ts,svelte,css}\" \"scripts/**/*.{mjs,ts}\" \"tests/**/*.ts\""
   },
   "devDependencies": {
     "@resvg/resvg-js": "^2.6.2",
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "@types/pngjs": "^6.0.5",
+    "@typescript/native": "npm:typescript@^7.0.2",
     "esbuild": "^0.28.2",
     "esbuild-svelte": "^0.9.5",
     "pixelmatch": "^8.0.0",
     "playwright-core": "^1.64.1",
     "pngjs": "^7.0.0",
-    "prettier": "^3.9.10",
-    "svelte": "^5.57.2",
-    "typescript": "^7.0.2",
+    "prettier": "3.9.10",
+    "prettier-plugin-svelte": "^4.1.1",
+    "svelte": "^5.57.3",
+    "svelte-check": "^4.7.7",
+    "typescript": "^6.0.3",
     "vitest": "^5.0.5"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
   }
 }

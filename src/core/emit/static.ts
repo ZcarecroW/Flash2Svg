@@ -25,10 +25,12 @@ export interface StaticOptions {
 	embedImages: boolean;
 	textAsOutlines: boolean;
 	pretty?: boolean;
+	/** Start of every id (see ExportSettings.idPrefix). */
+	idPrefix?: string;
 }
 
 export function renderStatic(ctx: Context, rootId: string, opts: StaticOptions): { svg: string; assets: OutputDoc["assets"] } {
-	const doc = new OutputDoc(ctx, { embedImages: opts.embedImages, idPrefix: "" });
+	const doc = new OutputDoc(ctx, { embedImages: opts.embedImages, idPrefix: opts.idPrefix ?? "" });
 	const root = svgRoot(ctx);
 	if (opts.includeBackground) {
 		const d = ctx.model.doc;
@@ -137,15 +139,7 @@ export class StaticRenderer {
 				return art ? this.doc.useArt(art) : null;
 			}
 			case "bitmap": {
-				const b = this.doc.bitmap(item.bitmap);
-				if (!b) return null;
-				return el("image", {
-					"xlink:href": b.href,
-					width: b.width,
-					height: b.height,
-					transform: fmtMatrix(item.matrix, this.ctx.digits) || undefined,
-					"image-rendering": b.smoothing ? undefined : "pixelated",
-				});
+				return this.doc.image(item.bitmap, item.matrix);
 			}
 			case "text":
 				if (this.opts.textAsOutlines || item.element.textType === "static") return item.art ? this.doc.useArt(item.art) : null;

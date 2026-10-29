@@ -218,8 +218,36 @@ export function buildFilters(filters: FilterData[], scale: { x: number; y: numbe
 				prims.push(el("feGaussianBlur", { in: a, stdDeviation: std, result: blur }));
 				const o1 = id(),
 					o2 = id();
-				prims.push(el("feOffset", { in: blur, dx: fmt(-dx / 2, 3), dy: fmt(-dy / 2, 3), result: o1 }));
-				prims.push(el("feOffset", { in: blur, dx: fmt(dx / 2, 3), dy: fmt(dy / 2, 3), result: o2 }));
+				// Flash compares the blurred alpha at +distance and -distance along the angle (the full
+				// distance each way, as Ruffle does; matches Animate's output pixel for pixel)
+				prims.push(el("feOffset", { in: blur, dx: fmt(-dx, 3), dy: fmt(-dy, 3), result: o1 }));
+				prims.push(el("feOffset", { in: blur, dx: fmt(dx, 3), dy: fmt(dy, 3), result: o2 }));
+				if (f.name === "gradientBevelFilter") {
+					// the signed bevel value picks the colour: ratio 0 = shadow side, 128 = flat, 255 = highlight
+					const t = id();
+					prims.push(el("feComposite", { in: o1, in2: o2, operator: "arithmetic", k1: 0, k2: fmt(strength / 2, 3), k3: fmt(-strength / 2, 3), k4: 0.5, result: t }));
+					const spread = id();
+					prims.push(el("feColorMatrix", { in: t, type: "matrix", values: "0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0", result: spread }));
+					const tables = gradientTables(f, false);
+					let effect = id();
+					prims.push(
+						el("feComponentTransfer", { in: spread, result: effect }, [
+							el("feFuncR", { type: "table", tableValues: tables.r }),
+							el("feFuncG", { type: "table", tableValues: tables.g }),
+							el("feFuncB", { type: "table", tableValues: tables.b }),
+							el("feFuncA", { type: "table", tableValues: tables.a }),
+						]),
+					);
+					if (type === "inner" || type === "outer") {
+						const m = id();
+						prims.push(el("feComposite", { in: effect, in2: src, operator: type === "inner" ? "in" : "out", result: m }));
+						effect = m;
+					}
+					const out = id();
+					prims.push(el("feMerge", { result: out }, [...(f.knockout ? [] : [el("feMergeNode", { in: src })]), el("feMergeNode", { in: effect })]));
+					src = out;
+					break;
+				}
 				const hiA = id(),
 					shA = id();
 				prims.push(el("feComposite", { in: o1, in2: o2, operator: "arithmetic", k1: 0, k2: fmt(strength, 3), k3: fmt(-strength, 3), k4: 0, result: hiA }));
@@ -243,10 +271,8 @@ export function buildFilters(filters: FilterData[], scale: { x: number; y: numbe
 					}
 					layers.push(r);
 				};
-				if (f.name === "gradientBevelFilter") warn("Gradient bevel is approximated with its first and last colours");
-				const colors = Array.isArray(f.colorArray) ? (f.colorArray as unknown[]) : null;
-				paint(hiA, colors ? colors[colors.length - 1] : (f.highlightColor ?? "#FFFFFF"));
-				paint(shA, colors ? colors[0] : (f.shadowColor ?? "#000000"));
+				paint(hiA, f.highlightColor ?? "#FFFFFF");
+				paint(shA, f.shadowColor ?? "#000000");
 				const out = id();
 				const nodes = [...(f.knockout ? [] : [el("feMergeNode", { in: src })]), ...layers.map((l) => el("feMergeNode", { in: l }))];
 				prims.push(el("feMerge", { result: out }, nodes));
@@ -316,7 +342,8 @@ function invertAlpha(prims: XmlNode[], src: string, id: () => string): string {
 	return r;
 }
 
-function gradientTables(f: FilterData): { r: string; g: string; b: string; a: string } {
+/** Gradient lookup tables indexed by 0..1 (= ratio 0..255). Glows also fade the colour with the index (their blurred alpha). */
+function gradientTables(f: FilterData, fadeWithIndex = true): { r: string; g: string; b: string; a: string } {
 	const colors = (Array.isArray(f.colorArray) ? f.colorArray : ["#FFFFFF00", "#FFFFFF"]) as unknown[];
 	const ratios = (Array.isArray(f.posArray) ? f.posArray : colors.map((_, i) => (i / Math.max(1, colors.length - 1)) * 255)) as number[];
 	const stops = colors.map((c, i) => ({ ...splitColor(c), pos: n(ratios[i], 0) / 255 }));
@@ -344,7 +371,7 @@ function gradientTables(f: FilterData): { r: string; g: string; b: string; a: st
 		r.push(fmt(s.r, 3));
 		g.push(fmt(s.g, 3));
 		b.push(fmt(s.b, 3));
-		a.push(fmt(s.a * (i / N), 3));
+		a.push(fmt(fadeWithIndex ? s.a * (i / N) : s.a, 3));
 	}
 	return { r: r.join(" "), g: g.join(" "), b: b.join(" "), a: a.join(" ") };
 }

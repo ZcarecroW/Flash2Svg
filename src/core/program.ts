@@ -16,6 +16,7 @@ import type {
 	InstanceElement,
 	Keyframe,
 	LayerData,
+	LayerEffect,
 	Mat,
 	Point,
 	SceneModel,
@@ -111,6 +112,9 @@ export interface ProgramLayer {
 	rig?: (Mat | null)[];
 }
 
+/** Layer effects (advanced layers) are applied by wrapping the layer in a synced graphic. */
+const LAYER_FX = "#fx";
+
 export type FrameAction =
 	| { type: "stop" }
 	| { type: "play" }
@@ -118,6 +122,8 @@ export type FrameAction =
 
 export interface Program {
 	id: string;
+	/** Derived copies (9-slice): the timeline this program was made from. */
+	source?: string;
 	name: string;
 	kind: TimelineData["kind"];
 	frameCount: number;
@@ -181,7 +187,137 @@ export function buildPrograms(model: SceneModel, opts: CompileOptions): CompileR
 	for (const id in model.timelines) {
 		programs[id] = buildProgram(model.timelines[id]!, opts, warnings, model.doc);
 	}
+	for (const id in model.timelines) {
+		wrapLayerEffects(programs, programs[id]!, model.timelines[id]!, warnings);
+		wrapRigs(programs, programs[id]!, opts);
+	}
 	return { programs, warnings };
+}
+
+/**
+ * Advanced layers can carry a colour effect, filters and a blend mode that apply to the layer's
+ * whole content. The layer's items move into a graphic symbol that follows the timeline frame by
+ * frame, and the effects become that instance's colour, filters and blend mode.
+ */
+/**
+ * Layer parenting: Animate gives the parent's matrix for every frame of the child layer. The
+ * layer's items move into a synced graphic symbol whose instance follows those matrices, so the
+ * animated outputs move children with their parent (between frames the matrix is interpolated).
+ */
+function wrapRigs(programs: Record<string, Program>, prog: Program, opts: CompileOptions) {
+	for (const pl of prog.layers) {
+		const rig = pl.rig;
+		if (!rig?.length || !pl.items.length) continue;
+		const id = `${prog.id}#rig${pl.index}`;
+		programs[id] = {
+			id,
+			name: `${prog.name} ${pl.name}`,
+			kind: "graphic",
+			frameCount: prog.frameCount,
+			layers: [{ index: 0, name: pl.name, type: "normal", maskedBy: -1, items: pl.items }],
+			labels: [],
+			actions: {},
+		};
+		const transform = emptyTracks(TRANSFORM_PROPS);
+		let prevRot: number | undefined, prevSkw: number | undefined;
+		for (let f = 0; f < prog.frameCount; f++) {
+			const p = toProps(rig[Math.min(f, rig.length - 1)] ?? [1, 0, 0, 1, 0, 0], { x: 0, y: 0 });
+			if (prevRot !== undefined) p.rot = nearestAngle(p.rot, prevRot);
+			if (prevSkw !== undefined) p.skw = nearestAngle(p.skw, prevSkw);
+			prevRot = p.rot;
+			prevSkw = p.skw;
+			for (const k of TRANSFORM_PROPS) transform[k].push({ t: f, v: p[k], ease: opts.smooth ? "linear" : "hold" });
+		}
+		for (const k of TRANSFORM_PROPS) {
+			transform[k] = simplify(transform[k], TOL[k] / 2);
+			closeTrack(transform[k]);
+		}
+		const bounds = pl.items.find((it): it is InstanceItem => it.kind === "instance")?.bounds ?? { left: 0, top: 0, width: 50, height: 50 };
+		const wrapper: InstanceItem = {
+			kind: "instance",
+			uid: `${prog.id}|${pl.index}|rig`,
+			start: 0,
+			end: prog.frameCount,
+			slot: 0,
+			symbol: id,
+			symbolType: "graphic",
+			name: "",
+			transform,
+			color: null,
+			filters: [],
+			blendMode: "normal",
+			visible: true,
+			cacheAsBitmap: false,
+			bounds,
+			graphic: [{ start: 0, end: prog.frameCount, loop: "play once", firstFrame: 0, lastFrame: prog.frameCount - 1 }],
+		};
+		pl.items = [wrapper];
+		delete pl.rig;
+	}
+}
+
+function wrapLayerEffects(programs: Record<string, Program>, prog: Program, tl: TimelineData, warnings: string[]) {
+	for (const pl of prog.layers) {
+		const fx = tl.layers[pl.index]?.effects;
+		if (!fx?.length || pl.type === "mask" || !pl.items.length) continue;
+		const entries: LayerEffect[] = [...fx].sort((a, b) => a.frame - b.frame);
+		const id = `${prog.id}${LAYER_FX}${pl.index}`;
+		programs[id] = {
+			id,
+			name: `${prog.name} ${pl.name}`,
+			kind: "graphic",
+			frameCount: prog.frameCount,
+			layers: [{ index: 0, name: pl.name, type: "normal", maskedBy: -1, items: pl.items }],
+			labels: [],
+			actions: {},
+		};
+		const hold = (v: number, t = 0): Track => [{ t, v, ease: "hold" }];
+		const transform = Object.fromEntries(TRANSFORM_PROPS.map((k) => [k, hold(k === "sx" || k === "sy" ? 1 : 0)])) as TransformTracks;
+		let color: ColorTracks | null = emptyTracks(COLOR_PROPS);
+		for (const e of entries) {
+			const c = colorProps(e.color ?? null);
+			for (const k of COLOR_PROPS) {
+				const t = color[k];
+				if (!t.length || t[t.length - 1]!.v !== c[k]) t.push({ t: e.frame, v: c[k], ease: "hold" });
+			}
+		}
+		for (const k of COLOR_PROPS) if (color[k][0]!.t > 0) color[k].unshift({ t: 0, v: k.endsWith("P") ? 100 : 0, ease: "hold" });
+		if (COLOR_PROPS.every((k) => color![k].every((key) => key.v === (k.endsWith("P") ? 100 : 0)))) color = null;
+		const filters: InstanceItem["filters"] = [];
+		for (const e of entries) {
+			const list = (e.filters ?? []).filter((x) => x.enabled !== false);
+			if (JSON.stringify(list) !== JSON.stringify(filters[filters.length - 1]?.filters ?? [])) filters.push({ t: e.frame, filters: list });
+		}
+		if (filters.length && filters[0]!.t > 0) filters.unshift({ t: 0, filters: [] });
+		const modes = [...new Set(entries.map((e) => e.blendMode ?? "normal"))];
+		if (modes.length > 1) warnings.push(`Layer ${pl.name}: changing layer blend modes are not animated`);
+		let box: { l: number; t: number; r: number; b: number } | null = null;
+		for (const it of pl.items) {
+			const b = it.kind === "instance" ? it.bounds : it.kind === "text" ? it.element.bounds : null;
+			if (!b) continue;
+			const r = { l: b.left, t: b.top, r: b.left + b.width, b: b.top + b.height };
+			box = box ? { l: Math.min(box.l, r.l), t: Math.min(box.t, r.t), r: Math.max(box.r, r.r), b: Math.max(box.b, r.b) } : r;
+		}
+		const wrapper: InstanceItem = {
+			kind: "instance",
+			uid: `${prog.id}|${pl.index}|fx`,
+			start: 0,
+			end: prog.frameCount,
+			slot: 0,
+			symbol: id,
+			symbolType: "graphic",
+			name: "",
+			transform,
+			color,
+			filters,
+			blendMode: modes.find((m) => m !== "normal") ?? "normal",
+			visible: true,
+			cacheAsBitmap: false,
+			bounds: box ? { left: box.l, top: box.t, width: box.r - box.l, height: box.b - box.t } : { left: 0, top: 0, width: 50, height: 50 },
+			graphic: [{ start: 0, end: prog.frameCount, loop: "play once", firstFrame: 0, lastFrame: prog.frameCount - 1 }],
+		};
+		pl.items = [wrapper];
+	}
 }
 
 function layerIncluded(layers: LayerData[], i: number, opts: CompileOptions): boolean {

@@ -16,3 +16,6 @@ tools/probe/*-result.txt
 # Written by Animate into its working directory
 *.tmp/
 tools/zxpsign/
+
+# svelte-check --tsgo working folder
+.svelte-check/

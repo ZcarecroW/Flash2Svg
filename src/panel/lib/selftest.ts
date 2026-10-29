@@ -13,6 +13,12 @@ interface SelfTestJob {
 	settings?: Partial<ExportSettings>;
 	source?: "timeline" | "library";
 	frames?: "all" | "current" | "range";
+	rangeStart?: number;
+	rangeEnd?: number;
+	/** Library items to select before exporting (for source "library"). */
+	select?: string[];
+	/** JSFL to run on the opened document before exporting. */
+	jsfl?: string;
 }
 
 interface SelfTestConfig {
@@ -36,6 +42,12 @@ export async function runSelfTestIfRequested(): Promise<boolean> {
 		const t0 = Date.now();
 		try {
 			await evalScript(`fl.openDocument(${JSON.stringify(toFileUri(job.fla))}) ? "ok" : "fail"`);
+			if (job.select) {
+				await evalScript(
+					`(function(){var l=fl.getDocumentDOM().library;l.selectNone();var n=${JSON.stringify(job.select)};for(var i=0;i<n.length;i++)l.selectItem(n[i],false);return "ok";})()`,
+				);
+			}
+			if (job.jsfl) await evalScript(job.jsfl);
 			const info = await docInfo();
 			const progress: string[] = [];
 			const res = await runExport(
@@ -43,8 +55,8 @@ export async function runSelfTestIfRequested(): Promise<boolean> {
 					settings: { ...DEFAULT_SETTINGS, ...(job.settings ?? {}) },
 					source: job.source ?? "timeline",
 					frames: job.frames ?? "all",
-					rangeStart: 1,
-					rangeEnd: info.frameCount ?? 1,
+					rangeStart: job.rangeStart ?? 1,
+					rangeEnd: job.rangeEnd ?? info.frameCount ?? 1,
 					output: job.output,
 				},
 				info,
@@ -53,13 +65,22 @@ export async function runSelfTestIfRequested(): Promise<boolean> {
 				},
 				() => false,
 			);
-			log({ fla: job.fla, ok: true, files: res.files, bytes: res.output.reduce((n, o) => n + o.stats.bytes, 0), warnings: res.warnings, seconds: res.seconds, steps: progress.length, docType: info.type });
+			log({ fla: job.fla, ok: true, format: res.format, files: res.files, bytes: res.output.reduce((n, o) => n + o.stats.bytes, 0), warnings: res.warnings, seconds: res.seconds, steps: progress.length, docType: info.type });
 		} catch (e) {
 			log({ fla: job.fla, ok: false, error: (e as Error).message, seconds: (Date.now() - t0) / 1000 });
 		}
 		await evalScript("fl.closeAll(false)").catch(() => "");
 	}
 	node.fs.writeFileSync(cfg.result, JSON.stringify({ done: true, results }, null, 1));
-	if (cfg.quit) await evalScript("fl.quit(false)").catch(() => "");
+	if (cfg.quit) {
+		// Close this panel before Animate quits: Animate saves the workspace on quit, and a panel
+		// saved as open whose extension is later removed makes Animate quit whenever a document
+		// window opens. The quit request is queued first; it runs after the panel is gone.
+		const cep = window.__adobe_cep__;
+		if (cep?.closeExtension) {
+			cep.evalScript("fl.quit(false)", () => {});
+			cep.closeExtension();
+		} else await evalScript("fl.quit(false)").catch(() => "");
+	}
 	return true;
 }

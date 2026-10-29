@@ -1,6 +1,6 @@
 ﻿// E2E step 2 (Node): renders frames of each extracted fixture with the static renderer,
 // rasterises them with resvg and compares against Animate's own PNG export.
-// Usage: node scripts/e2e-compare.ts [name,name,...] [--every=N] [--threshold=0.01]
+// Usage: node scripts/e2e-compare.ts [name,name,...] [--every=N] [--threshold=0.003]
 import { Resvg } from "@resvg/resvg-js";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -16,11 +16,14 @@ const out = join(repo, "tests", "out");
 const args = process.argv.slice(2);
 const opt = (k: string, d: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d;
 const every = parseInt(opt("every", "6"), 10);
-const threshold = parseFloat(opt("threshold", "0.01"));
+// Share of pixels that may differ from Animate's PNG: anti-aliasing and font hinting only.
+const threshold = parseFloat(opt("threshold", "0.003"));
 const list = args.find((a) => !a.startsWith("--"));
-// Known approximations: Flash's box-blur based bevel/shadow filters vs SVG Gaussian blur, and
-// "add" blending that resvg can't render (browsers do).
-const TOLERANCE: Record<string, number> = { "f08-filters": 0.03 };
+// Known renderer gap: resvg can't do "add" blending (plus-lighter; browsers render it exactly) and
+// blurs drop shadows slightly differently. In Edge every f08 filter matches Animate within 0.03%.
+// f22: Animate snaps the strokes of the scaled 9-slice panel to whole pixels and hints the
+// dynamic text; our geometry is the unsnapped one.
+const TOLERANCE: Record<string, number> = { "f08-filters": 0.03, "f22-layers": 0.006 };
 const names = list ? list.split(",") : readdirSync(out).filter((d) => existsSync(join(out, d, "model", "scene.json")));
 
 interface Row {
@@ -41,7 +44,7 @@ for (const name of names) {
 			readText: (rel) => readFileSync(join(modelDir, rel), "utf8"),
 			readBinary: (rel) => readFileSync(join(modelDir, rel)),
 		},
-		{ smooth: true, includeHiddenLayers: true, includeGuides: false, digits: 2 },
+		{ smooth: true, includeHiddenLayers: false, includeGuides: false, digits: 2 },
 	);
 	const root = model.roots[0]!;
 	const count = ctx.programs[root]!.frameCount;

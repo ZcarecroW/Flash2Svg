@@ -3,7 +3,10 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import pngjs from "pngjs";
 import { runJsfl } from "./lib/animate.mjs";
+
+const { PNG } = pngjs;
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
 const flaDir = join(repo, "tests", "fixtures", "fla");
@@ -31,6 +34,24 @@ mkdirSync(assets, { recursive: true });
 	buf.writeUInt32LE(n * 2, 40);
 	for (let i = 0; i < n; i++) buf.writeInt16LE(Math.round(Math.sin((i / rate) * 2 * Math.PI * 880) * 8000 * (1 - i / n)), 44 + i * 2);
 	writeFileSync(join(assets, "beep.wav"), buf);
+}
+
+// A small RGB picture with distinct quadrants for the bitmap fixture.
+{
+	const w = 64,
+		h = 48;
+	const png = new PNG({ width: w, height: h });
+	for (let y = 0; y < h; y++)
+		for (let x = 0; x < w; x++) {
+			const i = (y * w + x) * 4;
+			const q = (x < w / 2 ? 0 : 1) + (y < h / 2 ? 0 : 2);
+			const c = [[230, 40, 40], [40, 180, 60], [40, 80, 220], [240, 200, 30]][q];
+			png.data[i] = c[0];
+			png.data[i + 1] = c[1];
+			png.data[i + 2] = c[2];
+			png.data[i + 3] = 255;
+		}
+	writeFileSync(join(assets, "checker.png"), PNG.sync.write(png));
 }
 
 const onlyFile = join(flaDir, "fixtures-only.txt");

@@ -2,10 +2,10 @@
  * Output SVG document under construction: collects <defs> (artwork, filters, masks, symbols)
  * with unique ids and serialises the result.
  */
-import type { Artwork } from "../artwork.ts";
+import { prefixArtwork, type Artwork } from "../artwork.ts";
 import type { Context } from "../context.ts";
-import { fmt } from "../geom.ts";
-import type { FilterData } from "../model.ts";
+import { fmt, fmtMatrix } from "../geom.ts";
+import type { FilterData, Mat } from "../model.ts";
 import { cdata, el, serialize, type XmlNode } from "../xml.ts";
 import { buildFilters, colorMatrix, matrixString, type ColorMatrixValues } from "./filters.ts";
 
@@ -34,8 +34,10 @@ export class OutputDoc {
 		this.opts = opts;
 	}
 
+	/** A new document-unique id; every id starts with `opts.idPrefix` (never added twice). */
 	uid(base: string): string {
-		let id = this.opts.idPrefix + base.replace(/[^A-Za-z0-9_-]/g, "_");
+		const p = this.opts.idPrefix;
+		let id = (p && base.startsWith(p) ? "" : p) + base.replace(/[^A-Za-z0-9_-]/g, "_");
 		if (!/^[A-Za-z_]/.test(id)) id = "_" + id;
 		let candidate = id;
 		let i = 1;
@@ -48,11 +50,14 @@ export class OutputDoc {
 	artwork(a: Artwork): string {
 		const done = this.artDone.get(a.id);
 		if (done) return done;
+		const key = a.id;
+		// artwork-internal ids (gradients...) get the document prefix too
+		a = prefixArtwork(a, this.opts.idPrefix);
 		for (const d of a.defs) this.defs.push(d);
 		const id = this.uid(a.id);
 		const body = a.body.name === "g" ? { ...a.body, attrs: { ...a.body.attrs, id } } : el("g", { id }, [a.body]);
 		this.defs.push(body);
-		this.artDone.set(a.id, id);
+		this.artDone.set(key, id);
 		return id;
 	}
 
@@ -78,6 +83,19 @@ export class OutputDoc {
 			this.bitmapDone.set(bitmapId, href);
 		}
 		return { href, width: b.width, height: b.height, smoothing: b.smoothing };
+	}
+
+	/** The <image> for a bitmap element (null if the bitmap is missing). */
+	image(bitmapId: string, matrix: Mat): XmlNode | null {
+		const b = this.bitmap(bitmapId);
+		if (!b) return null;
+		return el("image", {
+			"xlink:href": b.href,
+			width: b.width,
+			height: b.height,
+			transform: fmtMatrix(matrix, this.ctx.digits) || undefined,
+			"image-rendering": b.smoothing ? undefined : "pixelated",
+		});
 	}
 
 	/** Filter for Animate filters + colour transform; returns url(#id) or null. */

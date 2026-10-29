@@ -47,6 +47,7 @@ function use(id: string): SVGElement {
 	return u;
 }
 
+// runtime ids start with the (prefixed, page-unique) id of the player svg: inline players don't clash
 let uidCounter = 0;
 
 /** A running timeline (root, movie clip, graphic or button instance). */
@@ -74,7 +75,7 @@ class Clip {
 		tl.ly.forEach((l, i) => {
 			let g = el("g") as SVGGElement;
 			if (l.m) {
-				const id = `f2s_m${uidCounter++}`;
+				const id = `${player.svg.id}_m${uidCounter++}`;
 				const mask = el("mask", { id });
 				const inner = el("g", { filter: `url(#${this.P.mf})` }) as SVGGElement;
 				mask.appendChild(inner);
@@ -155,6 +156,7 @@ class Clip {
 				if (next >= this.tl.n) next = this.kind === -1 && !this.player.loop ? this.frame : 0;
 				if (this.kind === -1 && next === this.frame && next === this.tl.n - 1) {
 					this.playing = false;
+					this.ended = true;
 					this.player.emit({ type: "end", frame: this.frame });
 				}
 				this.frame = next;
@@ -220,7 +222,11 @@ class Clip {
 		}
 	}
 
+	/** Root only: stopped because the end was reached without looping (not by a stop() script). */
+	ended = false;
+
 	gotoFrame(f: number, play: boolean) {
+		this.ended = false;
 		this.frame = f;
 		this.playing = play;
 		this.enteredFrame = -1;
@@ -312,7 +318,7 @@ class Inst {
 				this.node.setAttribute("opacity", String(Math.max(0, cv[3]!) / 100));
 			} else {
 				if (!this.cm) {
-					const id = `f2s_c${uidCounter++}`;
+					const id = `${this.owner.player.svg.id}_c${uidCounter++}`;
 					const f = el("filter", { id, "color-interpolation-filters": "sRGB" });
 					this.cm = el("feColorMatrix", { type: "matrix" });
 					f.appendChild(this.cm);
@@ -402,7 +408,7 @@ class Player {
 	readonly defs: SVGDefsElement;
 	root!: Clip;
 	loop = true;
-	muted = false;
+	private mute = false;
 	speed = 1;
 	named = new Map<string, Clip>();
 	inTick = false;
@@ -432,6 +438,15 @@ class Player {
 		this.root.render(0);
 	}
 
+	get muted() {
+		return this.mute;
+	}
+	set muted(v: boolean) {
+		this.mute = v;
+		// silence what is already playing, too
+		if (v) for (const list of this.audio.values()) list.forEach((a) => a.pause());
+	}
+
 	emit(e: { type: string; frame: number; label?: string }) {
 		for (const l of this.listeners[e.type] ?? []) l(e);
 	}
@@ -454,6 +469,7 @@ class Player {
 		let left = Math.max(1, loops);
 		a.addEventListener("ended", () => {
 			if (--left > 0) a.play().catch(() => {});
+			else list.splice(list.indexOf(a) >>> 0, 1);
 		});
 		if (sync === 3) setTimeout(() => a.pause(), (frames / this.P.fps) * 1000);
 		a.play().catch(() => {});
@@ -484,7 +500,10 @@ class Player {
 	}
 
 	play() {
-		this.root.playing = true;
+		const r = this.root;
+		// a non-looping animation that ran to its end plays again from the start
+		if (!this.loop && !r.playing && r.ended) r.gotoFrame(0, true);
+		r.playing = true;
 		if (this.running) return;
 		this.running = true;
 		this.last = performance.now();

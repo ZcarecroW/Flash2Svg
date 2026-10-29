@@ -181,10 +181,7 @@ class Writer {
 				break;
 			case "bitmap": {
 				const it = n.item as Extract<typeof n.item, { kind: "bitmap" }>;
-				const b = this.doc.bitmap(it.bitmap);
-				content = b
-					? el("image", { "xlink:href": b.href, width: b.width, height: b.height, transform: fmtMatrix(it.matrix, this.ctx.digits) || undefined })
-					: null;
+				content = this.doc.image(it.bitmap, it.matrix);
 				break;
 			}
 			case "text": {
@@ -574,6 +571,9 @@ class Writer {
 		const pct = (t: number) => (t <= 0 ? "0" : String(Math.floor((t / this.H) * 1e6) / 1e4)) + "%";
 		if (!steps.length || steps[0]!.t > 0) frames.push(`0%{${prop}:${off}}`);
 		for (const s of steps) frames.push(`${pct(s.t)}{${prop}:${s.v}}`);
+		// explicit end value: without it a non-repeating animation ends ("fill: both") on the
+		// element's own attribute (e.g. visibility="hidden") instead of the last step
+		frames.push(`100%{${prop}:${steps.length ? steps[steps.length - 1]!.v : off}}`);
 		this.cssRule(node, name, frames, "step-end");
 	}
 

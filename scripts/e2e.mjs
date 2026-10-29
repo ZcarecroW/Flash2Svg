@@ -2,7 +2,9 @@
 //   1. builds the fixture FLAs (only if missing, or with --rebuild)
 //   2. extracts each fixture inside Animate (+ Animate's own PNG renderings)
 //   3. compares static renders with Animate's PNGs (resvg)
-//   4. checks SMIL / CSS / JS player output frame by frame in the browser
+//   4. checks SMIL / CSS / JS player output frame by frame in the browser (smooth and --steps)
+//   5. checks the JS player's API and interaction (labels, goto, loop, start modes, buttons, sounds)
+//   6. inlines several exports into one HTML page (ids must not clash)
 // Usage: node scripts/e2e.mjs [names] [--rebuild] [--skip-animate]
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
@@ -27,5 +29,8 @@ if (!args.includes("--skip-animate")) {
 }
 failed += run("e2e-compare.ts", names ? [names] : []);
 failed += run("e2e-browser.ts", [...(names ? [names] : []), "--formats=smil,css,player"]);
+failed += run("e2e-browser.ts", [...(names ? [names] : []), "--formats=smil,css,player", "--steps"]);
+if (!names) failed += run("e2e-player.ts");
+if (!names) failed += run("e2e-inline.ts");
 console.log(failed ? `\nE2E: ${failed} step(s) reported failures` : "\nE2E: all good");
 process.exitCode = failed ? 1 : 0;
