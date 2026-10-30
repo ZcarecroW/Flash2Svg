@@ -2,6 +2,8 @@
 // playwright-core). At sampled frame times the animation is paused & seeked, screenshotted and
 // compared with the static renderer's frame rendered in the same browser.
 // --steps: export without interpolation (one step per frame) and check halfway between frames.
+// After a stop() on the root timeline, ticks into the looping tail of the running movie clips are
+// checked too (reported as negative "frames").
 // Usage: node scripts/e2e-browser.ts [name,...] [--formats=smil,css] [--every=4] [--browser=msedge] [--steps] [--threshold=0.0015]
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -10,6 +12,9 @@ import pixelmatch from "pixelmatch";
 import { chromium } from "playwright-core";
 import { PNG } from "pngjs";
 import { compileScene, type OutputFormat } from "../src/core/compile.ts";
+import { createContext } from "../src/core/context.ts";
+import { renderStatic } from "../src/core/emit/static.ts";
+import { playhead } from "../src/core/emit/timing.ts";
 import type { SceneModel } from "../src/core/model.ts";
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -75,6 +80,16 @@ for (const name of names) {
 	const { width, height, frameRate } = model.doc;
 	const statics = compileScene(model, files, { format: "static", includeBackground: true });
 	const frameCount = statics.files.length;
+	// A root that stops (stop() script) leaves its movie clips running: check ticks after the stop,
+	// into the looping tail, against static renders of the last frame at those ticks.
+	const ctx = createContext(model, files, { smooth: true, includeHiddenLayers: true, includeGuides: false, digits: 2 });
+	const rootId = model.roots[0]!;
+	const ph = playhead(ctx.programs[rootId]!);
+	// after the stop, around the end of the first pass (SMIL/CSS switch to the tail there) and in the tail
+	const firstStats = compileScene(model, files, { format: "smil" }).stats;
+	const firstPass = firstStats.loopFrom ?? firstStats.frames;
+	const stopTicks = !steps && !ph.cycle.length ? [...new Set([ph.prefix.length, ph.prefix.length + 6, firstPass - 1, firstPass + 3, firstPass + 29, 2 * firstPass + 11])] : [];
+	const stopFrame = ph.prefix[ph.prefix.length - 1] ?? 0;
 	for (const format of formats) {
 		const anim = compileScene(model, files, { format, includeBackground: true, smooth: !steps });
 		const file = join(dir, `${format}${steps ? "-steps" : ""}.svg`);
@@ -101,6 +116,24 @@ for (const name of names) {
 			if (ratio > worst) {
 				worst = ratio;
 				worstFrame = f + 1;
+			}
+		}
+		for (const t of stopTicks) {
+			const sfile = join(dir, `static-t${t}.svg`);
+			writeFileSync(sfile, renderStatic(ctx, rootId, { frame: stopFrame, ticks: t, movieClips: "play", includeBackground: true, embedImages: true, textAsOutlines: true }).svg);
+			const ref = await shot(sfile, width, height, null);
+			const got = await shot(file, width, height, { format, time: (t + 0.02) / frameRate });
+			const diff = new PNG({ width: ref.width, height: ref.height });
+			const ratio = pixelmatch(ref.data, got.data, diff.data, ref.width, ref.height, { threshold: 0.15, includeAA: false }) / (ref.width * ref.height);
+			n++;
+			if (ratio <= limit(name, format)) ok++;
+			else {
+				writeFileSync(join(dir, `${format}-t${t}-got.png`), PNG.sync.write(got));
+				writeFileSync(join(dir, `${format}-t${t}-diff.png`), PNG.sync.write(diff));
+			}
+			if (ratio > worst) {
+				worst = ratio;
+				worstFrame = -t;
 			}
 		}
 		// the end state of a non-looping export: everything holds the last frame

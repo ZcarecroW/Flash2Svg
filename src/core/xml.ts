@@ -36,11 +36,12 @@ function decode(s: string): string {
 	});
 }
 
+// one scan for the common case of nothing to escape (path data, numbers)
 export function escapeText(s: string): string {
-	return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+	return /[&<>]/.test(s) ? s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") : s;
 }
 export function escapeAttr(s: string): string {
-	return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;").replace(/\n/g, "&#10;");
+	return /[&<"\n]/.test(s) ? s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;").replace(/\n/g, "&#10;") : s;
 }
 
 /** Parses an XML document and returns its root element. Comments, PIs and doctype are dropped. */

@@ -62,7 +62,8 @@ export interface CompileOutput {
 	/** Files to copy next to the output (sidecar images, sounds), relative to scene.json. */
 	assets: { path: string; source: string }[];
 	warnings: string[];
-	stats: { durationSeconds: number; frames: number; bytes: number };
+	/** frames: ticks of the first pass (SMIL/CSS: the horizon; `loopFrom`: where a looping tail starts after a stop()). */
+	stats: { durationSeconds: number; frames: number; bytes: number; loopFrom?: number };
 }
 
 export function compileScene(model: SceneModel, files: FileSource, partial: Partial<ExportSettings> = {}, rootIndex = 0): CompileOutput {
@@ -128,6 +129,7 @@ export function compileScene(model: SceneModel, files: FileSource, partial: Part
 		r.assets.forEach((a) => assets.set(a.path, a));
 		out.stats.frames = r.horizon.ticks;
 		out.stats.durationSeconds = r.horizon.ticks / r.horizon.fps;
+		if (r.horizon.tail) out.stats.loopFrom = r.horizon.tail;
 	}
 	out.assets = [...assets.values()];
 	out.stats.bytes = out.files.reduce((n, f) => n + f.svg.length, 0);

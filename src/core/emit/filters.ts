@@ -379,6 +379,25 @@ function gradientTables(f: FilterData, fadeWithIndex = true): { r: string; g: st
 // ---------------------------------------------------------------------------------- blend modes
 
 /** CSS mix-blend-mode for an Animate blend mode, or null. */
+/** Blend modes drawn with a white copy of the element. */
+export function blendWhite(mode: string): boolean {
+	return mode === "invert";
+}
+
+/**
+ * Subtract (backdrop - element) has no CSS mode: invert the backdrop with an opaque white copy,
+ * add the element, invert again: 1 - ((1 - b) + a·e) = b - a·e, clamped like Flash (also for
+ * partly transparent and anti-aliased pixels, as both inversions cover the same pixels).
+ */
+export function blendSubtract(mode: string): boolean {
+	return mode === "subtract";
+}
+
+/** Blend modes that only change what is below them (not supported yet: the element is left out). */
+export function blendHides(mode: string): boolean {
+	return mode === "erase" || mode === "alpha";
+}
+
 export function cssBlendMode(mode: string, warn: (m: string) => void): string | null {
 	switch (mode) {
 		case "normal":
@@ -397,8 +416,13 @@ export function cssBlendMode(mode: string, warn: (m: string) => void): string | 
 		case "add":
 			return "plus-lighter";
 		case "invert":
-			warn("Blend mode 'invert' is approximated with 'difference'");
-			return "difference";
+			return "difference"; // of a white copy (see blendWhite): 1 - backdrop
+		case "subtract":
+			return "plus-lighter"; // between two white "difference" copies (see blendSubtract)
+		case "erase":
+		case "alpha":
+			warn(`Blend mode '${mode}' only works inside a symbol placed with the "layer" blend: the element is left out`);
+			return null;
 		case "layer":
 			return null; // handled as isolation
 		default:

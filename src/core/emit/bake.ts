@@ -27,6 +27,11 @@ export interface Horizon {
 	ticks: number;
 	loop: boolean;
 	fps: number;
+	/**
+	 * Not looping, but movie clips keep running after the root timeline stopped (Flash semantics):
+	 * after one pass the ticks [tail, ticks) repeat forever. 0 = no such tail.
+	 */
+	tail: number;
 }
 
 export interface BakeOptions {
@@ -112,6 +117,8 @@ export function bake(ctx: Context, rootId: string, opts: BakeOptions): BakeResul
 	// Movie clips that live for the whole root timeline keep running across the loop: extend the
 	// horizon to a common multiple so they come round exactly.
 	let H = frames.length;
+	// set when running movie clips have no common period within maxTicks
+	let tooLong = false;
 	if (loop) {
 		for (const layer of prog.layers) {
 			for (const it of layer.items) {
@@ -122,15 +129,83 @@ export function bake(ctx: Context, rootId: string, opts: BakeOptions): BakeResul
 				if (ph.prefix.length || !ph.cycle.length) continue;
 				const l = lcm(H, ph.cycle.length);
 				if (l <= maxTicks) H = l;
+				else tooLong = true;
 			}
 		}
 	}
+	// A root that stops (stop() script) leaves its movie clips running: extend the horizon until
+	// they have played their intros, then loop their common period as a tail.
+	let tail = 0;
+	if (!loop && opts.loop !== "never" && opts.startFrame === undefined && opts.endFrame === undefined) {
+		const P = frames.length;
+		const last = frames[P - 1]!;
+		let start = P,
+			period = 1;
+		for (const layer of prog.layers) {
+			for (const it of layer.items) {
+				if (it.kind !== "instance" || it.symbolType !== "movie clip" || last < it.start || last >= it.end) continue;
+				const child = ctx.programs[it.symbol];
+				if (!child || child.frameCount <= 1) continue;
+				// age (ticks shown) of the clip when the root stops
+				let age = 0;
+				for (let t = P - 1; t >= 0 && frames[t]! >= it.start && frames[t]! < it.end; t--) age++;
+				start = Math.max(start, P + playhead(child).prefix.length - age);
+				const l = lcm(period, clipPeriod(ctx, child, maxTicks, 0));
+				if (l <= maxTicks) period = l;
+				else tooLong = true;
+			}
+		}
+		if (start + (period > 1 ? period : 0) > maxTicks) tooLong = true;
+		else {
+			if (period > 1) tail = start;
+			H = start + (period > 1 ? period : 0);
+		}
+	}
+	if (tooLong) {
+		const m = `Movie clips with loops of very different lengths keep running: SMIL/CSS repeat after ${Math.round(maxTicks / fps)} s at most, so some clips jump when the animation repeats (the JS player is exact)`;
+		if (!ctx.warnings.includes(m)) ctx.warnings.push(m);
+	}
 	const rootFrames = new Int32Array(H);
-	for (let t = 0; t < H; t++) rootFrames[t] = frames[t % frames.length]!;
+	for (let t = 0; t < H; t++) rootFrames[t] = t < frames.length ? frames[t]! : loop ? frames[t % frames.length]! : frames[frames.length - 1]!;
 
 	const baker = new Baker(ctx, opts.smooth, H);
 	const root = baker.timeline(prog, rootFrames, 0);
-	return { horizon: { ticks: H, loop, fps }, root, timelines: baker.all };
+	return { horizon: { ticks: H, loop, fps, tail }, root, timelines: baker.all };
+}
+
+/** Ticks after which a running movie clip (and the clips running inside it) repeats; 1 = it stops. */
+function clipPeriod(ctx: Context, prog: Program, max: number, depth: number): number {
+	const ph = playhead(prog);
+	let p = ph.cycle.length || 1;
+	if (depth > 8) return p;
+	const final = ph.cycle.length ? -1 : (ph.prefix[ph.prefix.length - 1] ?? 0);
+	for (const layer of prog.layers) {
+		for (const it of layer.items) {
+			if (it.kind !== "instance" || it.symbolType !== "movie clip") continue;
+			// looping: only clips that live through the whole timeline keep running across the loop;
+			// stopped: the clips on the frame it stopped at
+			if (final < 0 ? it.start > 0 || it.end < prog.frameCount : final < it.start || final >= it.end) continue;
+			const child = ctx.programs[it.symbol];
+			if (!child || child.frameCount <= 1) continue;
+			const l = lcm(p, clipPeriod(ctx, child, max, depth + 1));
+			if (l <= max) p = l;
+		}
+	}
+	return p;
+}
+
+/** The track up to `t`, then holding the value it has at `t`. */
+export function holdFrom(track: GTrack, t: number): GTrack {
+	const out = sliceTrack(track, 0, t);
+	push(out, { t, v: valueAt(track as Track, t), ease: "hold" });
+	return out;
+}
+
+/** The part of a track in [from, to), shifted to start at 0 (eased segments cut exactly). */
+export function sliceTrack(track: GTrack, from: number, to: number): GTrack {
+	const out: GTrack = [];
+	windowKeys(track as Track, from, to, -from, out);
+	return out;
 }
 
 function gcd(a: number, b: number): number {

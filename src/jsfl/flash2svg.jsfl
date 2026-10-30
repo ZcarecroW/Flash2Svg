@@ -191,7 +191,9 @@
 			total: 1,
 			srcDoc: src,
 			outDir: opts.outDir,
-			model: null
+			model: null,
+			// shapes whose strokes are checked for Linear RGB gradients once the SVG shows any
+			strokeChecks: []
 		};
 		if (!job.outDir) throw new Error("options.outDir is required");
 		if (FLfile.exists(job.outDir)) FLfile.remove(job.outDir);
@@ -255,10 +257,29 @@
 		job.rootRefs = roots;
 
 		// Work on a copy so the user's document can never be damaged.
-		job.copyUri = job.outDir + "/_source_copy.fla";
-		if (!src.saveAsCopy(job.copyUri)) throw new Error("Could not save a temporary copy of the document.");
-		job.doc = fl.openDocument(job.copyUri);
-		if (!job.doc) throw new Error("Could not open the temporary copy.");
+		// Some (older) documents come back as the open original when their first saved copy is
+		// opened: closing that "copy" would close the user's document. Try new copies, then the
+		// file as last saved.
+		job.copies = [];
+		for (var attempt = 0; attempt < 3 && !job.doc; attempt++) {
+			var uri = job.outDir + "/_source_copy" + (attempt || "") + ".fla";
+			if (!src.saveAsCopy(uri)) throw new Error("Could not save a temporary copy of the document.");
+			job.copies.push(uri);
+			var opened = fl.openDocument(uri);
+			if (opened && opened != src) job.doc = opened;
+		}
+		if (!job.doc && src.pathURI && FLfile.exists(src.pathURI)) {
+			var fileCopy = job.outDir + "/_source_file.fla";
+			if (FLfile.copy(src.pathURI, fileCopy)) {
+				job.copies.push(fileCopy);
+				var o = fl.openDocument(fileCopy);
+				if (o && o != src) {
+					job.doc = o;
+					job.lastSaved = true;
+				}
+			}
+		}
+		if (!job.doc) throw new Error("Could not open a temporary copy of the document.");
 		job.lib = job.doc.library;
 
 		var platform = fl.version.indexOf("MAC") == 0 ? "mac" : "win";
@@ -282,6 +303,7 @@
 			sounds: {},
 			warnings: []
 		};
+		if (job.lastSaved) warn("Animate could not open a copy of the document as it is now: the last saved version was exported (save first to include unsaved changes)");
 		job.atlasJobs = [];
 		job.pendingTimelines = [];
 		job.seen = {};
@@ -358,7 +380,8 @@
 			frameCount: tl.frameCount,
 			layers: []
 		};
-		if (item && get(item, "scalingGrid", false)) {
+		// HTML5 Canvas has no 9-slice (reading the property prints an error to the Output panel)
+		if (item && job.model.doc.type != "htmlcanvas" && get(item, "scalingGrid", false)) {
 			var r = item.scalingGridRect;
 			data.scalingGrid = { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
 		}
@@ -470,21 +493,37 @@
 		for (var i = 0; i < elements.length; i++) {
 			var el = elements[i];
 			var data = readElement(tlId, el);
+			if (data.kind == "shape" && data.parts) {
+				// a group with symbol instances: its drawing (without them) as one item, then the
+				// instances (their matrices are absolute) so they animate
+				var parts = data.parts;
+				delete data.parts;
+				run = null;
+				data.atlas = addAtlasJob(tlId, li, f, i, i, 1, "group").id;
+				kf.elements.push(data);
+				job.strokeChecks.push({ el: el, owner: data });
+				for (var pi = 0; pi < parts.length; pi++) kf.elements.push(readElement(tlId, parts[pi]));
+				continue;
+			}
 			if (data.kind == "shape") {
-				if (run && !data.containsInstances && !run.containsInstances) {
+				if (run) {
 					run.endElement = i;
 					mergeBounds(run.data.bounds, data.bounds);
-					if (data.linearRGB) {
-						if (!run.data.linearRGB) run.data.linearRGB = [];
-						for (var g = 0; g < data.linearRGB.length; g++) run.data.linearRGB.push(data.linearRGB[g]);
+					var keys = ["linearRGB", "bitmapFills"];
+					for (var q = 0; q < keys.length; q++) {
+						var list = data[keys[q]];
+						if (!list) continue;
+						if (!run.data[keys[q]]) run.data[keys[q]] = [];
+						for (var g = 0; g < list.length; g++) run.data[keys[q]].push(list[g]);
 					}
+					job.strokeChecks.push({ el: el, owner: run.data });
 					continue;
 				}
 				run = addAtlasJob(tlId, li, f, i, i, 1, "shape");
-				run.containsInstances = data.containsInstances;
 				run.data = data;
 				data.atlas = run.id;
 				kf.elements.push(data);
+				job.strokeChecks.push({ el: el, owner: data });
 				continue;
 			}
 			run = null;
@@ -563,19 +602,19 @@
 			return { kind: "unsupported", what: String(it), bounds: boundsOf(el) };
 		}
 		if (type == "shape") {
-			var hasInst = false;
-			if (el.isGroup && el.members) {
-				for (var i = 0; i < el.members.length; i++) {
-					if (el.members[i].elementType != "shape") { hasInst = true; break; }
-				}
-			}
-			if (hasInst) warn("A group contains symbols or text; its content is exported as static artwork");
 			var s = { kind: "shape", atlas: "", bounds: boundsOf(el) };
-			if (hasInst) s.containsInstances = true;
+			// symbol instances inside groups (any depth) are read as elements of their own
+			var parts = [];
+			if (el.isGroup) groupInstances(el, parts, 0);
+			if (parts.length) s.parts = parts;
 			// Animate's SVG export drops the "Linear RGB" gradient option: record it here.
 			var lin = [];
-			linearGradients(el, lin, 0);
+			linearGradients(el, lin, 0, false);
 			if (lin.length) s.linearRGB = lin;
+			// Bitmap fills: Animate's SVG export links the image and drops the "clip" option.
+			var bf = [];
+			bitmapFills(el, bf, 0);
+			if (bf.length) s.bitmapFills = bf;
 			return s;
 		}
 		if (type == "text" || type == "tlfText") {
@@ -618,26 +657,92 @@
 		return { kind: "unsupported", what: String(type), bounds: boundsOf(el) };
 	}
 
-	/** Signatures ("#rrggbb,#rrggbb|0,255") of gradient fills that use linear RGB interpolation. */
-	function linearGradients(el, out, depth) {
+	/**
+	 * Signatures ("#rrggbb,#rrggbb|0,255") of gradient fills (and with `strokes`, gradient strokes)
+	 * that use linear RGB interpolation. Strokes cost a property read per edge: see checkStrokes.
+	 */
+	function linearGradients(el, out, depth, strokes) {
+		if (depth > 8) return;
+		function add(f) {
+			if (!f || !get(f, "linearRGB", false)) return;
+			if (f.style != "linearGradient" && f.style != "radialGradient") return;
+			var cols = [], pos = [];
+			for (var c = 0; c < f.colorArray.length; c++) {
+				cols.push(String(f.colorArray[c]).substr(0, 7).toLowerCase());
+				pos.push(f.posArray[c]);
+			}
+			var sig = cols.join(",") + "|" + pos.join(",");
+			if (indexOf(out, sig) < 0) out.push(sig);
+		}
+		var contours = get(el, "contours", null);
+		if (contours) for (var i = 0; i < contours.length; i++) add(get(contours[i], "fill", null));
+		// gradient strokes (an edge's stroke.shapeFill)
+		var edges = strokes ? get(el, "edges", null) : null;
+		if (edges) {
+			for (var e = 0; e < edges.length; e++) {
+				var st = get(edges[e], "stroke", null);
+				if (st && st.style != "noStroke") add(get(st, "shapeFill", null));
+			}
+		}
+		var members = get(el, "members", null);
+		if (members) for (var m = 0; m < members.length; m++) linearGradients(members[m], out, depth + 1, strokes);
+	}
+
+	/** Linear RGB gradient strokes, read only for shapes whose exported SVG has a gradient stroke. */
+	function checkStrokes() {
+		var svg = {};
+		for (var i = 0; i < job.strokeChecks.length; i++) {
+			var c = job.strokeChecks[i];
+			var item = job.model.atlas[c.owner.atlas];
+			if (!item) continue;
+			if (svg[item.file] === undefined) svg[item.file] = FLfile.read(job.outDir + "/" + item.file) || "";
+			if (svg[item.file].indexOf('stroke="url(#') < 0) continue;
+			var lin = c.owner.linearRGB || [];
+			try { linearGradients(c.el, lin, 0, true); } catch (e) {}
+			if (lin.length) c.owner.linearRGB = lin;
+		}
+		job.strokeChecks = [];
+	}
+
+	/** Symbol and bitmap instances inside a group and its sub-groups, in drawing order. */
+	function groupInstances(g, out, depth) {
+		var members = get(g, "members", null);
+		if (!members || depth > 8) return;
+		for (var i = 0; i < members.length; i++) {
+			var m = members[i];
+			if (m.elementType == "instance") out.push(m);
+			else if (m.isGroup) groupInstances(m, out, depth + 1);
+		}
+	}
+
+	function hasInstances(g) {
+		var list = [];
+		groupInstances(g, list, 0);
+		return list.length > 0;
+	}
+
+	/** Bitmaps used as fills ({ bitmap, name, clipped }), exported like bitmap instances. */
+	function bitmapFills(el, out, depth) {
 		if (depth > 8) return;
 		var contours = get(el, "contours", null);
 		if (contours) {
 			for (var i = 0; i < contours.length; i++) {
 				var f = get(contours[i], "fill", null);
-				if (!f || !get(f, "linearRGB", false)) continue;
-				if (f.style != "linearGradient" && f.style != "radialGradient") continue;
-				var cols = [], pos = [];
-				for (var c = 0; c < f.colorArray.length; c++) {
-					cols.push(String(f.colorArray[c]).substr(0, 7).toLowerCase());
-					pos.push(f.posArray[c]);
-				}
-				var sig = cols.join(",") + "|" + pos.join(",");
-				if (indexOf(out, sig) < 0) out.push(sig);
+				if (!f || f.style != "bitmap" || !f.bitmapPath) continue;
+				var clipped = !!get(f, "bitmapIsClipped", false);
+				var seen = false;
+				for (var k = 0; k < out.length; k++) if (out[k].name == f.bitmapPath) seen = true;
+				if (seen) continue;
+				var idx = job.lib.findItemIndex(f.bitmapPath);
+				if (idx && typeof idx == "object") idx = idx[0];
+				idx = parseInt(idx, 10);
+				var item = idx >= 0 ? job.lib.items[idx] : null;
+				if (!item || item.itemType != "bitmap") { warn("Bitmap fill not found in the library: " + f.bitmapPath); continue; }
+				out.push({ bitmap: readBitmap(item), name: f.bitmapPath, clipped: clipped });
 			}
 		}
 		var members = get(el, "members", null);
-		if (members) for (var m = 0; m < members.length; m++) linearGradients(members[m], out, depth + 1);
+		if (members) for (var m = 0; m < members.length; m++) bitmapFills(members[m], out, depth + 1);
 	}
 
 	function readTween(tlId, tl, layer, li, frame, f, tt, guided) {
@@ -647,7 +752,8 @@
 			rotate: get(frame, "motionTweenRotate", "none"),
 			rotateTimes: get(frame, "motionTweenRotateTimes", 0),
 			orientToPath: !!get(frame, "motionTweenOrientToPath", false),
-			scale: get(frame, "motionTweenScale", true) !== false,
+			// (not available in HTML5 Canvas documents: reading it prints an error to the Output panel)
+			scale: job.model.doc.type == "htmlcanvas" || get(frame, "motionTweenScale", true) !== false,
 			snap: !!get(frame, "motionTweenSnap", false),
 			sync: !!get(frame, "motionTweenSync", false),
 			guided: guided
@@ -805,7 +911,7 @@
 	}
 
 	function wholeFrame(j) {
-		if (j.what == "text") return false;
+		if (j.what == "text" || j.what == "group") return false;
 		if (j.startElement < 0) return true; // shape tween span
 		var els = sourceTimeline(j.tl).layers[j.layer].frames[j.frame].elements;
 		return j.startElement == 0 && j.endElement == els.length - 1;
@@ -847,8 +953,10 @@
 
 		var at = job.atlasDoc.getTimeline();
 		var k = job.atlasFrame;
-		if (k > 0) {
-			if (at.layers[0].frameCount <= k) at.insertFrames(k - at.layers[0].frameCount + 1, false, at.layers[0].frameCount);
+		// Pasting right at the end of the layer appends (measured: half the paste time, and no
+		// insert); otherwise make room with a blank keyframe first.
+		if (k > 0 && at.layers[0].frameCount != k) {
+			if (at.layers[0].frameCount < k) at.insertFrames(k - at.layers[0].frameCount + 1, false, at.layers[0].frameCount);
 			at.insertBlankKeyframe(k);
 		}
 		lap("insert");
@@ -899,6 +1007,26 @@
 			job.atlasDoc.selection = del;
 			job.atlasDoc.deleteSelection();
 		}
+		if (j.what == "group") {
+			// keep the group's drawing only: its instances are exported as elements of their own
+			for (var sweep = 0; sweep < 8; sweep++) {
+				var parts = at.layers[0].frames[k].elements, insts = [], groups = [];
+				for (var q = 0; q < parts.length; q++) {
+					if (parts[q].elementType == "instance") insts.push(parts[q]);
+					else if (parts[q].isGroup && hasInstances(parts[q])) groups.push(parts[q]);
+				}
+				if (insts.length) {
+					job.atlasDoc.selectNone();
+					job.atlasDoc.selection = insts;
+					job.atlasDoc.deleteSelection();
+					continue;
+				}
+				if (!groups.length) break;
+				job.atlasDoc.selectNone();
+				job.atlasDoc.selection = groups;
+				try { job.atlasDoc.breakApart(); } catch (e) { warn("Could not separate a group from its symbols: " + e); break; }
+			}
+		}
 		if (j.what == "text") {
 			// Animate writes text as SVG fonts, which browsers ignore: convert to outlines.
 			for (var pass = 0; pass < 2; pass++) {
@@ -933,6 +1061,7 @@
 		job.phase = "write";
 		job.message = "Writing scene";
 		if (job.timing) job.model.timing = job.timing;
+		checkStrokes();
 		if (!FLfile.write(job.outDir + "/scene.json", stringify(job.model))) {
 			throw new Error("Could not write scene.json");
 		}
@@ -943,9 +1072,12 @@
 		if (!job) return;
 		try { if (job.atlasDoc) fl.closeDocument(job.atlasDoc, false); } catch (e) {}
 		job.atlasDoc = null;
-		try { if (job.doc) fl.closeDocument(job.doc, false); } catch (e) {}
+		// never the user's document (see prepare)
+		try { if (job.doc && job.doc != job.srcDoc) fl.closeDocument(job.doc, false); } catch (e) {}
 		job.doc = null;
-		try { if (job.copyUri && FLfile.exists(job.copyUri)) FLfile.remove(job.copyUri); } catch (e) {}
+		for (var c = 0; c < (job.copies || []).length; c++) {
+			try { if (FLfile.exists(job.copies[c])) FLfile.remove(job.copies[c]); } catch (e) {}
+		}
 		try { if (job.srcDoc) fl.setActiveWindow(job.srcDoc); } catch (e) {}
 	}
 

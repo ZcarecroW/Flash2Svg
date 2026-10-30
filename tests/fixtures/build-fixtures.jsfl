@@ -782,6 +782,617 @@
 		extendAll(24);
 	});
 
+	// ---------------------------------------------------------------- f24: deep nesting, colour through levels, symbol swap, flips, gaps
+	build("f24-deep", function () {
+		newDoc("timeline", 500, 300, 24);
+		boxSymbol();
+		symbol("bar", "movie clip", function () {
+			rect(-20, -5, 20, 5, "#CC3300");
+			var t = tl();
+			t.insertKeyframe(7);
+			t.setSelectedFrames(0, 1);
+			t.createMotionTween();
+			t.layers[0].frames[0].motionTweenRotate = "clockwise";
+			t.layers[0].frames[0].motionTweenRotateTimes = 1;
+		});
+		symbol("counter", "graphic", function () {
+			for (var i = 0; i < 6; i++) {
+				var t = tl();
+				if (i > 0) t.insertBlankKeyframe(i);
+				t.currentFrame = i;
+				rect(0, 0, 10 + i * 8, 8, "#0066FF");
+			}
+		});
+		// level 2: a graphic with its own classic tween of a tinted nested graphic
+		symbol("middle", "graphic", function () {
+			var e = place("counter", -30, -20, 0);
+			doc.selectNone(); e.selected = true; doc.setInstanceTint("#00AA00", 50); doc.selectNone();
+			e.loop = "loop";
+			var t = tl();
+			t.insertKeyframe(9);
+			var e2 = t.layers[0].frames[9].elements[0];
+			e2.x += 20; e2.rotation = 30;
+			t.setSelectedFrames(0, 1);
+			t.createMotionTween();
+			t.layers[0].frames[0].tweenEasing = 50;
+			var li = t.addNewLayer("bar", "normal", true);
+			t.setSelectedLayers(li); t.currentLayer = li;
+			var b = place("bar", 0, 10, 0);
+			b.colorAlphaPercent = 60; b.colorMode = "alpha";
+			t.setSelectedLayers(li);
+			t.insertFrames(9, false, 1);
+		});
+		// level 1: the middle graphic placed twice with different offsets, alpha on top
+		symbol("outer", "graphic", function () {
+			var e = place("middle", 0, 0, 0);
+			e.loop = "loop"; e.firstFrame = 3;
+			var e2 = place("middle", 40, 30, 0);
+			e2.loop = "single frame"; e2.firstFrame = 6; e2.scaleX = -1;
+			tl().insertFrames(15, false, 1);
+		});
+		layer("deep");
+		classicTween("outer", 90, 90, 23, function (e) {
+			e.x = 200; e.scaleX = 1.4; e.scaleY = 0.8;
+			doc.selectNone(); e.selected = true; doc.setInstanceAlpha(40); doc.selectNone();
+		}, function (f) {
+			var e = f.elements[0];
+			e.loop = "loop"; e.firstFrame = 2;
+			doc.selectNone(); e.selected = true; doc.setInstanceBrightness(30); doc.selectNone();
+		});
+		// classic tween into a keyframe that holds a different symbol
+		layer("swap");
+		var t = tl();
+		var li = t.currentLayer;
+		classicTween("box", 320, 60, 15, function (e) {
+			e.x = 450; e.rotation = 45;
+			doc.selectNone(); e.selected = true; doc.swapElement("bar"); doc.selectNone();
+		});
+		// flip through zero scale, with skew
+		layer("flip");
+		classicTween("box", 320, 160, 23, function (e) { e.scaleX = -1; e.skewY = 15; });
+		// gaps: blank keyframes inside the span, late start, early end
+		layer("gaps");
+		t = tl();
+		li = t.currentLayer;
+		t.insertBlankKeyframe(4);
+		t.currentFrame = 4;
+		place("box", 80, 240, 4);
+		t.insertKeyframe(10);
+		t.layers[li].frames[10].elements[0].x = 200;
+		t.setSelectedFrames(4, 5);
+		t.createMotionTween();
+		t.insertBlankKeyframe(12);
+		t.insertKeyframe(16);
+		t.currentFrame = 16;
+		place("bar", 300, 250, 16);
+		t.insertBlankKeyframe(20);
+		// a tween whose end keyframe changes the graphic's first frame
+		layer("gframe");
+		classicTween("counter", 380, 230, 12, function (e) { e.loop = "loop"; e.firstFrame = 0; e.x = 420; }, function (f) {
+			f.elements[0].loop = "loop"; f.elements[0].firstFrame = 4;
+		});
+		extendAll(24);
+	});
+
+	// ---------------------------------------------------------------- f25: paint: radial focus, spread modes, gradient strokes, bitmap fills, stroke styles
+	build("f25-paint", function () {
+		newDoc("timeline", 500, 320, 24);
+		doc.importFile(root + "/assets/checker.png", true);
+		var bmp = null;
+		for (var i = 0; i < lib.items.length; i++) if (lib.items[i].itemType == "bitmap") bmp = lib.items[i];
+		function grad(style, l, t0, r, b, extra) {
+			doc.selectNone();
+			var f = { style: style, colorArray: ["#FF0000", "#FFFF00", "#0000FF"], posArray: [0, 128, 255], matrix: { a: 0.02, b: 0, c: 0, d: 0.02, tx: (l + r) / 2, ty: (t0 + b) / 2 } };
+			for (var k in extra) f[k] = extra[k];
+			doc.setCustomFill(f);
+			noStroke();
+			doc.addNewRectangle({ left: l, top: t0, right: r, bottom: b }, 0, false, true);
+		}
+		layer("radialFocal");
+		grad("radialGradient", 10, 10, 110, 110, { focalPoint: 180 });
+		layer("radialReflect");
+		grad("radialGradient", 130, 10, 230, 110, { overflow: "Reflect" });
+		layer("linearRepeat");
+		grad("linearGradient", 250, 10, 350, 110, { overflow: "Repeat" });
+		layer("linearRotated");
+		grad("linearGradient", 370, 10, 490, 110, { matrix: { a: 0.03, b: 0.03, c: -0.03, d: 0.03, tx: 430, ty: 60 } });
+		layer("gradStroke");
+		doc.selectNone();
+		doc.setCustomFill({ style: "noFill" });
+		doc.setCustomStroke({ style: "solid", thickness: 10, capType: "round", joinType: "round", color: "#000000" });
+		doc.addNewRectangle({ left: 20, top: 140, right: 120, bottom: 220 }, 0, true, false);
+		try {
+			doc.selectAll();
+			var s = doc.getCustomStroke("selection");
+			s.shapeFill = { style: "linearGradient", colorArray: ["#00AA00", "#FF00FF"], posArray: [0, 255], matrix: { a: 0.06, b: 0, c: 0, d: 0.06, tx: 70, ty: 180 } };
+			doc.setCustomStroke(s);
+			doc.selectNone();
+		} catch (e) { log.push("f25 gradient stroke: " + e); }
+		if (bmp) {
+			layer("bitmapFill");
+			doc.selectNone();
+			try {
+				doc.setCustomFill({ style: "bitmap", bitmapPath: bmp.name, matrix: { a: 0.8, b: 0.3, c: -0.3, d: 0.8, tx: 150, ty: 140 } });
+				noStroke();
+				doc.addNewRectangle({ left: 150, top: 140, right: 260, bottom: 220 }, 0, false, true);
+			} catch (e) { log.push("f25 bitmap fill: " + e); }
+		}
+		layer("strokes");
+		var styles = [
+			{ style: "solid", thickness: 6, capType: "none", joinType: "miter", miterLimit: 3 },
+			{ style: "solid", thickness: 6, capType: "square", joinType: "bevel" },
+			{ style: "dotted", thickness: 3, dotSpace: 4 },
+			{ style: "solid", thickness: 0.1 }
+		];
+		for (var j = 0; j < styles.length; j++) {
+			doc.selectNone();
+			styles[j].color = "#2244AA";
+			doc.setCustomStroke(styles[j]);
+			doc.addNewLine({ x: 290 + j * 50, y: 150 }, { x: 310 + j * 50, y: 210 });
+			doc.addNewLine({ x: 310 + j * 50, y: 210 }, { x: 330 + j * 50, y: 150 });
+		}
+		layer("roundRect");
+		doc.selectNone();
+		fill("#AA66CC"); stroke("#330033", 3);
+		doc.addNewRectangle({ left: 20, top: 240, right: 160, bottom: 310 }, 18, false, false);
+		layer("primitive");
+		doc.selectNone();
+		fill("#66CCAA"); noStroke();
+		try { doc.addNewPrimitiveOval({ left: 190, top: 240, right: 290, bottom: 310 }, false, true); } catch (e) { log.push("f25 primitive: " + e); }
+		layer("alphaOverlap");
+		doc.selectNone();
+		doc.setCustomFill({ style: "solid", color: "#FF000080" });
+		doc.addNewOval({ left: 320, top: 235, right: 400, bottom: 315 }, false, true);
+		layer("alphaOverlap2");
+		doc.selectNone();
+		doc.setCustomFill({ style: "solid", color: "#0000FF80" });
+		doc.addNewOval({ left: 360, top: 235, right: 440, bottom: 315 }, false, true);
+		extendAll(1);
+	});
+
+	// ---------------------------------------------------------------- f26: animated masks, a mask inside masked content, a movie clip as mask
+	build("f26-masks3", function () {
+		newDoc("timeline", 400, 300, 24);
+		boxSymbol();
+		symbol("spinMask", "movie clip", function () {
+			rect(-60, -15, 60, 15, "#000000");
+			var t = tl();
+			t.insertKeyframe(11);
+			t.setSelectedFrames(0, 1);
+			t.createMotionTween();
+			t.layers[0].frames[0].motionTweenRotate = "clockwise";
+			t.layers[0].frames[0].motionTweenRotateTimes = 1;
+		});
+		symbol("window", "movie clip", function () {
+			var t = tl();
+			rect(-50, -50, 50, 50, "#33AA33");
+			rect(-50, -10, 50, 10, "#FFFFFF");
+			var maskIdx = t.addNewLayer("m", "mask", true);
+			t.setSelectedLayers(maskIdx);
+			t.currentLayer = maskIdx;
+			oval(-35, -35, 35, 35, "#000000");
+			t.layers[maskIdx + 1].layerType = "masked";
+			t.layers[maskIdx + 1].parentLayer = t.layers[maskIdx];
+		});
+		layer("bg");
+		rect(0, 0, 400, 300, "#EEEEEE");
+		// left: a shape-tweened mask over a rectangle and a tweened clip that has its own mask
+		layer("content");
+		rect(10, 10, 190, 290, "#FF9933");
+		layer("contentWindow");
+		classicTween("window", 100, 150, 23, function (e) { e.rotation = 90; });
+		layer("maskShape");
+		var t = tl();
+		var li = t.currentLayer;
+		oval(30, 30, 90, 90, "#000000");
+		t.insertBlankKeyframe(23);
+		t.currentFrame = 23;
+		rect(20, 60, 180, 260, "#000000");
+		t.setSelectedLayers(li);
+		t.setSelectedFrames(0, 1);
+		t.setFrameProperty("tweenType", "shape");
+		// right: a spinning movie clip as the mask, with text in the masked layer
+		layer("content2");
+		rect(210, 10, 390, 290, "#3366CC");
+		doc.selectNone();
+		doc.addNewText({ left: 220, top: 130, right: 390, bottom: 170 }, "MASKED");
+		doc.setElementTextAttr("size", 30);
+		doc.setElementTextAttr("fillColor", "#FFFFFF");
+		layer("maskClip");
+		var mc = place("spinMask", 300, 150, 0);
+		mc.scaleX = mc.scaleY = 1.3;
+		t = tl();
+		var idx = {};
+		for (var j = 0; j < t.layers.length; j++) idx[t.layers[j].name] = j;
+		t.layers[idx.maskShape].layerType = "mask";
+		t.layers[idx.content].layerType = "masked"; t.layers[idx.content].parentLayer = t.layers[idx.maskShape];
+		t.layers[idx.contentWindow].layerType = "masked"; t.layers[idx.contentWindow].parentLayer = t.layers[idx.maskShape];
+		t.layers[idx.maskClip].layerType = "mask";
+		t.layers[idx.content2].layerType = "masked"; t.layers[idx.content2].parentLayer = t.layers[idx.maskClip];
+		extendAll(24);
+	});
+
+	// Movie clips used by f27/f28: a looping spinner, an intro that stops itself, a clip with a
+	// nested loop of a different length, a colour pulse.
+	function runningClips() {
+		boxSymbol();
+		symbol("spin8", "movie clip", function () {
+			rect(-25, -6, 25, 6, "#CC3300");
+			var t = tl();
+			t.insertKeyframe(7);
+			t.setSelectedFrames(0, 1);
+			t.createMotionTween();
+			t.layers[0].frames[0].motionTweenRotate = "clockwise";
+			t.layers[0].frames[0].motionTweenRotateTimes = 1;
+		});
+		symbol("intro", "movie clip", function () {
+			var t = tl();
+			place("box", 0, 0, 0);
+			t.insertKeyframe(9);
+			t.layers[0].frames[9].elements[0].x = 80;
+			t.setSelectedFrames(0, 1);
+			t.createMotionTween();
+			t.layers[0].frames[0].tweenEasing = -80;
+			var a = t.addNewLayer("actions", "normal", true);
+			t.setSelectedLayers(a); t.currentLayer = a;
+			t.insertKeyframe(9);
+			t.layers[a].frames[9].actionScript = "stop();";
+		});
+		symbol("pulse6", "movie clip", function () {
+			var t = tl();
+			var e = place("box", 0, 0, 0);
+			t.insertKeyframe(5);
+			var e2 = t.layers[0].frames[5].elements[0];
+			doc.selectNone(); e2.selected = true; doc.setInstanceTint("#00CC00", 70); doc.selectNone();
+			t.setSelectedFrames(0, 1);
+			t.createMotionTween();
+			var l2 = t.addNewLayer("inner", "normal", true);
+			t.setSelectedLayers(l2); t.currentLayer = l2;
+			place("spin8", 0, 40, 0);
+			t.setSelectedLayers(l2);
+			t.insertFrames(5, false, 1);
+		});
+	}
+
+	// ---------------------------------------------------------------- f27: stop() at the end, movie clips keep running
+	build("f27-stop", function () {
+		newDoc("timeline", 400, 300, 24);
+		runningClips();
+		layer("spin");
+		place("spin8", 70, 60, 0);
+		layer("intro");
+		var t = tl();
+		t.insertBlankKeyframe(7);
+		place("intro", 140, 140, 7);
+		layer("pulse");
+		place("pulse6", 300, 70, 0);
+		layer("mover");
+		classicTween("box", 60, 240, 11, function (e) { e.x = 320; });
+		extendAll(12);
+		layer("actions");
+		t = tl();
+		t.insertKeyframe(11);
+		t.layers[t.currentLayer].frames[11].actionScript = "stop();";
+	});
+
+	// ---------------------------------------------------------------- f28: one frame with stop(), all animation inside movie clips
+	build("f28-onestop", function () {
+		newDoc("timeline", 400, 300, 24);
+		runningClips();
+		layer("spin");
+		place("spin8", 80, 80, 0);
+		layer("pulse");
+		place("pulse6", 260, 100, 0);
+		layer("intro");
+		place("intro", 100, 220, 0);
+		layer("actions");
+		var t = tl();
+		t.layers[t.currentLayer].frames[0].actionScript = "stop();";
+	});
+
+	// ---------------------------------------------------------------- f29: motion tweens with property keyframes; more blend modes
+	build("f29-motion", function () {
+		newDoc("timeline", 500, 300, 24);
+		runningClips();
+		symbol("counter", "graphic", function () {
+			for (var i = 0; i < 6; i++) {
+				var t = tl();
+				if (i > 0) t.insertBlankKeyframe(i);
+				t.currentFrame = i;
+				rect(0, 0, 10 + i * 8, 8, "#0066FF");
+			}
+		});
+		// a group with a "layer" blend: alpha and erase cut into the clip's own content
+		symbol("cutout", "movie clip", function () {
+			var t = tl();
+			rect(-40, -30, 40, 30, "#FF9900");
+			var l1 = t.addNewLayer("alpha", "normal", true);
+			t.setSelectedLayers(l1); t.currentLayer = l1;
+			var e = place("box", -15, 0, 0);
+			e.blendMode = "erase";
+		});
+		function motion(name, x, y, mid, end) {
+			var t = tl();
+			var li = t.currentLayer;
+			var el = place(name, x, y, 0);
+			t.createMotionObject(0, 23);
+			if (mid) {
+				t.currentFrame = 11;
+				doc.selectNone();
+				doc.selection = [t.layers[li].frames[11].elements[0]];
+				mid();
+			}
+			t.currentFrame = 23;
+			doc.selectNone();
+			doc.selection = [t.layers[li].frames[23].elements[0]];
+			end();
+			doc.selectNone();
+		}
+		layer("path");
+		motion("box", 50, 50, function () { doc.moveSelectionBy({ x: 120, y: 80 }); }, function () { doc.moveSelectionBy({ x: 260, y: 0 }); doc.rotateSelection(120); doc.scaleSelection(1.5, 0.7); });
+		layer("fx");
+		motion("box", 60, 240, null, function () {
+			doc.moveSelectionBy({ x: 200, y: 0 });
+			doc.setInstanceAlpha(30);
+			doc.addFilter("blurFilter"); doc.setFilterProperty("blurX", 0, 10); doc.setFilterProperty("blurY", 0, 2);
+		});
+		layer("graphic");
+		motion("counter", 380, 220, null, function () { doc.moveSelectionBy({ x: 40, y: -60 }); });
+		layer("blendBg");
+		rect(290, 10, 500, 130, "#66AA99");
+		rect(290, 70, 500, 130, "#AA3366");
+		layer("blends");
+		var bl = ["subtract", "darken", "lighten", "hardlight", "difference", "invert"];
+		for (var i = 0; i < bl.length; i++) {
+			var b = place("box", 330 + (i % 3) * 60, 40 + Math.floor(i / 3) * 50, 0);
+			b.blendMode = bl[i];
+		}
+		layer("cutout");
+		var c = place("cutout", 420, 160, 0);
+		c.blendMode = "layer";
+		extendAll(24);
+	});
+
+	// ---------------------------------------------------------------- f30: HTML5 Canvas banner: play 3 times, a clip looping to a label
+	build("f30-banner", function () {
+		newDoc("htmlcanvas", 400, 200, 24);
+		runningClips();
+		symbol("blink", "movie clip", function () {
+			var t = tl();
+			var colors = ["#FF0000", "#00AA00", "#0000FF", "#FFAA00", "#AA00AA", "#000000"];
+			for (var i = 0; i < 6; i++) {
+				if (i > 0) t.insertBlankKeyframe(i);
+				t.currentFrame = i;
+				rect(-15, -15, 15, 15, colors[i]);
+			}
+			t.layers[0].frames[1].name = "on";
+			var a = t.addNewLayer("actions", "normal", true);
+			t.setSelectedLayers(a); t.currentLayer = a;
+			t.insertKeyframe(5);
+			// frame 6 is never shown: the goto runs before it is drawn
+			t.layers[a].frames[5].actionScript = "this.gotoAndPlay(\"on\");";
+		});
+		layer("mover");
+		classicTween("box", 50, 100, 11, function (e) { e.x = 330; e.rotation = 90; }, function (f) { f.tweenEasing = 40; });
+		layer("blink");
+		place("blink", 200, 40, 0);
+		layer("spin");
+		place("spin8", 330, 160, 0);
+		extendAll(12);
+		layer("actions");
+		var t = tl();
+		t.insertKeyframe(11);
+		// Animate's "stop after N loops" code snippet
+		t.layers[t.currentLayer].frames[11].actionScript =
+			"if (!this.alreadyExecuted) {\n\tthis.alreadyExecuted = true;\n\tthis.loopNum = 1;\n} else {\n\tthis.loopNum++;\n\tif (this.loopNum == 3) {\n\t\tthis.stop();\n\t}\n}";
+	});
+
+	// ---------------------------------------------------------------- f31: text: runs, alignment, spacing, transformed and tweened text
+	build("f31-text2", function () {
+		newDoc("timeline", 500, 320, 24);
+		function text(rect, str, attrs, props) {
+			doc.selectNone();
+			doc.addNewText(rect, str);
+			for (var k in props) doc.setElementProperty(k, props[k]);
+			for (var a in attrs) doc.setElementTextAttr(a, attrs[a]);
+			var t = tl(), els = t.layers[t.currentLayer].frames[0].elements;
+			return els[els.length - 1];
+		}
+		layer("runs");
+		var t1 = text({ left: 10, top: 10, right: 240, bottom: 60 }, "Bold red, italic blue", { size: 20, fillColor: "#000000" });
+		// style parts of the text: runs
+		t1.setTextAttr("bold", true, 0, 8);
+		t1.setTextAttr("fillColor", "#CC0000", 0, 8);
+		t1.setTextAttr("italic", true, 10, 21);
+		t1.setTextAttr("fillColor", "#0000CC", 10, 21);
+		t1.setTextAttr("size", 26, 17, 21);
+		layer("right");
+		text({ left: 260, top: 10, right: 490, bottom: 90 }, "Right aligned\rsecond line", { size: 16, alignment: "right", lineSpacing: 6 }, {});
+		layer("spaced");
+		text({ left: 10, top: 80, right: 240, bottom: 110 }, "L e t t e r s", { size: 16, letterSpacing: 4, fillColor: "#006600" }, {});
+		layer("dynRight");
+		text({ left: 260, top: 110, right: 490, bottom: 170 }, "Dynamic right\raligned text", { size: 15, alignment: "right", fillColor: "#660066" }, { textType: "dynamic", lineType: "multiline" });
+		layer("input");
+		text({ left: 10, top: 130, right: 200, bottom: 155 }, "Input field", { size: 14 }, { textType: "input" });
+		// static text inside a symbol, rotated and tweened with alpha
+		symbol("label", "movie clip", function () {
+			doc.selectNone();
+			doc.addNewText({ left: -60, top: -12, right: 60, bottom: 12 }, "Tween me");
+			doc.setElementTextAttr("size", 18);
+			doc.setElementTextAttr("fillColor", "#003399");
+		});
+		layer("tween");
+		classicTween("label", 120, 230, 23, function (e) {
+			e.x = 380; e.rotation = 30; e.scaleX = 1.3;
+			doc.selectNone(); e.selected = true; doc.setInstanceAlpha(40); doc.selectNone();
+		});
+		layer("shadowed");
+		var s = place("label", 380, 290, 0);
+		doc.selectNone(); s.selected = true;
+		doc.addFilter("dropShadowFilter"); doc.setFilterProperty("distance", 0, 3); doc.setFilterProperty("blurX", 0, 2); doc.setFilterProperty("blurY", 0, 2);
+		doc.selectNone();
+		extendAll(24);
+	});
+
+	// ---------------------------------------------------------------- f32: filters on rotated/scaled instances, cut-outs in shared layers
+	build("f32-blend2", function () {
+		newDoc("timeline", 500, 360, 24);
+		boxSymbol();
+		symbol("fade", "movie clip", function () {
+			doc.selectNone();
+			doc.setCustomFill({ style: "linearGradient", colorArray: ["#000000", "#000000"], alphaArray: [100, 0], posArray: [0, 255], matrix: { a: 0.05, b: 0, c: 0, d: 0.05, tx: 0, ty: 0 } });
+			noStroke();
+			doc.addNewRectangle({ left: -40, top: -25, right: 40, bottom: 25 }, 0, false, true);
+		});
+		// a clip whose single layer holds: background, erase element, stripes above it; and an alpha element
+		symbol("shared", "movie clip", function () {
+			rect(-70, -45, 70, 45, "#3366CC");
+			var er = place("box", -30, 0, 0); er.blendMode = "erase";
+			rect(-70, 20, 70, 30, "#FFCC00");
+		});
+		symbol("faded", "movie clip", function () {
+			rect(-70, -45, 70, 45, "#CC3366");
+			rect(-50, -10, 50, 10, "#FFFFFF");
+			var t = tl();
+			var l2 = t.addNewLayer("alpha", "normal", true);
+			t.setSelectedLayers(l2); t.currentLayer = l2;
+			var a = place("fade", 20, 0, 0); a.blendMode = "alpha";
+		});
+		layer("bg");
+		rect(0, 0, 500, 360, "#99CC99");
+		rect(0, 180, 500, 360, "#336666");
+		layer("filters");
+		var specs = [
+			[60, 60, 45, 1, function () { doc.addFilter("dropShadowFilter"); doc.setFilterProperty("distance", 0, 20); doc.setFilterProperty("angle", 0, 0); }],
+			[170, 60, 90, 0.7, function () { doc.addFilter("dropShadowFilter"); doc.setFilterProperty("distance", 0, 15); doc.setFilterProperty("blurX", 0, 0); doc.setFilterProperty("blurY", 0, 0); }],
+			[280, 60, 30, 1.5, function () { doc.addFilter("blurFilter"); doc.setFilterProperty("blurX", 0, 20); doc.setFilterProperty("blurY", 0, 0); }],
+			[400, 60, -60, 1.2, function () { doc.addFilter("glowFilter"); doc.setFilterProperty("color", 0, "#FF00FF"); doc.setFilterProperty("blurX", 0, 16); doc.setFilterProperty("blurY", 0, 4); }]
+		];
+		for (var i = 0; i < specs.length; i++) {
+			var e = place("box", specs[i][0], specs[i][1], 0);
+			e.rotation = specs[i][2]; e.scaleX = e.scaleY = specs[i][3];
+			doc.selectNone(); e.selected = true; specs[i][4](); doc.selectNone();
+		}
+		layer("cutouts");
+		var s1 = place("shared", 110, 200, 0); s1.blendMode = "layer";
+		var s2 = place("faded", 290, 200, 0); s2.blendMode = "layer";
+		// erase without a "layer" parent: Animate leaves the element out
+		var s3 = place("shared", 420, 300, 0); s3.scaleX = s3.scaleY = 0.5;
+		layer("subtract");
+		var sb = place("fade", 400, 200, 0); sb.blendMode = "subtract"; sb.scaleX = 1.2;
+		var sb2 = place("box", 120, 320, 0); sb2.blendMode = "subtract";
+		doc.selectNone(); sb2.selected = true; doc.setInstanceAlpha(60); doc.selectNone();
+		extendAll(1);
+	});
+
+	// ---------------------------------------------------------------- f33: groups holding symbol instances (they keep animating)
+	build("f33-groups", function () {
+		newDoc("timeline", 500, 300, 24);
+		runningClips();
+		doc.importFile(root + "/assets/checker.png", true);
+		var bmp = null;
+		for (var i = 0; i < lib.items.length; i++) if (lib.items[i].itemType == "bitmap") bmp = lib.items[i];
+		function groupAll() {
+			doc.selectAll();
+			doc.group();
+			doc.selectNone();
+		}
+		// group: background shape, a running clip, a tinted box
+		layer("g1");
+		rect(20, 20, 200, 140, "#DDEEFF", "#335577");
+		place("spin8", 80, 80, 0);
+		var b = place("box", 150, 100, 0);
+		doc.selectNone(); b.selected = true; doc.setInstanceTint("#00AA00", 60); doc.selectNone();
+		groupAll();
+		// nested: an outer group with a shape and an inner group holding a clip
+		layer("g2");
+		rect(260, 20, 480, 140, "#FFEEDD");
+		place("pulse6", 330, 70, 0);
+		doc.selectAll();
+		var t = tl();
+		var els = t.layers[t.currentLayer].frames[0].elements;
+		doc.selection = [els[els.length - 1]];
+		doc.group();
+		doc.selectNone();
+		rect(400, 100, 470, 130, "#CC6600");
+		groupAll();
+		// text and an instance in one group, scaled
+		layer("g3");
+		doc.selectNone();
+		doc.addNewText({ left: 30, top: 180, right: 200, bottom: 210 }, "Grouped text");
+		doc.setElementTextAttr("size", 18);
+		place("spin8", 120, 250, 0);
+		groupAll();
+		t = tl();
+		var g3 = t.layers[t.currentLayer].frames[0].elements[0];
+		doc.selection = [g3];
+		doc.scaleSelection(1.2, 0.9);
+		doc.selectNone();
+		// a bitmap inside a group
+		if (bmp) {
+			layer("g4");
+			rect(280, 170, 460, 280, "#EEEEEE");
+			lib.addItemToDocument({ x: 330, y: 200 }, bmp.name);
+			groupAll();
+		}
+		extendAll(24);
+	});
+
+	// ---------------------------------------------------------------- f34: layer folders (nested, hidden), a mask pair and a guide inside folders
+	build("f34-folders", function () {
+		newDoc("timeline", 400, 300, 24);
+		boxSymbol();
+		function idx(name) { var ls = tl().layers; for (var i = 0; i < ls.length; i++) if (ls[i].name == name) return i; log.push("f34: no layer " + name); return -1; }
+		// a new layer inside folder `folder` (above the folder's other layers), made current
+		function child(folder, name, type) {
+			var t = tl();
+			t.setSelectedLayers(idx(folder));
+			t.currentLayer = idx(folder);
+			t.addNewLayer(name, type || "normal", false);
+			var i = idx(name);
+			// right below the folder: an empty folder only takes it by assignment
+			if (t.layers[i].parentLayer != t.layers[idx(folder)]) t.layers[i].parentLayer = t.layers[idx(folder)];
+			t.setSelectedLayers(i);
+			t.currentLayer = i;
+		}
+		var t = tl();
+		t.addNewLayer("hiddenFolder", "folder", true);
+		child("hiddenFolder", "hiddenChild");
+		rect(250, 200, 380, 280, "#FF00FF");
+		t = tl();
+		t.setSelectedLayers(idx("hiddenFolder")); t.currentLayer = idx("hiddenFolder");
+		t.addNewLayer("outer", "folder", true);
+		// outer: inner folder (a1, a2), a mask pair, a guide layer
+		child("outer", "inner", "folder");
+		child("inner", "a1");
+		rect(20, 20, 120, 120, "#CC3333");
+		child("inner", "a2");
+		classicTween("box", 60, 180, 23, function (e) { e.x = 330; e.rotation = 90; });
+		t = tl();
+		t.setSelectedLayers(idx("inner")); t.currentLayer = idx("inner");
+		t.addNewLayer("m_content", "normal", true);
+		t.setSelectedLayers(idx("m_content")); t.currentLayer = idx("m_content");
+		rect(160, 20, 380, 140, "#3366CC");
+		t.addNewLayer("m_mask", "normal", true);
+		t.setSelectedLayers(idx("m_mask")); t.currentLayer = idx("m_mask");
+		oval(200, 30, 340, 130, "#000000");
+		t.addNewLayer("guideL", "normal", true);
+		t.setSelectedLayers(idx("guideL")); t.currentLayer = idx("guideL");
+		rect(20, 250, 100, 290, "#00FF00");
+		t = tl();
+		var ls = ["m_content", "m_mask", "guideL"];
+		for (var q = 0; q < ls.length; q++) if (!t.layers[idx(ls[q])].parentLayer) t.layers[idx(ls[q])].parentLayer = t.layers[idx("outer")];
+		t.layers[idx("m_mask")].layerType = "mask";
+		t.layers[idx("m_content")].layerType = "masked";
+		t.layers[idx("m_content")].parentLayer = t.layers[idx("m_mask")];
+		t.layers[idx("guideL")].layerType = "guide";
+		t.layers[idx("hiddenFolder")].visible = false;
+		var info = [];
+		for (var i = 0; i < t.layers.length; i++) info.push(t.layers[i].name + ":" + t.layers[i].layerType + (t.layers[i].parentLayer ? "<" + t.layers[i].parentLayer.name : "") + (t.layers[i].visible ? "" : "(hidden)"));
+		log.push("f34 layers: " + info.join(", "));
+		extendAll(24);
+	});
+
 	// ---------------------------------------------------------------- f17: stress (performance)
 	build("f17-stress", function () {
 		newDoc("timeline", 640, 480, 30);

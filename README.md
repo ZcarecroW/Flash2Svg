@@ -28,13 +28,18 @@ documents.
   objects, anything unusual).
 - **Modern motion tweens** (object-based), motion guides and orient-to-path.
 - **HTML5 Canvas documents** (v3 refused them), frame scripts `stop()`, `play()`,
-  `gotoAndPlay()`, `gotoAndStop()` in AS3 or JavaScript syntax.
+  `gotoAndPlay()`, `gotoAndStop()` in AS3 or JavaScript syntax, including the banner idiom
+  "play 3 times, then stop" (a pass counter in an `if`). Movie clips keep running after the main
+  timeline stops, as in Flash — also in SMIL/CSS output.
 - **Camera** (pan, zoom, rotate, tweened), **buttons** (Up / Over / Down), **frame sounds**.
 - **9-slice scaling** of movie clips (corners keep their size, like in Animate; rotated
   instances scale normally, as in Flash) and **layer effects** of advanced layers (colour
   effect, filters and blend mode on a layer).
 - **Filters**: blur, glow, drop shadow, inner shadow, bevel, gradient glow / bevel, adjust colour;
-  blend modes multiply, screen, overlay, lighten, darken, difference, hard light, add, layer.
+  blend modes multiply, screen, overlay, lighten, darken, difference, hard light, add, subtract, invert,
+  layer, and *alpha* / *erase* (cut-outs inside a symbol with the *layer* blend).
+- **Fills**: solid, linear and radial gradients (focal point, repeat / reflect, *Linear RGB* also
+  on strokes and in shape tweens), bitmap fills (repeated or clipped), hairlines.
 - **Your document is never modified.** The exporter works on a temporary copy (v3 created and
   deleted scenes and library items in your file).
 - **Much faster**, a new panel with presets, live preview and per-document settings, and a
@@ -112,22 +117,32 @@ node dist/cli/flash2svg.js path/to/scene.json -o out.svg --format css --loop alw
 
 - Filters are checked against Animate's own rendering in the end-to-end tests (blur, glow,
   drop/inner shadow, bevel inner/outer/full, knockout, hide object, gradient glow and bevel,
-  adjust colour): in the browser they match within a fraction of a percent of the pixels. Blend
-  modes *subtract*, *alpha*, *erase* and *invert* have no CSS/SVG equivalent (warned).
+  adjust colour): in the browser they match within a fraction of a percent of the pixels. Filters
+  follow the stage orientation like Animate's; for instances nested in rotated symbols they turn
+  with the parent symbol.
+- *Alpha* and *erase* act inside a symbol placed with the *layer* blend, like in Animate (they
+  cut into what lies below them in that symbol).
+- Frame scripts are not run: `stop()`, `play()`, `gotoAndPlay()`/`gotoAndStop()` with a frame
+  number or label are followed; of conditions only pass counters are understood
+  (`if (n < 3) gotoAndPlay(0); else stop();`). Other conditional actions always run (warned).
 - Animate adds the temporary copy each export works on to its *Recent files* list (JSFL can't
   open a document without doing so).
 - 3D transforms export as their 2D projection. IK armatures, video and components are not
   exported. Layer parenting follows Animate's per-frame rig matrices (between frames they are
   interpolated linearly).
 - Shape tweens become one drawing per frame.
+- Groups that hold symbol instances are split: the group's drawing first, its instances above
+  it (a drawing sub-group placed above an instance inside the same group ends up below it).
 - 9-slice: an animated scale is sliced frame by frame for symbols that only contain drawings;
   named instances and symbols with nested symbols keep normal scaling then (warned). Nested
   movie clips, bitmaps and text inside 9-slice symbols scale normally, as in Flash.
 - Only the current scene is exported (Flash plays all scenes in a row): a warning tells you when
   the document has more than one. Put scenes into one timeline, or export them one by one.
 - In SMIL/CSS output a movie clip that is visible for the whole timeline keeps running across
-  the loop; one that appears and disappears restarts each time it appears (like Flash). Very long
-  timelines with many short nested loops make big SMIL/CSS files — use the JS player then.
+  the loop; one that appears and disappears restarts each time it appears (like Flash). After a
+  `stop()` the running clips loop on (their common period). Very long timelines with many short
+  nested loops of different lengths make big SMIL/CSS files — use the JS player then.
+- *Loop: once* stops everything on the last frame, movie clips included.
 
 ## Development
 

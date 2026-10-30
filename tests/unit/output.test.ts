@@ -67,3 +67,46 @@ describe("ids", () => {
 		for (const m of svg.matchAll(/(?:href="#|url\(#)([^")]+)/g)) expect(all.has(m[1]!), m[1]).toBe(true);
 	});
 });
+
+describe("stop() on the root timeline", () => {
+	// f28: one frame with stop(); a spinner and a pulse loop inside movie clips, an intro stops itself
+	it("keeps movie clips running: SMIL loops a tail after the first pass", () => {
+		const svg = compile("f28-onestop", { format: "smil" }).files[0]!.svg;
+		const clock = /<animate id="([^"]+clock[^"]*)"/.exec(svg);
+		expect(clock).not.toBeNull();
+		const tails = svg.match(new RegExp(`begin="${clock![1]}\\.end" repeatCount="indefinite"`, "g")) ?? [];
+		expect(tails.length).toBeGreaterThan(0);
+		// no syncbase end before the begin: browsers would drop the tail
+		expect(svg).not.toMatch(/end="[^"]*clock[^"]*\.begin"/);
+		// started by a click, a new click restarts the first pass and ends the tail
+		const click = compile("f28-onestop", { format: "smil", begin: "click" }).files[0]!.svg;
+		expect(click).toMatch(/begin="[^"]*clock\.end" repeatCount="indefinite" end="[^"]+\.click"/);
+	});
+
+	it("keeps movie clips running: CSS adds a delayed infinite animation", () => {
+		const svg = compile("f28-onestop", { format: "css" }).files[0]!.svg;
+		expect(svg).toMatch(/animation:[^}]* both,[^}]*s infinite/);
+	});
+
+	it("holds everything when played once", () => {
+		for (const format of ["smil", "css"] as const) {
+			const svg = compile("f28-onestop", { format, loop: "never" }).files[0]!.svg;
+			expect(svg).not.toMatch(/indefinite|infinite|clock/);
+		}
+	});
+});
+
+describe("horizon limits", () => {
+	it("warns when running clips have no common period within the limit", async () => {
+		const { createContext } = await import("../../src/core/context.ts");
+		const { bake } = await import("../../src/core/emit/bake.ts");
+		const m: SceneModel = JSON.parse(readFileSync(new URL("../fixtures/models/f28-onestop.json", import.meta.url), "utf8"));
+		const files = { readText: () => `<svg xmlns="http://www.w3.org/2000/svg"><rect width="5" height="5"/></svg>`, readBinary: () => new Uint8Array() };
+		const ctx = createContext(m, files, { smooth: true, includeHiddenLayers: true, includeGuides: false, digits: 2 });
+		bake(ctx, m.roots[0]!, { smooth: true, loop: "auto", maxTicks: 50 } as Parameters<typeof bake>[2]);
+		expect(ctx.warnings.some((w) => w.includes("loops of very different lengths"))).toBe(true);
+		const ok = createContext(m, files, { smooth: true, includeHiddenLayers: true, includeGuides: false, digits: 2 });
+		bake(ok, m.roots[0]!, { smooth: true, loop: "auto" } as Parameters<typeof bake>[2]);
+		expect(ok.warnings.some((w) => w.includes("loops of very different lengths"))).toBe(false);
+	});
+});

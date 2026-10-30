@@ -6,7 +6,7 @@ import { prefixArtwork, type Artwork } from "../artwork.ts";
 import type { Context } from "../context.ts";
 import { fmt, fmtMatrix } from "../geom.ts";
 import type { FilterData, Mat } from "../model.ts";
-import { cdata, el, serialize, type XmlNode } from "../xml.ts";
+import { cdata, clone, el, serialize, walk, type XmlNode } from "../xml.ts";
 import { buildFilters, colorMatrix, matrixString, type ColorMatrixValues } from "./filters.ts";
 
 export interface Asset {
@@ -26,6 +26,7 @@ export class OutputDoc {
 	private filterCache = new Map<string, string>();
 	private bitmapDone = new Map<string, string>();
 	private maskFilterId: string | null = null;
+	private solidFilters = new Map<string, string>();
 	readonly ctx: Context;
 	readonly opts: { embedImages: boolean; idPrefix: string };
 
@@ -53,12 +54,34 @@ export class OutputDoc {
 		const key = a.id;
 		// artwork-internal ids (gradients...) get the document prefix too
 		a = prefixArtwork(a, this.opts.idPrefix);
+		a = this.linkImages(a);
 		for (const d of a.defs) this.defs.push(d);
 		const id = this.uid(a.id);
 		const body = a.body.name === "g" ? { ...a.body, attrs: { ...a.body.attrs, id } } : el("g", { id }, [a.body]);
 		this.defs.push(body);
 		this.artDone.set(key, id);
 		return id;
+	}
+
+	/** Points bitmap-fill images (`data-bitmap`, see importArtwork) at this document's bitmap files. */
+	private linkImages(a: Artwork): Artwork {
+		const has = (n: XmlNode): boolean => (n.name === "image" && "data-bitmap" in n.attrs) || n.children.some((c) => typeof c !== "string" && has(c));
+		if (!a.defs.some(has)) return a;
+		const defs = a.defs.map((d) => {
+			if (!has(d)) return d;
+			const c = clone(d);
+			walk(c, (n) => {
+				const id = n.attrs["data-bitmap"];
+				if (n.name !== "image" || id === undefined) return;
+				delete n.attrs["data-bitmap"];
+				const b = this.bitmap(id);
+				if (!b) return;
+				n.attrs["xlink:href"] = b.href;
+				if (!b.smoothing) n.attrs["image-rendering"] = "pixelated";
+			});
+			return c;
+		});
+		return { ...a, defs };
 	}
 
 	useArt(atlasId: string): XmlNode | null {
@@ -148,6 +171,34 @@ export class OutputDoc {
 			);
 		}
 		return `url(#${this.maskFilterId})`;
+	}
+
+	/** Shared filter that paints everything white (or black) and keeps the alpha (`solid`: any alpha becomes opaque). */
+	whiteFilter(black = false, solid = false): string {
+		const key = (black ? "blackf" : "whitef") + (solid ? "s" : "");
+		let id = this.solidFilters.get(key);
+		if (!id) {
+			id = this.uid(key);
+			const v = black ? "0" : "1";
+			this.defs.push(
+				el("filter", { id, "color-interpolation-filters": "sRGB" }, [el("feColorMatrix", { type: "matrix", values: `0 0 0 0 ${v} 0 0 0 0 ${v} 0 0 0 0 ${v} 0 0 0 ${solid ? 255 : 1} 0` })]),
+			);
+			this.solidFilters.set(key, id);
+		}
+		return `url(#${id})`;
+	}
+
+	/** A <mask> showing `content` as a mask layer (Animate: shape only), or by its alpha. */
+	maskElement(id: string, content: XmlNode[], mode?: "alpha" | "erase", box?: { left: number; top: number; width: number; height: number }): XmlNode {
+		if (!mode) return el("mask", { id }, [el("g", { filter: this.maskFilter() }, content)]);
+		const area = { x: -1e5, y: -1e5, width: 2e5, height: 2e5 };
+		const all = el("rect", { ...area, fill: "#fff" });
+		const attrs = { id, maskUnits: "userSpaceOnUse", ...area };
+		// erase: everything but the element; alpha: the element's alpha inside its bounds, all elsewhere
+		if (mode === "erase") return el("mask", attrs, [all, el("g", { filter: this.whiteFilter(true) }, content)]);
+		const d = this.ctx.digits;
+		const hole = box ? [el("rect", { x: fmt(box.left, d), y: fmt(box.top, d), width: fmt(box.width, d), height: fmt(box.height, d) })] : [];
+		return el("mask", attrs, [...(box ? [all] : []), ...hole, el("g", { filter: this.whiteFilter() }, content)]);
 	}
 
 	toString(root: XmlNode, opts: { pretty?: boolean; xmlDeclaration?: boolean } = {}): string {

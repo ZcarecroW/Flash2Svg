@@ -120,10 +120,19 @@ export interface ShapeElement extends ElementBase {
 	kind: "shape";
 	/** Key into SceneModel.atlas. Raw shapes, drawing objects, groups and primitives. */
 	atlas: string;
-	/** Group/drawing object members that are symbol instances cannot be animated; flagged here. */
-	containsInstances?: boolean;
 	/** Gradients drawn with "Linear RGB" interpolation, as "#rrggbb,#rrggbb|0,255" signatures. */
 	linearRGB?: string[];
+	/** Library bitmaps used as fills (Animate's SVG export only links them by file name). */
+	bitmapFills?: BitmapFill[];
+}
+
+export interface BitmapFill {
+	/** Key into SceneModel.bitmaps. */
+	bitmap: string;
+	/** Library name. */
+	name: string;
+	/** "Clip" instead of repeat: Animate extends the edge pixels outside the bitmap. */
+	clipped: boolean;
 }
 
 export interface BitmapElement extends ElementBase {

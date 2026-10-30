@@ -108,6 +108,10 @@ export interface ProgramLayer {
 	type: string;
 	/** For masked layers: index of the mask layer. */
 	maskedBy: number;
+	/** Mask layers made from "alpha"/"erase" blends: keep (alpha) or cut out (erase) by alpha. */
+	maskMode?: "alpha" | "erase";
+	/** "alpha" masks: Flash blends only inside the element's bounds (parent space); outside all stays. */
+	maskBox?: { left: number; top: number; width: number; height: number };
 	items: Item[];
 	rig?: (Mat | null)[];
 }
@@ -115,10 +119,14 @@ export interface ProgramLayer {
 /** Layer effects (advanced layers) are applied by wrapping the layer in a synced graphic. */
 const LAYER_FX = "#fx";
 
-export type FrameAction =
+export type FrameAction = (
 	| { type: "stop" }
 	| { type: "play" }
-	| { type: "goto"; target: number | string; play: boolean };
+	| { type: "goto"; target: number | string; play: boolean }
+) & {
+	/** Only on the passes over the frame (1 = first) in [from, before); 0 = open. */
+	passes?: { from: number; before: number };
+};
 
 export interface Program {
 	id: string;
@@ -187,9 +195,26 @@ export function buildPrograms(model: SceneModel, opts: CompileOptions): CompileR
 	for (const id in model.timelines) {
 		programs[id] = buildProgram(model.timelines[id]!, opts, warnings, model.doc);
 	}
+	// alpha/erase only act inside a symbol placed with the "layer" blend (as in Animate)
+	const uses = new Map<string, InstanceItem[]>();
+	for (const id in programs)
+		for (const l of programs[id]!.layers) for (const it of l.items) if (it.kind === "instance") (uses.get(it.symbol) ?? uses.set(it.symbol, []).get(it.symbol)!).push(it);
 	for (const id in model.timelines) {
 		wrapLayerEffects(programs, programs[id]!, model.timelines[id]!, warnings);
 		wrapRigs(programs, programs[id]!, opts);
+	}
+	for (const [id, list] of uses) {
+		const layered = list.filter((it) => it.blendMode === "layer");
+		const prog = programs[id];
+		if (!layered.length || !prog || !prog.layers.some((l) => l.items.some((it) => it.kind === "instance" && (it.blendMode === "alpha" || it.blendMode === "erase")))) continue;
+		let target = prog;
+		if (layered.length < list.length) {
+			// also placed without "layer": those instances keep the plain symbol
+			target = { ...prog, id: `${id}#layer`, source: prog.source ?? id, layers: prog.layers.map((l) => ({ ...l, items: l.items.map((it) => ({ ...it })) })) };
+			programs[target.id] = target;
+			for (const it of layered) it.symbol = target.id;
+		}
+		wrapErase(programs, target);
 	}
 	return { programs, warnings };
 }
@@ -253,6 +278,73 @@ function wrapRigs(programs: Record<string, Program>, prog: Program, opts: Compil
 		};
 		pl.items = [wrapper];
 		delete pl.rig;
+	}
+}
+
+/** A synced graphic instance showing `id` over the whole timeline of `prog`. */
+function syncedWrapper(prog: Program, id: string, uid: string, bounds: InstanceItem["bounds"]): InstanceItem {
+	const hold = (v: number): Track => [{ t: 0, v, ease: "hold" }];
+	return {
+		kind: "instance",
+		uid,
+		start: 0,
+		end: prog.frameCount,
+		slot: 0,
+		symbol: id,
+		symbolType: "graphic",
+		name: "",
+		transform: Object.fromEntries(TRANSFORM_PROPS.map((k) => [k, hold(k === "sx" || k === "sy" ? 1 : 0)])) as TransformTracks,
+		color: null,
+		filters: [],
+		blendMode: "normal",
+		visible: true,
+		cacheAsBitmap: false,
+		bounds,
+		graphic: [{ start: 0, end: prog.frameCount, loop: "play once", firstFrame: 0, lastFrame: prog.frameCount - 1 }],
+	};
+}
+
+/**
+ * "Alpha" and "erase" blends change what is below them in their timeline (Flash needs a "layer"
+ * blend on the parent): keep it where the element is opaque, or cut it out there. The layer is
+ * split at the element: everything below it (lower layers, lower elements of its layer) moves
+ * into a synced graphic, masked by alpha by the element; elements above it stay on top.
+ */
+function wrapErase(programs: Record<string, Program>, prog: Program) {
+	let n = 0;
+	for (let i = 0; i < prog.layers.length; i++) {
+		const pl = prog.layers[i]!;
+		if (pl.type === "mask" || pl.maskedBy >= 0) continue;
+		const cut = pl.items
+			.filter((it): it is InstanceItem => it.kind === "instance" && (it.blendMode === "alpha" || it.blendMode === "erase"))
+			.sort((a, b) => a.slot - b.slot)[0];
+		if (!cut) continue;
+		const mode = cut.blendMode as "alpha" | "erase";
+		// "alpha" keeps nothing while the element is missing: only for one that is always there
+		if (mode === "alpha" && (cut.start > 0 || cut.end < prog.frameCount)) continue;
+		// a mask layer below must not lose a masked layer above the cut
+		if (prog.layers.slice(i + 1).some((l) => l.maskedBy >= 0 && prog.layers.findIndex((m) => m.index === l.maskedBy) < i)) continue;
+		const lower = pl.items.filter((it) => it !== cut && it.slot < cut.slot);
+		const upper = pl.items.filter((it) => it !== cut && it.slot >= cut.slot);
+		const below = prog.layers.slice(0, i);
+		if (lower.length) below.push({ ...pl, index: 1e6 + n++, name: `${pl.name} (below)`, items: lower });
+		cut.blendMode = "normal";
+		if (!below.length) {
+			// nothing to act on: the element itself is never drawn
+			pl.items = upper;
+			continue;
+		}
+		const id = `${prog.id}#${mode}${n}`;
+		programs[id] = { id, name: `${prog.name} ${pl.name}`, kind: "graphic", frameCount: prog.frameCount, layers: below, labels: [], actions: {} };
+		const maskIndex = 1e6 + n++;
+		const out: ProgramLayer[] = [
+			{ index: 1e6 + n++, name: `${pl.name} (cut)`, type: "normal", maskedBy: maskIndex, items: [syncedWrapper(prog, id, `${prog.id}|${pl.index}|${mode}${n}`, cut.bounds)] },
+			{ index: maskIndex, name: pl.name, type: "mask", maskedBy: -1, maskMode: mode, maskBox: mode === "alpha" ? cut.bounds : undefined, items: [cut] },
+		];
+		if (upper.length) out.push({ ...pl, items: upper });
+		prog.layers.splice(0, i + 1, ...out);
+		// go on with the elements above (there may be more cuts)
+		i = out.length - 2;
 	}
 }
 
@@ -355,7 +447,7 @@ function buildProgram(tl: TimelineData, opts: CompileOptions, warnings: string[]
 		for (const kf of layer.keyframes) {
 			if (kf.label && kf.label.type !== "comment") prog.labels.push({ frame: kf.index, name: kf.label.name });
 			if (kf.script) {
-				const acts = parseActions(kf.script);
+				const acts = parseActions(kf.script, { zeroBased: doc.type !== "Flash", warn: (m) => warnings.push(`${tl.name}, frame ${kf.index + 1}: ${m}`) });
 				if (acts.length) (prog.actions[kf.index] ??= []).push(...acts);
 			}
 		}
@@ -453,27 +545,114 @@ function concatM(first: Mat, then: Mat): Mat {
 	];
 }
 
-/** Recognises the frame actions that matter for playback (AS3 and HTML5 Canvas syntax). */
-export function parseActions(script: string): FrameAction[] {
+/**
+ * Recognises the frame actions that matter for playback (AS3 and HTML5 Canvas syntax). Frame
+ * numbers come out 1-based (HTML5 Canvas/CreateJS counts from 0: `zeroBased`).
+ * Scripts aren't run. Of conditions only the banner idiom "count the passes" is understood
+ * (`if (n < 3) gotoAndPlay(0); else stop();`, `if (++n == 3) stop();`): such actions get
+ * the passes over the frame they apply to. Other conditional actions always run (warned).
+ */
+export function parseActions(script: string, opts: { zeroBased?: boolean; warn?: (m: string) => void } = {}): FrameAction[] {
 	const out: FrameAction[] = [];
 	const code = script.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 	const re = /(?:^|[^\w.])(?:this\s*\.\s*)?(stop|play|gotoAndPlay|gotoAndStop)\s*\(\s*([^)]*?)\s*\)/g;
+	// a counter is incremented in the script: x++, ++x, x += 1, x + 1
+	const counts = /\+\+|\+=\s*1\b|\+\s*1\b/.test(code);
 	let m: RegExpExecArray | null;
 	while ((m = re.exec(code))) {
 		const fn = m[1]!;
-		if (fn === "stop") out.push({ type: "stop" });
-		else if (fn === "play") out.push({ type: "play" });
+		let action: FrameAction;
+		if (fn === "stop") action = { type: "stop" };
+		else if (fn === "play") action = { type: "play" };
 		else {
 			const arg = m[2]!.split(",")[0]!.trim();
 			let target: number | string;
 			const str = /^["'](.*)["']$/.exec(arg);
 			if (str) target = str[1]!;
-			else if (/^\d+$/.test(arg)) target = parseInt(arg, 10);
+			else if (/^\d+$/.test(arg)) target = parseInt(arg, 10) + (opts.zeroBased ? 1 : 0);
 			else continue;
-			out.push({ type: "goto", target, play: fn === "gotoAndPlay" });
+			action = { type: "goto", target, play: fn === "gotoAndPlay" };
 		}
+		const cond = conditionOf(code, m.index + m[0].indexOf(fn));
+		if (cond) {
+			const range = counts ? passRange(cond.test, cond.negate) : null;
+			if (range) action.passes = range;
+			else opts.warn?.(`${fn}() under a condition is always run (the script itself isn't evaluated)`);
+		}
+		out.push(action);
 	}
 	return out;
+}
+
+const IF_TAIL = /\bif\s*\(([\s\S]*)\)\s*$/;
+
+/** The `if` condition around position `at` (negate: in its else branch), or null. */
+function conditionOf(code: string, at: number): { test: string; negate: boolean } | null {
+	let before = code.slice(0, at).replace(/this\s*\.\s*$/, "");
+	// the enclosing block's header, or the start of a brace-less statement
+	let depth = 0;
+	let head: string | null = null;
+	for (let i = before.length - 1; i >= 0 && head === null; i--) {
+		const c = before[i];
+		if (c === "}") depth++;
+		else if (c === "{") {
+			if (depth === 0) head = before.slice(0, i);
+			else depth--;
+		} else if ((c === ";" || c === "\n") && depth === 0) {
+			const stmt = before.slice(i + 1);
+			if (/^\s*$/.test(stmt)) continue;
+			const own = /^\s*if\s*\(([\s\S]*)\)\s*$/.exec(stmt);
+			if (own) return { test: own[1]!, negate: false };
+			if (!/^\s*else\s*$/.test(stmt)) return null;
+			head = before.slice(0, i + 1) + " else";
+		}
+	}
+	if (head === null) {
+		const own = /^\s*if\s*\(([\s\S]*)\)\s*$/.exec(before);
+		return own ? { test: own[1]!, negate: false } : null;
+	}
+	if (!/\belse\s*$/.test(head)) {
+		const own = IF_TAIL.exec(head);
+		return own ? { test: own[1]!, negate: false } : null;
+	}
+	// an else branch: find the if it belongs to
+	const prev = head.replace(/\belse\s*$/, "").trimEnd();
+	if (prev.endsWith("}")) {
+		let d = 0;
+		for (let j = prev.length - 1; j >= 0; j--) {
+			if (prev[j] === "}") d++;
+			else if (prev[j] === "{" && --d === 0) {
+				const own = IF_TAIL.exec(prev.slice(0, j));
+				return own ? { test: own[1]!, negate: true } : null;
+			}
+		}
+		return null;
+	}
+	const own = /\bif\s*\(([^;]*?)\)[^;]*;\s*$/.exec(prev);
+	return own ? { test: own[1]!, negate: true } : null;
+}
+
+/** Passes over the frame for which "counter <op> N" holds (`from` inclusive, `before` exclusive; 0 = open). */
+function passRange(test: string, negate: boolean): FrameAction["passes"] | null {
+	if (/&&|\|\||!=/.test(test)) return null;
+	let op: string, n: number;
+	let m = /(===?|>=|<=|>|<)\s*(\d+)\s*$/.exec(test);
+	if (m) {
+		op = m[1]!;
+		n = parseInt(m[2]!, 10);
+	} else if ((m = /^\s*(\d+)\s*(===?|>=|<=|>|<)/.exec(test))) {
+		op = ({ "<": ">", ">": "<", "<=": ">=", ">=": "<=" } as Record<string, string>)[m[2]!] ?? m[2]!;
+		n = parseInt(m[1]!, 10);
+	} else return null;
+	let r: { from: number; before: number };
+	if (op === ">=") r = { from: n, before: 0 };
+	else if (op === ">") r = { from: n + 1, before: 0 };
+	else if (op === "<") r = { from: 0, before: n };
+	else if (op === "<=") r = { from: 0, before: n + 1 };
+	else r = { from: n, before: n + 1 };
+	if (!negate) return r;
+	if (r.from && r.before) return null;
+	return r.from ? { from: 0, before: r.from } : { from: r.before, before: 0 };
 }
 
 // ---------------------------------------------------------------------------------------------

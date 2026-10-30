@@ -23,6 +23,9 @@ export interface PProgram {
 	snd: Record<string, string>;
 	/** id of the filter used inside masks */
 	mf: string;
+	/** ids of the filters painting white / black with the alpha kept (alpha and erase masks) */
+	wf?: string;
+	bf?: string;
 }
 
 export interface PTimeline {
@@ -30,7 +33,7 @@ export interface PTimeline {
 	n: number;
 	/** labels name -> frame */
 	lb?: Record<string, number>;
-	/** frame -> actions: [0]=stop [1]=play [2, target, play(0/1)]=goto */
+	/** frame -> actions: [0]=stop [1]=play [2, target, play(0/1)]=goto; [9, from, before, ...] = only on passes [from, before) over the frame */
 	ac?: Record<number, (number | string)[][]>;
 	/** layers bottom to top */
 	ly: PLayer[];
@@ -43,6 +46,10 @@ export interface PTimeline {
 export interface PLayer {
 	/** 1 = mask layer */
 	m?: 1;
+	/** mask by alpha: 1 = keep ("alpha" blend), 2 = cut out ("erase" blend) */
+	mm?: 1 | 2;
+	/** alpha masks: the element's bounds [x, y, w, h] (outside them everything stays) */
+	mx?: number[];
 	/** index (in ly) of the mask layer masking this layer */
 	mb?: number;
 	it: PItem[];
@@ -92,4 +99,8 @@ export interface PInst extends PBase {
 	g?: [number, number, number, number, number][];
 	/** hidden */
 	hd?: 1;
+	/** Id of a filter that paints the instance white (invert blend). */
+	w?: string;
+	/** Subtract blend: id of the white filter for the two inverting copies around the instance. */
+	su?: string;
 }

@@ -18,6 +18,48 @@ Complete rewrite.
 - Command line compiler, unit tests and Animate/browser end-to-end tests.
 - Requires Animate 2022 or later. (3.x supported CS5.5–CC 2019.)
 
+### 4.0.0-rc.1 (2026-10-30): changes since alpha.2
+
+- **The user's document could be closed without saving.** With some (older) documents Animate
+  hands back the open original instead of the temporary copy the exporter works on; cleaning up
+  then closed the user's document. The exporter now tries new copies, falls back to the file as
+  last saved (warned), and never closes the source document.
+- Symbol instances inside groups (also nested groups) keep animating: the group's drawing and
+  its instances are exported separately. Before, the whole group was a still picture.
+- Animate's Output panel is captured in all test runs; two messages it showed during exports of
+  HTML5 Canvas documents (`scalingGrid`, `motionTweenScale` not supported) are gone.
+- Filters (drop shadow, glow, blur...) on rotated or scaled instances: the shadow direction and
+  blur sizes now follow the stage like in Animate (they turned with the instance; SMIL/CSS also
+  shrank them by the instance's scale). Fewer distinct filter definitions in the output.
+- Movie clips keep running after the main timeline stops (`stop()`), as in Flash: SMIL and CSS
+  output play the stopped timeline once, then loop the clips' common period. Before, SMIL/CSS
+  froze everything at the `stop()` — e.g. a one-frame main timeline with all the animation inside
+  movie clips came out as a still picture.
+- Frame scripts: HTML5 Canvas frame numbers count from 0 (`this.gotoAndPlay(0)` is frame 1); the
+  banner idiom "play N times, then stop" (pass counters in `if`/`else`, Animate's code snippet
+  included) is followed; other conditional actions are warned about. A frame that runs
+  `gotoAndPlay()` is not shown in SMIL/CSS either (the player already skipped it, like Flash).
+- *Loop: once*: everything holds the last frame that was shown (SMIL/CSS held the state one
+  frame later; the JS player let movie clips run on).
+- JS player: graphic symbols nested in graphic symbols showed a wrong frame until the next tick.
+- Bitmap fills: the image was missing (Animate's SVG export links it as a file); clipped bitmap
+  fills extend their edge pixels like Animate.
+- *Linear RGB* gradient strokes; strokes thinner than a pixel draw as 1 px hairlines like Animate.
+- Blend modes: *invert* and *subtract* exact (invert was approximated, subtract dropped), *alpha*
+  and *erase* implemented inside symbols placed with the *layer* blend, also between other
+  elements of one layer (alpha acts within the element's bounds only, like Flash; elsewhere
+  Animate doesn't draw them).
+- Faster artwork import and output (path compaction was quadratic in rare cases; duplicate
+  detection only compares drawings that may match): about 10% on big drawings.
+- Extraction pastes artwork straight onto the end of the atlas timeline (no blank keyframe
+  first): about half the paste time in long Animate sessions.
+- Still frames: movie clips inside graphic symbols keep running while the main timeline holds.
+- Tests: the comparison with Animate's rendering now rasterises in Edge (resvg alongside); new
+  fixtures for deep nesting, paint styles, animated masks, `stop()` with running clips, motion
+  tweens with property keyframes, blend modes, an HTML5 Canvas banner, text, filters on rotated
+  instances, groups with symbols and nested layer folders. Real-world files from other projects
+  were used as inspiration for these (own AS3 fixtures only).
+
 ### 4.0.0-alpha.2 (2026-10-29): fixes since alpha.1
 
 - CLI: the built `dist/cli/flash2svg.js` did not start (duplicate shebang); options are validated

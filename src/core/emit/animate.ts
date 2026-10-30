@@ -8,9 +8,9 @@ import { fmt, fmtMatrix } from "../geom.ts";
 import type { Mat } from "../model.ts";
 import { fromProps, type ColorProp, type TransformProp } from "../program.ts";
 import { el, type XmlNode } from "../xml.ts";
-import { bake, isAlways, isConstantTrack, trackValueAt, type BakedInstance, type BakedNode, type BakedTimeline, type BakeOptions, type GTrack, type Horizon, type Interval } from "./bake.ts";
+import { bake, holdFrom, isAlways, isConstantTrack, sliceTrack, trackValueAt, type BakedInstance, type BakedNode, type BakedTimeline, type BakeOptions, type GTrack, type Horizon, type Interval } from "./bake.ts";
 import { OutputDoc, svgRoot } from "./document.ts";
-import { colorMatrix, cssBlendMode, isAlphaOnly, matrixString, type ColorMatrixValues } from "./filters.ts";
+import { blendHides, blendSubtract, blendWhite, colorMatrix, cssBlendMode, isAlphaOnly, matrixString, type ColorMatrixValues } from "./filters.ts";
 import { textNode } from "./text.ts";
 
 export type BeginMode = "auto" | "click" | "hover" | "manual";
@@ -93,6 +93,10 @@ class Writer {
 	readonly dur: string;
 	readonly begin: string;
 	readonly repeat: string;
+	/** Tick from which the end of the horizon loops after the first pass (0 = none), see Horizon. */
+	readonly tail: number;
+	private readonly fps: number;
+	private clockId = "";
 
 	constructor(ctx: Context, doc: OutputDoc, horizon: Horizon, opts: AnimateOptions, svgId: string) {
 		this.ctx = ctx;
@@ -102,11 +106,36 @@ class Writer {
 		this.svgId = svgId;
 		this.css = opts.format === "css";
 		this.posterTick = opts.posterFrame === "last" ? Math.max(0, this.H - 1) : 0;
-		this.dur = fmt(this.H / horizon.fps, 4) + "s";
+		this.tail = horizon.loop ? 0 : horizon.tail;
+		// with a tail, the first pass ends where the tail starts
+		this.dur = fmt((this.tail || this.H) / horizon.fps, 4) + "s";
 		const delay = opts.delay ? `+${fmt(opts.delay, 3)}s` : "";
 		this.begin =
 			opts.begin === "click" ? `${svgId}.click${delay}` : opts.begin === "hover" ? `${svgId}.mouseover${delay}` : opts.begin === "manual" ? "indefinite" : opts.delay ? fmt(opts.delay, 3) + "s" : "";
 		this.repeat = horizon.loop ? "indefinite" : "";
+		this.fps = horizon.fps;
+	}
+
+	/** The horizon once (or looping); with a tail: the first pass up to it, then the tail looping. [from, length, isTail] */
+	private windows(): [number, number, boolean][] {
+		return this.tail ? [[0, this.tail, false], [this.tail, this.H - this.tail, true]] : [[0, this.H, false]];
+	}
+
+	/** Tracks of one window. Played once without a tail, everything holds the last tick shown. */
+	private windowTracks(tracks: GTrack[], from: number, tail: boolean): GTrack[] {
+		if (tail) return tracks.map((tr) => sliceTrack(tr, from, this.H));
+		const end = this.tail || (!this.repeat && this.H > 1 ? this.H - 1 : 0);
+		return end ? tracks.map((tr) => (isConstantTrack(tr) ? tr : holdFrom(tr, end))) : tracks;
+	}
+
+	/** Discrete steps in [from, to), shifted to start at 0 (the state at `from` first). */
+	private sliceSteps(steps: { t: number; v: string }[], from: number, to: number, off: string): { t: number; v: string }[] {
+		if (!from && to >= this.H) return steps;
+		let v0 = off;
+		for (const s of steps) if (s.t <= from) v0 = s.v;
+		const out = [{ t: 0, v: v0 }];
+		for (const s of steps) if (s.t > from && s.t < to && s.v !== out[out.length - 1]!.v) out.push({ t: s.t - from, v: s.v });
+		return out;
 	}
 
 	warn = (m: string) => {
@@ -137,7 +166,7 @@ class Writer {
 			if (!nodes.length) continue;
 			const id = this.doc.uid("mask");
 			// kept inside the subtree (not in <defs>) so a copied subtree carries its own masks
-			out.push(el("mask", { id }, [el("g", { filter: this.doc.maskFilter() }, nodes)]));
+			out.push(this.doc.maskElement(id, nodes, bl.layer.maskMode, bl.layer.maskBox));
 			masks.set(bl.layer.index, id);
 		}
 		let group: { mask: number; nodes: XmlNode[] } | null = null;
@@ -199,6 +228,10 @@ class Writer {
 
 	private instance(n: BakedInstance): XmlNode | null {
 		if (!n.item.visible || !n.child) return null;
+		if (blendHides(n.item.blendMode)) {
+			cssBlendMode(n.item.blendMode, this.warn);
+			return null;
+		}
 		let inner: XmlNode = this.childRef(n.child);
 		if (n.states?.length) {
 			// Button states driven by CSS :hover / :active (works wherever the SVG is interactive)
@@ -227,9 +260,9 @@ class Writer {
 		const colorAnimated = !!color && Object.values(color).some((tr) => !isConstantTrack(tr));
 		const poster = colorAtTick(color, this.posterTick);
 		const filterSets = n.filters;
-		const m0 = matAtTick(n, this.posterTick);
-		const scale = { x: Math.hypot(m0[0], m0[1]), y: Math.hypot(m0[2], m0[3]) };
-		const size = { w: n.item.bounds.width / Math.max(1e-3, scale.x), h: n.item.bounds.height / Math.max(1e-3, scale.y) };
+		// filters sit outside the transform chain: parent orientation and units, like Animate's
+		const scale = { x: 1, y: 1 };
+		const size = { w: n.item.bounds.width, h: n.item.bounds.height };
 		const alphaOnly = !color || allAlphaOnly(color);
 		const anims: XmlNode[] = [];
 
@@ -283,8 +316,19 @@ class Writer {
 		if (n.item.blendMode === "layer") style.push("isolation:isolate");
 		if (!Object.keys(attrs).length && !style.length && !anims.length && !this.pendingCss.length) return inner;
 		const g = el("g", attrs, [inner, ...anims]);
-		if (style.length) g.attrs.style = style.join(";");
 		this.applyCssAnimations(g);
+		// invert: a white copy (after colour and filters) blended with "difference"
+		if (blendWhite(n.item.blendMode)) return el("g", { filter: this.doc.whiteFilter(), style: style.join(";") }, [g]);
+		if (blendSubtract(n.item.blendMode)) {
+			// SMIL: <use> copies run the same animations; CSS: copies share the animation classes
+			if (!this.css) g.attrs.id = this.doc.uid("sub");
+			const copy = () => (this.css ? this.copyWithFreshIds(g) : el("use", { "xlink:href": "#" + g.attrs.id }));
+			const white = () => el("g", { filter: this.doc.whiteFilter(false, true), style: "mix-blend-mode:difference" }, [copy()]);
+			const first = white();
+			g.attrs.style = style.join(";");
+			return el("g", {}, [first, g, white()]);
+		}
+		if (style.length) g.attrs.style = style.join(";");
 		return g;
 	}
 
@@ -394,9 +438,7 @@ class Writer {
 			this.cssAnimation(g, "transform", c.tracks, cssFn);
 			return;
 		}
-		const a = this.smilValues(c.tracks, fmtV);
-		if (!a) return;
-		g.children.push(el("animateTransform", { attributeName: "transform", type: svgType, ...a, ...this.timing() }));
+		g.children.push(...this.smil(c.tracks, fmtV, (a) => el("animateTransform", { attributeName: "transform", type: svgType, ...a })));
 	}
 
 	/** Animates a plain attribute/property from one or more tracks sharing key times. */
@@ -406,8 +448,7 @@ class Writer {
 			this.pendingCss.push({ prop: name, tracks, fmtV });
 			return;
 		}
-		const a = this.smilValues(tracks, fmtV);
-		if (a) into.push(el("animate", { attributeName: name, ...a, ...this.timing() }));
+		into.push(...this.smil(tracks, fmtV, (a) => el("animate", { attributeName: name, ...a })));
 	}
 	private pendingCss: { prop: string; tracks: GTrack[]; fmtV: (v: number[]) => string }[] = [];
 
@@ -419,8 +460,7 @@ class Writer {
 		// merge the 8 colour tracks on common key times (sampled where they differ)
 		const tracks = COLOR_ORDER.map((p) => color[p]);
 		const fmtV = (v: number[]) => matrixString(colorMatrix(Object.fromEntries(COLOR_ORDER.map((p, i) => [p, v[i]!])) as unknown as ColorMatrixValues));
-		const a = this.smilValues(tracks, fmtV);
-		if (a) node.children.push(el("animate", { attributeName: "values", ...a, ...this.timing() }));
+		node.children.push(...this.smil(tracks, fmtV, (a) => el("animate", { attributeName: "values", ...a })));
 	}
 
 	/** Discrete switch of an attribute value over time. */
@@ -431,17 +471,7 @@ class Writer {
 			this.cssDiscrete(node, attr, keys, off);
 			return;
 		}
-		const times: number[] = [],
-			values: string[] = [];
-		if (keys[0]!.t > 0) {
-			times.push(0);
-			values.push(off);
-		}
-		for (const k of keys) {
-			times.push(k.t / this.H);
-			values.push(k.v);
-		}
-		node.children.push(el("animate", { attributeName: attr, values: values.join(";"), keyTimes: times.map(floorTime).join(";"), calcMode: "discrete", ...this.timing() }));
+		node.children.push(...this.smilDiscrete(attr, keys, off));
 	}
 
 	private visibility(node: XmlNode, vis: Interval[]): XmlNode {
@@ -471,19 +501,26 @@ class Writer {
 		} else {
 			if (hiddenAtPoster) wrap.attrs.display = "none";
 			wrap.children.push(
-				el("animate", {
-					attributeName: "display",
-					values: steps.map((s) => (s.on ? "inline" : "none")).join(";"),
-					keyTimes: steps.map((s) => floorTime(s.t / this.H)).join(";"),
-					calcMode: "discrete",
-					...this.timing(),
-				}),
+				...this.smilDiscrete(
+					"display",
+					steps.map((s) => ({ t: s.t, v: s.on ? "inline" : "none" })),
+					"none",
+				),
 			);
 		}
 		return wrap;
 	}
 
-	private timing(): Record<string, string> {
+	private timing(tail = false): Record<string, string> {
+		if (tail) {
+			// The tail starts when the first pass ends, and stops when a click/hover restarts it (a
+			// syncbase end before the begin would make browsers drop the interval).
+			if (!this.clockId) this.clockId = this.doc.uid("clock");
+			const restart = this.opts.begin === "click" ? `${this.svgId}.click` : this.opts.begin === "hover" ? `${this.svgId}.mouseover` : undefined;
+			const t: Record<string, string> = { dur: fmt((this.H - this.tail) / this.fps, 4) + "s", begin: `${this.clockId}.end`, repeatCount: "indefinite" };
+			if (restart) t.end = restart;
+			return t;
+		}
 		const t: Record<string, string> = { dur: this.dur };
 		if (this.begin) t.begin = this.begin;
 		if (this.repeat) t.repeatCount = this.repeat;
@@ -491,9 +528,40 @@ class Writer {
 		return t;
 	}
 
+	/** SMIL animations for `tracks`, one per window (`make` gets values/keyTimes + timing). */
+	private smil(tracks: GTrack[], fmtV: (v: number[]) => string, make: (a: Record<string, string>) => XmlNode): XmlNode[] {
+		const out: XmlNode[] = [];
+		for (const [from, len, tail] of this.windows()) {
+			const a = this.smilValues(this.windowTracks(tracks, from, tail), fmtV, len);
+			if (a) out.push(make({ ...a, ...this.timing(tail) }));
+		}
+		return out;
+	}
+
+	/** SMIL discrete switches, one animation per window. */
+	private smilDiscrete(attr: string, steps: { t: number; v: string }[], off: string): XmlNode[] {
+		const out: XmlNode[] = [];
+		for (const [from, len, tail] of this.windows()) {
+			const keys = this.sliceSteps(steps, from, from + len, off);
+			if (tail && keys.length < 2) continue;
+			const times: number[] = [],
+				values: string[] = [];
+			if (!keys.length || keys[0]!.t > 0) {
+				times.push(0);
+				values.push(off);
+			}
+			for (const k of keys) {
+				times.push(k.t / len);
+				values.push(k.v);
+			}
+			out.push(el("animate", { attributeName: attr, values: values.join(";"), keyTimes: times.map(floorTime).join(";"), calcMode: "discrete", ...this.timing(tail) }));
+		}
+		return out;
+	}
+
 	/** values/keyTimes/keySplines for SMIL from tracks with identical key times. */
-	private smilValues(tracks: GTrack[], fmtV: (v: number[]) => string): Record<string, string> | null {
-		const keys = mergeTracks(tracks, this.H);
+	private smilValues(tracks: GTrack[], fmtV: (v: number[]) => string, H = this.H): Record<string, string> | null {
+		const keys = mergeTracks(tracks, H);
 		if (!keys) return null;
 		const times: number[] = [],
 			values: string[] = [],
@@ -501,7 +569,7 @@ class Writer {
 		let anyCurve = false;
 		const add = (t: number, v: number[], spline: string) => {
 			const prev = times[times.length - 1];
-			let tt = t / this.H;
+			let tt = t / H;
 			if (prev !== undefined && tt <= prev) tt = prev; // equal times: an instantaneous jump
 			times.push(tt);
 			values.push(fmtV(v));
@@ -545,11 +613,15 @@ class Writer {
 	// ------------------------------------------------------------------ CSS
 
 	private cssAnimation(node: XmlNode, prop: string, tracks: GTrack[], fmtV: (v: number[]) => string) {
-		const keys = mergeTracks(tracks, this.H);
+		for (const [from, len, tail] of this.windows()) this.cssAnimationWin(node, prop, this.windowTracks(tracks, from, tail), fmtV, len, tail);
+	}
+
+	private cssAnimationWin(node: XmlNode, prop: string, tracks: GTrack[], fmtV: (v: number[]) => string, H: number, tail: boolean) {
+		const keys = mergeTracks(tracks, H);
 		if (!keys) return;
 		const name = this.cssName(node);
 		const frames: string[] = [];
-		const pct = (t: number) => fmt((t / this.H) * 100, 4) + "%";
+		const pct = (t: number) => fmt((t / H) * 100, 4) + "%";
 		if (keys[0]!.t > 0) frames.push(`0%{${prop}:${fmtV(keys[0]!.v)};animation-timing-function:step-end}`);
 		for (let i = 0; i < keys.length; i++) {
 			const k = keys[i]!;
@@ -560,21 +632,28 @@ class Writer {
 			frames.push(`${pct(t)}{${prop}:${fmtV(k.v)};animation-timing-function:${tf}}`);
 		}
 		const last = keys[keys.length - 1]!;
-		if (last.t < this.H) frames.push(`100%{${prop}:${fmtV(last.v)}}`);
-		this.cssRule(node, name, frames);
+		if (last.t < H) frames.push(`100%{${prop}:${fmtV(last.v)}}`);
+		this.cssRule(node, name, frames, "linear", tail);
 	}
 
 	private cssDiscrete(node: XmlNode, prop: string, steps: { t: number; v: string }[], off: string) {
+		for (const [from, len, tail] of this.windows()) {
+			const s = this.sliceSteps(steps, from, from + len, off);
+			if (!tail || s.length > 1) this.cssDiscreteWin(node, prop, s, off, len, tail);
+		}
+	}
+
+	private cssDiscreteWin(node: XmlNode, prop: string, steps: { t: number; v: string }[], off: string, H: number, tail: boolean) {
 		const name = this.cssName(node);
 		const frames: string[] = [];
 		// switch at (or just before) the exact frame time, never after it
-		const pct = (t: number) => (t <= 0 ? "0" : String(Math.floor((t / this.H) * 1e6) / 1e4)) + "%";
+		const pct = (t: number) => (t <= 0 ? "0" : String(Math.floor((t / H) * 1e6) / 1e4)) + "%";
 		if (!steps.length || steps[0]!.t > 0) frames.push(`0%{${prop}:${off}}`);
 		for (const s of steps) frames.push(`${pct(s.t)}{${prop}:${s.v}}`);
 		// explicit end value: without it a non-repeating animation ends ("fill: both") on the
 		// element's own attribute (e.g. visibility="hidden") instead of the last step
 		frames.push(`100%{${prop}:${steps.length ? steps[steps.length - 1]!.v : off}}`);
-		this.cssRule(node, name, frames, "step-end");
+		this.cssRule(node, name, frames, "step-end", tail);
 	}
 
 	/** Each animated element gets one class; all its animations go into that class's rule. */
@@ -590,7 +669,7 @@ class Writer {
 		return `${this.opts.idPrefix ?? ""}${this.cssClass(node)}_${this.animCount++}`;
 	}
 
-	private cssRule(node: XmlNode, name: string, frames: string[], timing = "linear") {
+	private cssRule(node: XmlNode, name: string, frames: string[], timing = "linear", tail = false) {
 		this.keyframes.push(`@keyframes ${name}{${frames.join("")}}`);
 		const cls = this.cssClass(node);
 		const iter = this.repeat ? "infinite" : "1";
@@ -598,12 +677,19 @@ class Writer {
 		const delay = this.opts.delay ? ` ${fmt(this.opts.delay, 3)}s` : "";
 		const sel = `#${this.svgId} .${cls}`;
 		const existing = this.rules.findIndex((r) => r.startsWith(`${sel}{`));
-		const decl = `${name} ${this.dur} ${timing}${delay} ${iter}${fill}`;
+		// the tail loops after the first pass; until then the first animation (fill: both) holds
+		const decl = tail
+			? `${name} ${fmt((this.H - this.tail) / this.fps, 4)}s ${timing} ${fmt((this.opts.delay ?? 0) + this.tail / this.fps, 4)}s infinite`
+			: `${name} ${this.dur} ${timing}${delay} ${iter}${fill}`;
 		if (existing >= 0) this.rules[existing] = this.rules[existing]!.replace(/animation:([^}]*)}/, (_m, a: string) => `animation:${a},${decl}}`);
 		else this.rules.push(`${sel}{animation:${decl}}`);
 	}
 
 	finish(svg: XmlNode) {
+		if (this.clockId && !this.css) {
+			// the clock of the first pass: tails start when it ends
+			svg.children.push(el("animate", { id: this.clockId, attributeName: "visibility", values: "visible", ...this.timing() }));
+		}
 		if (this.buttons) {
 			const s = `#${this.svgId}`;
 			this.doc.styles.push(
@@ -656,12 +742,6 @@ function colorAtTick(color: Record<ColorProp, GTrack> | null, tick: number): Col
 function allAlphaOnly(color: Record<ColorProp, GTrack>): boolean {
 	const fixed = (tr: GTrack, v: number) => tr.every((k) => Math.abs(k.v - v) < 1e-9);
 	return fixed(color.rP, 100) && fixed(color.gP, 100) && fixed(color.bP, 100) && fixed(color.rA, 0) && fixed(color.gA, 0) && fixed(color.bA, 0) && fixed(color.aA, 0);
-}
-
-function matAtTick(n: BakedInstance, tick: number): Mat {
-	const p = {} as Record<TransformProp, number>;
-	for (const k of Object.keys(n.transform) as TransformProp[]) p[k] = trackValueAt(n.transform[k], tick);
-	return fromProps(p);
 }
 
 function staticMatrix(t: BakedInstance["transform"], tick: number): Mat {

@@ -1,6 +1,6 @@
 // E2E step 4: drives the JS player in a real browser and checks its API and interaction:
 // frame scripts and labels, goto*, loop modes and the "end" event, start modes, buttons, sounds.
-// Uses the scene models written by e2e-extract (f02-eases, f12-labels, f15-button, f16-sound).
+// Uses the scene models written by e2e-extract (f02-eases, f12-labels, f15-button, f16-sound, f30-banner).
 // Usage: node scripts/e2e-player.ts [--browser=msedge]
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -122,6 +122,24 @@ const near = (a: [number, number, number], b: [number, number, number]) => a.eve
 			events.some((e) => e.frame === 0 && e.label === "step1") && events.some((e) => e.frame === 3 && e.label === "step2"),
 			JSON.stringify(events.slice(0, 5)),
 		);
+	}
+}
+
+// ------------------------------------------------------------------ pass counters (banner)
+{
+	// f30-banner: HTML5 Canvas, 24 fps, 12 frames; Animate's "stop after 3 loops" snippet on frame 12
+	const b = build("f30-banner", {}, "auto");
+	if (b) {
+		await open(b.file, b.model);
+		await api(page, (a) => a.pause());
+		const at = async (tick: number) => {
+			await page.evaluate((t) => (document.documentElement as unknown as { flash2svg: Api }).flash2svg.seek(t), tick / 24);
+			return frame();
+		};
+		check("passes: first pass reaches frame 12", (await at(11)) === 12, `frame ${await frame()}`);
+		check("passes: then loops to frame 1", (await at(12)) === 1, `frame ${await frame()}`);
+		check("passes: third pass", (await at(30)) === 7, `frame ${await frame()}`);
+		check("passes: stops on frame 12 of the third pass", (await at(60)) === 12, `frame ${await frame()}`);
 	}
 }
 

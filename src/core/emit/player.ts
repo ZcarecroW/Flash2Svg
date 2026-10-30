@@ -10,7 +10,7 @@ import type { Track } from "../tracks.ts";
 import { cdata, serialize, el, type XmlNode } from "../xml.ts";
 import type { PInst, PItem, PProgram, PTimeline, PTrack } from "../../player/format.ts";
 import { OutputDoc, svgRoot } from "./document.ts";
-import { cssBlendMode } from "./filters.ts";
+import { blendHides, blendSubtract, blendWhite, cssBlendMode } from "./filters.ts";
 import { PLAYER_RUNTIME } from "./runtime-code.generated.ts";
 import { StaticRenderer } from "./static.ts";
 import { textNode } from "./text.ts";
@@ -96,7 +96,7 @@ export function renderPlayer(ctx: Context, rootId: string, s: ExportSettings): {
 			tr: TRANSFORM_PROPS.map((k) => track(it.transform[k], k === "sx" || k === "sy" ? 4 : k === "rot" || k === "skw" ? 3 : ctx.digits)),
 		};
 		if (it.name) p.nm = it.name;
-		if (!it.visible) p.hd = 1;
+		if (!it.visible || blendHides(it.blendMode)) p.hd = 1;
 		if (it.color) {
 			p.c = COLOR_PROPS.map((k) => track(it.color![k], 2));
 			const fixed = (k: (typeof COLOR_PROPS)[number], v: number) => it.color![k].every((key) => Math.abs(key.v - v) < 1e-9);
@@ -104,14 +104,13 @@ export function renderPlayer(ctx: Context, rootId: string, s: ExportSettings): {
 			if (!alphaOnly) p.cm = 1;
 		}
 		if (it.filters.length) {
-			const sx = Math.abs(typeof p.tr[4] === "number" ? p.tr[4] : (p.tr[4]![1] ?? 1));
-			const sy = Math.abs(typeof p.tr[5] === "number" ? p.tr[5] : (p.tr[5]![1] ?? 1));
-			const size = { w: it.bounds.width / Math.max(1e-3, sx), h: it.bounds.height / Math.max(1e-3, sy) };
+			// applied outside the instance transform, in the parent's units (see the runtime)
+			const size = { w: it.bounds.width, h: it.bounds.height };
 			p.f = it.filters.map((f) => {
 				const key = JSON.stringify(f.filters);
 				let ref = filterRefs.get(key);
 				if (ref === undefined) {
-					const url = doc.filter(f.filters, null, { x: sx || 1, y: sy || 1 }, warn, size);
+					const url = doc.filter(f.filters, null, { x: 1, y: 1 }, warn, size);
 					ref = url ? url.slice(5, -1) : "";
 					filterRefs.set(key, ref);
 				}
@@ -120,6 +119,8 @@ export function renderPlayer(ctx: Context, rootId: string, s: ExportSettings): {
 		}
 		const blend = cssBlendMode(it.blendMode, warn);
 		if (blend) p.b = blend;
+		if (blendWhite(it.blendMode)) p.w = doc.whiteFilter().slice(5, -1);
+		if (blendSubtract(it.blendMode)) p.su = doc.whiteFilter(false, true).slice(5, -1);
 		if (it.graphic) p.g = it.graphic.map((g) => [g.start, g.end, LOOP_CODES[g.loop] ?? 0, g.firstFrame, g.lastFrame]);
 		return p;
 	};
@@ -131,7 +132,10 @@ export function renderPlayer(ctx: Context, rootId: string, s: ExportSettings): {
 		if (acts.length) {
 			t.ac = {};
 			for (const [f, list] of acts) {
-				t.ac[+f] = list.map((a) => (a.type === "stop" ? [0] : a.type === "play" ? [1] : [2, typeof a.target === "number" ? a.target - 1 : a.target, a.play ? 1 : 0]));
+				t.ac[+f] = list.map((a) => {
+					const code = a.type === "stop" ? [0] : a.type === "play" ? [1] : [2, typeof a.target === "number" ? a.target - 1 : a.target, a.play ? 1 : 0];
+					return a.passes ? [9, a.passes.from, a.passes.before, ...code] : code;
+				});
 			}
 		}
 		if (prog.view) t.vw = (["x", "y", "rot", "skw", "sx", "sy"] as const).map((k) => track(prog.view![k], k === "sx" || k === "sy" ? 4 : 3));
@@ -140,6 +144,14 @@ export function renderPlayer(ctx: Context, rootId: string, s: ExportSettings): {
 			const items = l.items.map(item).filter((x): x is PItem => !!x);
 			const pl: PTimeline["ly"][number] = { it: items };
 			if (l.type === "mask") pl.m = 1;
+			if (l.maskMode === "alpha") {
+				pl.mm = 1;
+				if (l.maskBox) pl.mx = [l.maskBox.left, l.maskBox.top, l.maskBox.width, l.maskBox.height].map((v) => Math.round(v * 100) / 100);
+				P.wf = doc.whiteFilter().slice(5, -1);
+			} else if (l.maskMode === "erase") {
+				pl.mm = 2;
+				P.bf = doc.whiteFilter(true).slice(5, -1);
+			}
 			if (l.maskedBy >= 0 && indexOfLayer.has(l.maskedBy)) pl.mb = indexOfLayer.get(l.maskedBy)!;
 			t.ly.push(pl);
 		}

@@ -63,6 +63,8 @@ class Clip {
 	readonly player: Player;
 	readonly kind: number; // -1 root, 0 mc, 1 graphic, 2 button
 	private enteredFrame = -1;
+	/** times each frame was entered (counted stops) */
+	private passes: number[] = [];
 	buttonState = 0;
 
 	constructor(player: Player, tl: PTimeline, kind: number) {
@@ -76,8 +78,12 @@ class Clip {
 			let g = el("g") as SVGGElement;
 			if (l.m) {
 				const id = `${player.svg.id}_m${uidCounter++}`;
-				const mask = el("mask", { id });
-				const inner = el("g", { filter: `url(#${this.P.mf})` }) as SVGGElement;
+				// alpha/erase masks work by alpha over a big area (erase: white but where the content is)
+				const area = { x: "-1e5", y: "-1e5", width: "2e5", height: "2e5" };
+				const mask = el("mask", l.mm ? { id, maskUnits: "userSpaceOnUse", ...area } : { id });
+				if (l.mm === 2 || l.mx) mask.appendChild(el("rect", { ...area, fill: "#fff" }));
+				if (l.mx) mask.appendChild(el("rect", { x: "" + l.mx[0], y: "" + l.mx[1], width: "" + l.mx[2], height: "" + l.mx[3] }));
+				const inner = el("g", { filter: `url(#${l.mm === 1 ? this.P.wf : l.mm === 2 ? this.P.bf : this.P.mf})` }) as SVGGElement;
 				mask.appendChild(inner);
 				this.node.appendChild(mask);
 				this.maskIds[i] = id;
@@ -112,7 +118,13 @@ class Clip {
 		if (this.kind === -1) this.player.emit({ type: "frame", frame: this.frame, label });
 		this.playSounds();
 		if (!acts) return;
-		for (const a of acts) {
+		const pass = (this.passes[this.frame] = (this.passes[this.frame] ?? 0) + 1);
+		for (let a of acts) {
+			// [9, from, before, ...action]: only on those passes over the frame
+			if (a[0] === 9) {
+				if (pass < +a[1]! || (+a[2]! && pass >= +a[2]!)) continue;
+				a = a.slice(3);
+			}
 			if (a[0] === 0) this.playing = false;
 			else if (a[0] === 1) this.playing = true;
 			else {
@@ -152,16 +164,15 @@ class Clip {
 			if (this.fresh) {
 				this.fresh = false;
 			} else if (this.playing) {
-				let next = this.frame + 1;
-				if (next >= this.tl.n) next = this.kind === -1 && !this.player.loop ? this.frame : 0;
-				if (this.kind === -1 && next === this.frame && next === this.tl.n - 1) {
-					this.playing = false;
-					this.ended = true;
-					this.player.emit({ type: "end", frame: this.frame });
-				}
-				this.frame = next;
+				this.frame = this.frame + 1 >= this.tl.n ? 0 : this.frame + 1;
 			}
 			this.runActions();
+			// not looping: the root ends on arriving at its last frame
+			if (this.kind === -1 && !this.player.loop && this.playing && this.frame === this.tl.n - 1) {
+				this.playing = false;
+				this.ended = true;
+				this.player.emit({ type: "end", frame: this.frame });
+			}
 		}
 		this.fresh = false;
 		this.sync();
@@ -193,15 +204,15 @@ class Clip {
 				if (active && !inst) {
 					inst = new Inst(this, it);
 					this.items.set(it, inst);
-					g.insertBefore(inst.node, before);
+					for (const e of inst.els.length ? inst.els : [inst.node]) g.insertBefore(e, before);
 					const c = inst.clip;
 					if (c && c.kind === 1) c.setFrame(graphicFrame(it as PInst, this.frame, c.tl.n));
 				} else if (!active && inst) {
-					inst.node.remove();
+					for (const e of inst.els.length ? inst.els : [inst.node]) e.remove();
 					this.items.delete(it);
 					inst = undefined;
 				}
-				if (inst) before = inst.node;
+				if (inst) before = inst.els[0] ?? inst.node;
 			}
 		});
 	}
@@ -216,9 +227,13 @@ class Clip {
 
 	/** Graphic symbols/buttons: frame chosen by the parent. */
 	setFrame(f: number) {
-		if (f !== this.frame) {
-			this.frame = f;
-			this.sync();
+		if (f === this.frame) return;
+		this.frame = f;
+		this.sync();
+		// nested graphics follow at once (not only on the next tick)
+		for (const inst of this.items.values()) {
+			const c = inst.clip;
+			if (c && c.kind === 1) c.setFrame(graphicFrame(inst.it as PInst, f, c.tl.n));
 		}
 	}
 
@@ -238,6 +253,11 @@ class Clip {
 /** A display-list entry of a clip. */
 class Inst {
 	readonly node: SVGElement;
+	/** The node, or for the subtract blend the node between two inverting copies of it. */
+	els: SVGElement[] = [];
+	/** instances: the node carrying the transform, and the one carrying Animate filters */
+	private tnode: SVGElement | null = null;
+	private fnode: SVGElement | null = null;
 	readonly it: PItem;
 	readonly owner: Clip;
 	clip: Clip | null = null;
@@ -275,8 +295,28 @@ class Inst {
 					if (it.t === 2) this.button(g);
 					this.clip.sync();
 				}
-				if (it.b) g.setAttribute("style", `mix-blend-mode:${it.b}`);
-				this.node = g;
+				// Animate filters work in the parent's orientation (not rotated with the instance):
+				// outer (blend, opacity, colour) > filter > transform > clip
+				let node = g;
+				if (it.f) {
+					this.fnode = el("g");
+					this.fnode.appendChild(g);
+					node = el("g");
+					node.appendChild(this.fnode);
+				}
+				this.tnode = g;
+				if (it.b) node.setAttribute("style", `mix-blend-mode:${it.b}`);
+				if (it.w) node.setAttribute("filter", `url(#${it.w})`);
+				this.node = node;
+				if (it.su) {
+					node.id = `${owner.player.svg.id}_s${uidCounter++}`;
+					const white = () => {
+						const w = el("g", { filter: `url(#${it.su})`, style: "mix-blend-mode:difference" });
+						w.appendChild(use(node.id));
+						return w;
+					};
+					this.els = [white(), node, white()];
+				}
 				break;
 			}
 		}
@@ -310,7 +350,7 @@ class Inst {
 		}
 		if (it.k !== "i") return;
 		const tr = it.tr;
-		this.node.setAttribute("transform", matrixOf(P, tr, t, trackAt(P, tr[6], t, 0), trackAt(P, tr[7], t, 0)));
+		(this.tnode ?? this.node).setAttribute("transform", matrixOf(P, tr, t, trackAt(P, tr[6], t, 0), trackAt(P, tr[7], t, 0)));
 
 		if (it.c) {
 			const cv = it.c.map((tk, i) => trackAt(P, tk, t, i < 4 ? 100 : 0));
@@ -334,7 +374,7 @@ class Inst {
 			for (const [ft, id] of it.f) if (ft <= t) ref = id;
 			if (ref !== this.filterRef) {
 				this.filterRef = ref;
-				const target = (this.clip?.node as SVGElement | undefined) ?? this.node;
+				const target = this.fnode ?? this.node;
 				if (ref) target.setAttribute("filter", `url(#${ref})`);
 				else target.removeAttribute("filter");
 			}
@@ -493,7 +533,9 @@ class Player {
 	step() {
 		this.inTick = true;
 		try {
-			this.root.tick();
+			// "once": everything holds when the root timeline stops; otherwise a stopped root leaves
+			// its movie clips running (Flash)
+			if (this.loop || this.root.playing) this.root.tick();
 		} finally {
 			this.inTick = false;
 		}

@@ -7,15 +7,17 @@ import { fmt, fmtMatrix } from "../geom.ts";
 import type { Mat } from "../model.ts";
 import { COLOR_PROPS, fromProps, TRANSFORM_PROPS, type ColorProp, type InstanceItem, type Item, type Program, type ProgramLayer, type TransformProp } from "../program.ts";
 import { valueAt } from "../tracks.ts";
-import { el, type XmlNode } from "../xml.ts";
+import { clone, el, type XmlNode } from "../xml.ts";
 import { OutputDoc, svgRoot } from "./document.ts";
-import { cssBlendMode, isAlphaOnly, type ColorMatrixValues } from "./filters.ts";
+import { blendHides, blendSubtract, blendWhite, cssBlendMode, isAlphaOnly, type ColorMatrixValues } from "./filters.ts";
 import { textNode } from "./text.ts";
 import { graphicFrame, playheadFrame } from "./timing.ts";
 
 export interface StaticOptions {
 	/** Root frame to render (0-based). */
 	frame: number;
+	/** Ticks since the start (default `frame`): differs once the root timeline stopped or jumped. */
+	ticks?: number;
 	/**
 	 * How movie clips pick their frame. "play" = as if the movie played up to `frame`;
 	 * "first" = always their first frame (what Animate's stage and PNG export show).
@@ -39,7 +41,7 @@ export function renderStatic(ctx: Context, rootId: string, opts: StaticOptions):
 	const r = new StaticRenderer(ctx, doc, opts);
 	const prog = ctx.programs[rootId];
 	if (!prog) throw new Error(`Unknown timeline ${rootId}`);
-	root.children.push(...r.timeline(prog, opts.frame, opts.frame, 0));
+	root.children.push(...r.timeline(prog, opts.frame, opts.ticks ?? opts.frame, 0));
 	return { svg: doc.toString(root, { pretty: opts.pretty }), assets: doc.assets };
 }
 
@@ -87,7 +89,7 @@ export class StaticRenderer {
 				if (!content.length) continue;
 				const id = this.doc.uid("mask");
 				// default mask region (masked element's bounding box + 10%) is all that's needed
-				this.doc.defs.push(el("mask", { id }, [el("g", { filter: this.doc.maskFilter() }, content)]));
+				this.doc.defs.push(this.doc.maskElement(id, content, layer.maskMode, layer.maskBox));
 				masks.set(layer.index, id);
 			}
 		}
@@ -151,6 +153,10 @@ export class StaticRenderer {
 
 	instance(prog: Program, item: InstanceItem, frame: number, ticks: number, depth: number): XmlNode | null {
 		if (!item.visible) return null;
+		if (blendHides(item.blendMode)) {
+			cssBlendMode(item.blendMode, this.warn);
+			return null;
+		}
 		const child = this.ctx.programs[item.symbol];
 		if (!child) return null;
 		const m = matrixAt(item, frame);
@@ -160,7 +166,8 @@ export class StaticRenderer {
 		let childTicks: number;
 		if (item.symbolType === "graphic") {
 			childFrame = graphicFrame(item, frame, child.frameCount);
-			childTicks = childFrame;
+			// movie clips inside keep counting ticks while the parent holds a frame (stop())
+			childTicks = childFrame + Math.max(0, ticks - frame);
 		} else if (item.symbolType === "button") {
 			childFrame = 0;
 			childTicks = 0;
@@ -188,21 +195,30 @@ export class StaticRenderer {
 		if (color && isAlphaOnly(color)) {
 			if (color.aP !== 100) attrs.opacity = fmt(Math.max(0, color.aP) / 100, 3);
 		} else if (color) colorForFilter = color;
-		const sx = Math.hypot(m[0], m[1]),
-			sy = Math.hypot(m[2], m[3]);
-		const size = { w: item.bounds.width / Math.max(1e-3, sx), h: item.bounds.height / Math.max(1e-3, sy) };
-		const filter = filters.length || colorForFilter ? this.doc.filter(filters, colorForFilter, { x: sx, y: sy }, this.warn, size) : null;
+		// Animate filters work in the parent's orientation and units (a rotated instance keeps its
+		// shadow direction): applied on a group around the transformed <use>
+		const size = { w: item.bounds.width, h: item.bounds.height };
+		const filter = filters.length || colorForFilter ? this.doc.filter(filters, colorForFilter, { x: 1, y: 1 }, this.warn, size) : null;
 		const blend = cssBlendMode(item.blendMode, this.warn);
 		const style: string[] = [];
 		if (blend) style.push(`mix-blend-mode:${blend}`);
 		if (item.blendMode === "layer") style.push("isolation:isolate");
-		const use = el("use", attrs);
-		if (!filter && !style.length) return use;
-		// Filters apply in the element's user space before its transform: wrap so the filter sees
-		// the transformed content? No - Animate filters are applied in the instance's space too.
-		if (filter) use.attrs.filter = filter;
-		if (style.length) use.attrs.style = style.join(";");
-		return use;
+		let node: XmlNode = el("use", attrs);
+		if (filter) {
+			const opacity = attrs.opacity;
+			delete node.attrs.opacity;
+			node = el("g", { filter, opacity }, [node]);
+		}
+		if (!style.length) return node;
+		if (blendWhite(item.blendMode)) return el("g", { filter: this.doc.whiteFilter(), style: style.join(";") }, [node]);
+		if (blendSubtract(item.blendMode)) {
+			const white = () => el("g", { filter: this.doc.whiteFilter(false, true), style: "mix-blend-mode:difference" }, [clone(node)]);
+			const first = white();
+			node.attrs.style = style.join(";");
+			return el("g", {}, [first, node, white()]);
+		}
+		node.attrs.style = style.join(";");
+		return node;
 	}
 }
 

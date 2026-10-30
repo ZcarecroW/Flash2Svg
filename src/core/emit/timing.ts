@@ -4,7 +4,7 @@
  *  - Movie clips run their own playhead from the moment they appear, honouring frame scripts
  *    (stop, play, gotoAndPlay, gotoAndStop).
  */
-import type { InstanceItem, Program } from "../program.ts";
+import type { FrameAction, InstanceItem, Program } from "../program.ts";
 
 export function graphicFrame(item: InstanceItem, frame: number, childFrames: number): number {
 	const ranges = item.graphic;
@@ -62,25 +62,44 @@ export function playhead(prog: Program): Playhead {
 	const n = Math.max(1, prog.frameCount);
 	const labels = new Map(prog.labels.map((l) => [l.name, l.frame]));
 	const resolve = (t: number | string): number => (typeof t === "number" ? Math.max(0, Math.min(n - 1, t - 1)) : (labels.get(t) ?? 0));
+	// passes over frames whose actions depend on them, counted up to where nothing changes any more
+	const caps = new Map<number, number>();
+	for (const f in prog.actions) {
+		let c = 0;
+		for (const a of prog.actions[f]!) if (a.passes) c = Math.max(c, a.passes.from, a.passes.before);
+		if (c) caps.set(+f, c);
+	}
+	const passes = new Map<number, number>();
+	const applies = (a: FrameAction, f: number) => {
+		if (!a.passes) return true;
+		const p = passes.get(f) ?? 0;
+		return (!a.passes.from || p >= a.passes.from) && (!a.passes.before || p < a.passes.before);
+	};
 	const frames: number[] = [];
 	const seen = new Map<string, number>();
 	let frame = 0;
 	let playing = true;
 	let result: Playhead | null = null;
 	for (let tick = 0; tick < 100000; tick++) {
-		// run scripts of the frame we arrived at
-		let next = frame + 1;
-		let jumped = false;
-		for (const a of prog.actions[frame] ?? []) {
-			if (a.type === "stop") playing = false;
-			else if (a.type === "play") playing = true;
-			else {
-				next = resolve(a.target);
-				playing = a.play;
-				jumped = true;
+		// arriving at `frame` runs its scripts; a goto moves on at once (that frame isn't shown)
+		for (let hop = 0; hop < 16; hop++) {
+			const cap = caps.get(frame);
+			if (cap) passes.set(frame, Math.min(cap, (passes.get(frame) ?? 0) + 1));
+			let target = -1;
+			for (const a of prog.actions[frame] ?? []) {
+				if (!applies(a, frame)) continue;
+				if (a.type === "stop") playing = false;
+				else if (a.type === "play") playing = true;
+				else {
+					target = resolve(a.target);
+					playing = a.play;
+					break;
+				}
 			}
+			if (target < 0) break;
+			frame = target;
 		}
-		const state = `${frame}:${playing}:${jumped ? next : "-"}`;
+		const state = `${frame}:${playing}:${[...passes.values()].join(",")}`;
 		if (seen.has(state)) {
 			const at = seen.get(state)!;
 			result = { prefix: frames.slice(0, at), cycle: frames.slice(at) };
@@ -88,17 +107,11 @@ export function playhead(prog: Program): Playhead {
 		}
 		seen.set(state, tick);
 		frames.push(frame);
-		if (jumped && !playing) {
-			// gotoAndStop: show the target and stay
-			frames.push(next);
-			result = { prefix: frames, cycle: [] };
-			break;
-		}
 		if (!playing) {
 			result = { prefix: frames, cycle: [] };
 			break;
 		}
-		frame = jumped ? next : next >= n ? 0 : next;
+		frame = frame + 1 >= n ? 0 : frame + 1;
 	}
 	if (!result) result = { prefix: frames, cycle: [] };
 	playheadCache.set(prog, result);

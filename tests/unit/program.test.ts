@@ -4,6 +4,8 @@ import { compose, decompose } from "../../src/core/geom.ts";
 import type { InstanceElement, Mat, SceneModel } from "../../src/core/model.ts";
 import { buildPrograms, fromProps, parseActions, toProps, TRANSFORM_PROPS, type InstanceItem } from "../../src/core/program.ts";
 import { valueAt } from "../../src/core/tracks.ts";
+import { playhead } from "../../src/core/emit/timing.ts";
+import type { Program } from "../../src/core/program.ts";
 
 function model(name: string): SceneModel {
 	return JSON.parse(readFileSync(new URL(`../fixtures/models/${name}.json`, import.meta.url), "utf8"));
@@ -90,5 +92,72 @@ describe("frame actions", () => {
 		expect(parseActions('this.gotoAndPlay("intro"); // stop()')).toEqual([{ type: "goto", target: "intro", play: true }]);
 		expect(parseActions("gotoAndStop(5);")).toEqual([{ type: "goto", target: 5, play: false }]);
 		expect(parseActions("myClip.stop();")).toEqual([]);
+	});
+});
+
+describe("frame actions: conditions", () => {
+	const pass = (script: string, zeroBased = false) => parseActions(script, { zeroBased });
+
+	it("counts HTML5 Canvas frame numbers from 0", () => {
+		expect(pass("this.gotoAndPlay(0);", true)).toEqual([{ type: "goto", target: 1, play: true }]);
+		expect(pass("gotoAndPlay(1);")).toEqual([{ type: "goto", target: 1, play: true }]);
+	});
+
+	it("understands the 'play N times' banner idioms", () => {
+		// CreateJS (Animate's HTML5 banner snippet)
+		expect(pass("if (!this.looped) this.looped = 1;\nif (this.looped++ == 3) this.stop();", true)).toEqual([{ type: "stop", passes: { from: 3, before: 4 } }]);
+		expect(pass("this.loops = (this.loops || 0) + 1;\nif (this.loops >= 3) { this.stop(); }", true)).toEqual([{ type: "stop", passes: { from: 3, before: 0 } }]);
+		// AS3
+		expect(pass("var loops:int; loops++;\nif (loops == 2) stop();")).toEqual([{ type: "stop", passes: { from: 2, before: 3 } }]);
+		// if / else with a goto
+		expect(pass("if (!this.n) this.n = 1; else this.n++;\nif (this.n < 3) { this.gotoAndPlay(0); } else { this.stop(); }", true)).toEqual([
+			{ type: "goto", target: 1, play: true, passes: { from: 0, before: 3 } },
+			{ type: "stop", passes: { from: 3, before: 0 } },
+		]);
+		expect(pass("count++; if (count < 3) gotoAndPlay(1); else stop();")).toEqual([
+			{ type: "goto", target: 1, play: true, passes: { from: 0, before: 3 } },
+			{ type: "stop", passes: { from: 3, before: 0 } },
+		]);
+	});
+
+	it("runs other conditional actions always, with a warning", () => {
+		const warnings: string[] = [];
+		expect(parseActions("if (this.paused) this.stop();", { warn: (m) => warnings.push(m) })).toEqual([{ type: "stop" }]);
+		expect(warnings.length).toBe(1);
+		expect(parseActions("stop(); if (x) { y(); }", { warn: (m) => warnings.push(m) })).toEqual([{ type: "stop" }]);
+		expect(warnings.length).toBe(1);
+	});
+
+	it("simulates passes: the frame with a goto is not shown, the stop comes on the third pass", () => {
+		const prog = { frameCount: 4, labels: [], actions: { 3: pass("if (!this.n) this.n = 1; else this.n++;\nif (this.n < 3) this.gotoAndPlay(0); else this.stop();", true) } } as unknown as Program;
+		const p = playhead(prog);
+		expect(p.cycle).toEqual([]);
+		expect(p.prefix).toEqual([0, 1, 2, 0, 1, 2, 0, 1, 2, 3]);
+	});
+});
+
+describe("alpha / erase blends", () => {
+	// f32: "shared" (shapes and an erase box in one layer) is placed with and without the
+	// "layer" blend; "faded" has an alpha gradient on its own layer
+	const { programs } = buildPrograms(model("f32-blend2"), { smooth: true, includeHiddenLayers: true, includeGuides: false });
+	const root = programs["scene:0"]!;
+	const uses = root.layers.flatMap((l) => l.items).filter((it): it is InstanceItem => it.kind === "instance" && it.symbol.startsWith("sym:shared"));
+
+	it("cuts only inside instances placed with the layer blend", () => {
+		expect(uses.map((u) => `${u.blendMode} ${u.symbol}`).sort()).toEqual(["layer sym:shared#layer", "normal sym:shared"]);
+		// the plain symbol keeps the erase element (not drawn); the copy masks what is below it
+		expect(programs["sym:shared"]!.layers.every((l) => l.type !== "mask")).toBe(true);
+		const cut = programs["sym:shared#layer"]!.layers;
+		// (raw shapes of a layer always lie below its instances: nothing stays above the cut here)
+		expect(cut.map((l) => l.type)).toEqual(["normal", "mask"]);
+		expect(cut[1]!.maskMode).toBe("erase");
+		expect(cut[0]!.maskedBy).toBe(cut[1]!.index);
+	});
+
+	it("limits alpha to the element's bounds", () => {
+		const layers = programs["sym:faded"]!.layers;
+		const mask = layers.find((l) => l.type === "mask")!;
+		expect(mask.maskMode).toBe("alpha");
+		expect(mask.maskBox).toBeDefined();
 	});
 });
