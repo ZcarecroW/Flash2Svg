@@ -12,15 +12,37 @@
   shape tweens animated paths and gradients, frame labels markers. Colour effects and per-shape
   alpha go into the colours of the shapes inside, as Flash applies them (exact keyframes; a tinted,
   half-transparent symbol matches Animate better than our SVG does). Invert is exact, subtract and
-  add are close approximations; filters, sounds and button states are left out (warned).
+  add are close approximations; sounds and button states are left out (warned).
   Looping movie clips are drawn once and played again by a time remap instead of keying every
-  loop (test documents: 2.2 MB → 251 KB, 684 → 15 KB, 448 → 186 KB). Only features of the Lottie
+  loop (test documents: 2.2 MB → 251 KB, 684 → 15 KB, 448 → 186 KB). Apart from effects (below), only features of the Lottie
   spec 1.0 are used: every test document is valid against the official schema and checked frame
   by frame in lottie-web 5.13, dotLottie 0.82 (ThorVG) and Skottie (CanvasKit 0.42) — all 45
   within 0.15 % of the SVG frames, smooth and stepped, except the documented limits (filters,
-  approximated blends, three ThorVG image quirks). The 45 test documents: 1347 KB of Lottie JSON,
-  368 KB gzipped (SMIL: 1022 KB, 369 KB gzipped), 391 KB as .lottie; exporting all of them takes
+  approximated blends, three ThorVG image quirks). The 45 test documents: 1369 KB of Lottie JSON,
+  372 KB gzipped (SMIL: 1022 KB, 369 KB gzipped), 405 KB as .lottie; exporting all of them takes
   0.2 s. `--format lottie|dotlottie`; in the panel the file name follows the format.
+- **Filters as Lottie effects.** Blur becomes a Gaussian blur (two directional ones when blurX
+  and blurY differ), drop shadow and glow a drop shadow, animated filters keyframed effect values;
+  *adjust colour* goes into the colours inside as a colour matrix (and into the shadows before
+  it). Measured in all three players first: they disagree on where effect values apply
+  (lottie-web and ThorVG in the layer's own space, Skottie in the composition's), ThorVG clips
+  effects to the precomposition and fades a layer before its effects, lottie-web clips drop
+  shadows to the layer's bounding box — so the effects sit on a layer without a transform (the
+  parent's space, as Animate applies filters) with room for them, the instance's alpha one level
+  up. The effect values carry After Effects' names (lottie-android reads them by name). Test
+  documents with filters, worst frame: 2.8 % → 0.03 %, 0.45 % → 0.01 %, 0.8 % → 0.00 % (dotLottie
+  0.19 %: ThorVG blurs narrower). Bevels, gradient filters, inner and knockout shadows and glows
+  have no Lottie effect (warned).
+- **dotLottie state machine.** A `.lottie` carries a state machine (`s/playback.json`,
+  dotLottie 2.0) that plays it as the *Loop*, *Start* and *Poster* settings say: through once,
+  looping, or — a `stop()` while movie clips run on — the intro once and then the tail; started
+  automatically, on a click, on hover or from script (event `play`), the poster frame until then,
+  restarted by the next click. Checked in dotlottie-web: intro and tail meet without a gap or an
+  extra frame. Lottie JSON gets the markers `intro` and `loop` for the same.
+- **Lottie preview in the panel.** The *Result* plays a Lottie export in lottie-web or dotLottie,
+  a `.lottie` with its state machine (click the preview). The players are separate bundles
+  loaded only then (lottie-web 217 KB, dotLottie 58 KB + 1.2 MB WebAssembly); tested inside
+  Animate 2024.
 - **Shape tweens as path morphs.** SMIL output and the JS player draw a shape tween as one
   drawing whose path data, colours and gradients blend from the start to the end shape, instead
   of a drawing per frame. Animate's in-betweens are such blends, but its SVG export writes each

@@ -68,6 +68,22 @@ const audioBuild = {
 	alias: NO_WORKER,
 };
 
+// the Lottie players of the panel's preview (src/panel/lib/lottie-players.ts), each loaded only
+// when a Lottie export is previewed: lottie-web for JSON, dotlottie-web (WebAssembly in wasm/)
+const lottieWebBuild = {
+	...panelBuild,
+	entryPoints: [join(repo, "src/panel/lottie-web-entry.ts")],
+	outfile: join(ext, "panel/lottie-web.js"),
+	plugins: [],
+};
+const dotLottieBuild = {
+	...lottieWebBuild,
+	entryPoints: [join(repo, "src/panel/dotlottie-entry.ts")],
+	outfile: join(ext, "panel/dotlottie.js"),
+	// the default WebAssembly URL is built from import.meta.url (the panel sets its own)
+	define: { ...panelBuild.define, "import.meta.url": JSON.stringify("file:///flash2svg/dotlottie.js") },
+};
+
 const cliBuild = {
 	entryPoints: [join(repo, "src/cli/flash2svg.ts")],
 	bundle: true,
@@ -100,6 +116,8 @@ function copyStatic() {
 		for (const src of WASM) copyFileSync(join(repo, "node_modules", src), join(dir, src.slice(src.lastIndexOf("/") + 1)));
 		copyFileSync(join(repo, "node_modules/wasm-media-encoders/wasm/mp3.wasm"), join(dir, "mp3.wasm"));
 	}
+	// the panel's dotLottie preview
+	copyFileSync(join(repo, "node_modules/@lottiefiles/dotlottie-web/dist/dotlottie-player.wasm"), join(ext, "wasm", "dotlottie-player.wasm"));
 }
 
 // keep in sync with WASM_SOURCES in src/core/images.ts
@@ -121,6 +139,8 @@ if (watch) {
 	await esbuild.build(panelBuild);
 	await esbuild.build(codecsBuild);
 	await esbuild.build(audioBuild);
+	await esbuild.build(lottieWebBuild);
+	await esbuild.build(dotLottieBuild);
 	await esbuild.build(cliBuild);
 	const kb = (n) => (n / 1024).toFixed(1) + " KB";
 	console.log(`player runtime ${kb(runtimeSize[0])} (with sound ${kb(runtimeSize[1])}, morphs ${kb(runtimeSize[2])}); extension ${version} in ${ext}`);

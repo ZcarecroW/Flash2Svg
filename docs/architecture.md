@@ -180,8 +180,9 @@ arrow functions). It is resumable: the panel calls `Flash2Svg.start(options)` an
 `emit/lottie.ts` writes Lottie JSON (`core/dotlottie.ts` packs it with its bitmaps into a
 dotLottie v2 archive, fflate). It starts from the same baked global clock as SMIL, so frame
 scripts, movie clip playheads and graphic loop modes behave the same, and uses only what the
-Lottie spec 1.0 has (no expressions, no effects), so lottie-web, dotLottie (ThorVG) and Skottie
-draw the same; all three are checked against the static frames (`scripts/e2e-lottie.ts`).
+Lottie spec 1.0 has (no expressions) plus layer effects for filters, so lottie-web, dotLottie
+(ThorVG) and Skottie draw the same; all three are checked against the static frames
+(`scripts/e2e-lottie.ts`).
 
 - **Structure:** each distinct baked timeline is a precomposition, each instance a precomp layer
   with the transform as Lottie properties (`p`, `a` = transformation point, `s`, `r`, `sk` =
@@ -222,6 +223,41 @@ draw the same; all three are checked against the static frames (`scripts/e2e-lot
 - **Hairlines** keep their width in pixels at the scale their symbol starts with (Lottie strokes
   scale). lottie-web needs `st` on every layer and `o` in every group transform (it hangs
   without), and `x` on masks.
+- **Filters** (`lottieFilters`, `effectsJson`): blur → Gaussian blur effect (`ty` 29,
+  blurriness = σ / 0.3; two directional ones when blurX ≠ blurY), drop shadow and glow → drop
+  shadow (`ty` 25: opacity 0–255, direction clockwise from up = Flash angle + 90, Flash's whole
+  pixel offset, softness = σ / 0.3), adjust colour → a 4×5 colour matrix composed into the
+  paints (a `CT` of 20 numbers; also applied to the colour of shadows before it in the chain).
+  An instance's intervals are split where the filters change their make-up (`filterRuns`); within
+  a run the effect values are keyframes held from one filter set to the next. Measured in the
+  three players (2026-10-30): lottie-web and ThorVG apply effect values in the layer's own space
+  (its transform and parents), Skottie in the composition's; ThorVG clips effects to the precomp
+  box, lottie-web clips a drop shadow to the layer's bounding box (its default filter region);
+  ThorVG fades a layer before its effects (a half transparent instance shows its own shadow
+  through). So the effects go on a precomp layer without a transform holding the instance
+  (`effectsLayer`), its box grown by the effects' reach and covered by a transparent rectangle
+  (the bounding box), the instance's alpha on one more precomp level above. Effect values carry
+  After Effects' names (`nm`): lottie-android finds drop shadow values by name.
+- **Playback:** after a `stop()` with running movie clips the horizon has a looping tail; the
+  markers `intro` and `loop` hold the two parts. dotLottie players (dotlottie-rs) play a marker
+  over [tm, tm + dr] with the end frame, a whole animation over [0, op − 1]: in a .lottie the
+  markers end a frame earlier (else a frame past the content shows empty at each loop).
+  `core/statemachine.ts` writes the .lottie's state machine (`s/playback.json`, listed in the
+  manifest): `intro` (once, segment `intro`) → `tail` (segment `loop`, looping) on an
+  `OnComplete` that fires the event `introDone`, or one `play` state looping or not; with a
+  click / hover / script start an `idle` state on the `poster` marker first, every state going
+  to the first one on the event `play` (fired by `Click` / `PointerEnter`, or by the page). A
+  state entered again keeps its frame: the first state's entry action `SetFrame 0` restarts it.
+
+## Panel preview
+
+`src/panel/LottiePreview.svelte` plays a Lottie result in lottie-web (JSON; linked bitmaps
+pointed at the export's folder) or dotLottie (a .lottie, or a JSON on request), with play/pause,
+a frame slider and, for a .lottie, its state machine (state shown, clicks on the canvas go to
+it). The players are separate bundles loaded on first use (`lib/lottie-players.ts`:
+`panel/lottie-web.js` 217 KB with lottie-web's SVG renderer and effects, `panel/dotlottie.js`
+58 KB; dotLottie's WebAssembly is read from `wasm/` into a blob URL, as it would fetch it from a
+CDN otherwise).
 
 ## Tests
 
@@ -240,14 +276,18 @@ draw the same; all three are checked against the static frames (`scripts/e2e-lot
   plays it in lottie-web (SVG renderer) and dotLottie (ThorVG WebAssembly) in Edge and in Skottie
   (CanvasKit, Node) (`scripts/lib/lottie-players.ts`); every sampled frame is compared with the
   static frame. Where our SVG approximates (a tinted symbol coloured as a group), a frame that
-  matches Animate's own PNG at least as well passes.
+  matches Animate's own PNG at least as well passes. `scripts/e2e-statemachine.ts` runs the
+  .lottie state machines in dotlottie-web (state and frame on every animation frame): intro then
+  tail without an extra frame, a click start and restart from the poster, looping, playing once.
   `scripts/e2e-player.ts` drives the JS player: labels, goto, loop modes, start modes, buttons,
   sounds (Web Audio calls recorded: in/out points, loops, envelopes, stream sync after goto and
   pause, mute, seek, button sounds, MP3 and Opus, blocked autoplay). `scripts/e2e-inline.ts`
   inlines several exports into one HTML page.
 - `scripts/e2e-panel.mjs`: the panel inside Animate (signed self-test build, `src/panel/lib/selftest.ts`):
   formats, current frame, range, library symbols, several scenes, linked images, image and sound
-  codecs, bitmap resolution (pixels written per bitmap), temp clean-up.
+  codecs, bitmap resolution (pixels written per bitmap), the Lottie preview (mounted off screen:
+  lottie-web's SVG and filters, dotLottie's pixels, the time moving, a state machine's state
+  before and after a click), temp clean-up.
 - **Ids:** every id in an export starts with a prefix (`ExportSettings.idPrefix`, default a short
   hash of document, timeline and settings), artwork-internal ids included
   (`prefixArtwork`); the player's runtime ids start with its svg id.

@@ -40,7 +40,7 @@ window.f2sLoad = (player, data, w, h) => new Promise((resolve, reject) => {
 		canvas.width = w; canvas.height = h; canvas.style.width = w + "px"; canvas.style.height = h + "px";
 		box.appendChild(canvas);
 		const bytes = typeof data === "string" ? data : new Uint8Array(data).buffer;
-		dl = new DotLottie({ canvas, data: bytes, autoplay: false, loop: false, useFrameInterpolation: true, renderConfig: { devicePixelRatio: 1, autoResize: false, freezeOnOffscreen: false } });
+		dl = new DotLottie({ canvas, data: bytes, autoplay: false, loop: false, useFrameInterpolation: true, renderConfig: { devicePixelRatio: 1, autoResize: false, freezeOnOffscreen: false, ...window.f2sRenderConfig } });
 		dl.addEventListener("load", () => resolve(dl.totalFrames));
 		dl.addEventListener("loadError", (e) => reject(new Error("dotLottie: " + (e.error?.message ?? "load error"))));
 	}

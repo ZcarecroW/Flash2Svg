@@ -20,8 +20,8 @@ const HELP = `flash2svg <scene.json> [options]
   --format <f>            smil (default) | css | player | static | lottie (JSON) | dotlottie (.lottie)
   --frames <a-b>          frame range, 1-based inclusive (e.g. 1-24)
   --loop <m>              auto (follow stop() scripts) | always | never
-  --begin <m>             auto | click | hover | manual
-  --delay <s>             start delay in seconds
+  --begin <m>             auto | click | hover | manual (SVG; .lottie: its state machine)
+  --delay <s>             start delay in seconds (SVG)
   --steps                 no inter-frame interpolation (low FPS look)
   --background            include the stage colour
   --link-images           write images as files next to the SVG (or Lottie JSON) instead of embedding
@@ -38,6 +38,7 @@ const HELP = `flash2svg <scene.json> [options]
   --text-outlines         draw dynamic text as outlines
   --no-hidden-layers      skip hidden layers
   --poster <first|last>   frame shown where animation does not run, and with "reduce motion"
+                          (.lottie: before a click / hover / script start)
   --ignore-reduced-motion animate also when the system asks for reduced motion
   --no-morph              shape tweens frame by frame (default: path morphs in SMIL and player)
   --digits <n>            decimal places (default 2)

@@ -1,4 +1,8 @@
 declare module "*.css";
+declare module "lottie-web/build/player/esm/lottie_svg.min.js" {
+	import lottie from "lottie-web";
+	export default lottie;
+}
 declare module "*.svelte" {
 	import type { Component } from "svelte";
 	const component: Component<Record<string, unknown>>;

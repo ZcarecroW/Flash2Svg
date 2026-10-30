@@ -3,7 +3,9 @@
  * when the panel starts, its jobs are exported exactly as the Export button would, the results
  * are written to the given file and (optionally) Animate quits.
  */
+import { mount, unmount } from "svelte";
 import { DEFAULT_SETTINGS, type ExportSettings } from "../../core/compile.ts";
+import LottiePreview from "../LottiePreview.svelte";
 import { evalScript, node, toFileUri } from "./cep.ts";
 import { docInfo, runExport } from "./exporter.ts";
 
@@ -19,6 +21,68 @@ interface SelfTestJob {
 	select?: string[];
 	/** JSFL to run on the opened document before exporting. */
 	jsfl?: string;
+	/** Lottie exports: show the result in the panel's preview (in this player) and report what it drew. */
+	preview?: { player?: "lottie-web" | "dotlottie"; click?: boolean };
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Mounts the Lottie preview off screen and reports what it shows: drawn elements or pixels, time, state machine. */
+async function checkPreview(file: string, format: "lottie" | "dotlottie", opts: NonNullable<SelfTestJob["preview"]>): Promise<Record<string, unknown>> {
+	const host = document.createElement("div");
+	host.style.cssText = "position:fixed;left:0;top:0;width:320px;opacity:0.01;pointer-events:none;z-index:-1";
+	document.body.appendChild(host);
+	const comp = mount(LottiePreview, { target: host, props: { file, format } });
+	const out: Record<string, unknown> = {};
+	const ready = async () => {
+		for (const t0 = Date.now(); Date.now() - t0 < 15000; await sleep(100)) {
+			if (host.querySelector(".preview")?.getAttribute("data-state") !== "loading") return;
+		}
+	};
+	try {
+		await sleep(50);
+		if (opts.player) {
+			const sel = host.querySelector<HTMLSelectElement>("select");
+			if (sel) {
+				sel.value = opts.player;
+				sel.dispatchEvent(new Event("change"));
+				await sleep(100);
+			}
+		}
+		await ready();
+		await sleep(800);
+		const time1 = host.querySelector(".time")?.textContent;
+		await sleep(700);
+		out.error = host.querySelector(".error")?.textContent ?? "";
+		out.time = [time1, host.querySelector(".time")?.textContent];
+		out.svgElements = host.querySelectorAll(".stage svg *").length;
+		out.svgFilters = host.querySelectorAll(".stage svg filter").length;
+		out.svgImages = host.querySelectorAll(".stage svg image").length;
+		const canvas = host.querySelector<HTMLCanvasElement>(".stage canvas");
+		if (canvas && canvas.width && canvas.height) {
+			const px = canvas.getContext("2d")?.getImageData(0, 0, canvas.width, canvas.height).data;
+			let n = 0;
+			if (px) for (let i = 3; i < px.length; i += 4) if (px[i]! > 0) n++;
+			out.canvasPixels = n;
+		}
+		const state = () => host.querySelector(".state")?.textContent ?? "";
+		out.state = state();
+		if (opts.click && canvas) {
+			const r = canvas.getBoundingClientRect();
+			const at = { bubbles: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 };
+			canvas.dispatchEvent(new PointerEvent("pointerdown", at));
+			canvas.dispatchEvent(new PointerEvent("pointerup", at));
+			canvas.dispatchEvent(new MouseEvent("click", at));
+			await sleep(600);
+			out.stateAfterClick = state();
+		}
+	} catch (e) {
+		out.error = (e as Error).message;
+	} finally {
+		unmount(comp);
+		host.remove();
+	}
+	return out;
 }
 
 interface SelfTestConfig {
@@ -65,7 +129,8 @@ export async function runSelfTestIfRequested(): Promise<boolean> {
 				},
 				() => false,
 			);
-			log({ fla: job.fla, ok: true, format: res.format, files: res.files, bytes: res.output.reduce((n, o) => n + o.stats.bytes, 0), warnings: res.warnings, seconds: res.seconds, steps: progress.length, docType: info.type, images: res.images.map((i) => [i.name, i.width, i.height]), parts: res.output.map((o) => o.stats.parts), drawings: res.output.flatMap((o) => o.stats.drawings), linkedBytes: res.linkedBytes });
+			const preview = job.preview && (res.format === "lottie" || res.format === "dotlottie") ? await checkPreview(res.files[0]!, res.format, job.preview) : undefined;
+			log({ fla: job.fla, ok: true, format: res.format, files: res.files, bytes: res.output.reduce((n, o) => n + o.stats.bytes, 0), warnings: res.warnings, seconds: res.seconds, steps: progress.length, docType: info.type, images: res.images.map((i) => [i.name, i.width, i.height]), parts: res.output.map((o) => o.stats.parts), drawings: res.output.flatMap((o) => o.stats.drawings), linkedBytes: res.linkedBytes, preview });
 		} catch (e) {
 			log({ fla: job.fla, ok: false, error: (e as Error).message, seconds: (Date.now() - t0) / 1000 });
 		}

@@ -25,17 +25,14 @@ const threshold = parseFloat(opt("threshold", "0.0015"));
 const steps = args.includes("--steps");
 // Known differences (measured 2026-10-30, set just above), by fixture or "fixture/player".
 const TOLERANCE: Record<string, number> = {
-	// filters (drop shadow, blur, glow, bevel...) aren't part of Lottie: left out (warned)
-	"f08-filters": 0.06,
-	"f19-filters2": 0.09,
-	"f20-misc": 0.008,
-	"f22-layers": 0.006,
-	"f31-text2": 0.002,
-	"f35-edge": 0.0045,
-	"f41-alpha": 0.0032,
-	// filters, and subtract drawn as multiply by the inverted colours (close, not exact)
-	"f29-motion": 0.006,
-	"f32-blend2": 0.028,
+	// filters without a Lottie effect (bevel, gradient glow / bevel, inner shadow and glow,
+	// knockout, Animate's layer "fx" filter): left out (warned)
+	"f08-filters": 0.008,
+	"f19-filters2": 0.075,
+	"f22-layers": 0.002,
+	// dotLottie (ThorVG) blurs narrower (two of its three box blur passes at its quality)
+	"f20-misc/dotlottie": 0.0025,
+	"f29-motion/dotlottie": 0.0025,
 	// a rotated repeating bitmap fill: tiles as separate images, their edges anti-aliased
 	"f45-morph": 0.002,
 	// dotLottie (ThorVG) samples outside a bitmap as transparent (the edge strips of a clipped

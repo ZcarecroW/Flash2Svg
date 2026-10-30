@@ -7,6 +7,7 @@ import { renderAnimated, type BeginMode } from "./emit/animate.ts";
 import { lottieParts, renderLottie } from "./emit/lottie.ts";
 import { renderPlayer } from "./emit/player.ts";
 import { renderStatic } from "./emit/static.ts";
+import { playbackStateMachine } from "./statemachine.ts";
 import { playhead } from "./emit/timing.ts";
 import type { SoundSettings } from "./audio.ts";
 import type { ImageSettings } from "./images.ts";
@@ -160,7 +161,9 @@ export function compileScene(model: SceneModel, files: FileSource, partial: Part
 		const p = lottieParts(r.animation, json.length);
 		if (dot) {
 			const images = r.images.map((i) => ({ name: i.name, bytes: files.readBinary(i.source) }));
-			const bytes = packDotLottie(json, dotLottieId(String(r.animation.nm || "animation")), images);
+			const id = dotLottieId(String(r.animation.nm || "animation"));
+			const sm = r.horizon.ticks > 1 ? playbackStateMachine({ animation: id, loop: r.horizon.loop, begin: s.begin, ...r.segments }) : null;
+			const bytes = packDotLottie(json, id, images, sm);
 			// the archive's share of the bitmaps; the compressed JSON split like the plain one
 			const img = images.reduce((n, i) => n + i.bytes.length, 0);
 			const rest = Math.max(0, bytes.length - img);

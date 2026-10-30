@@ -31,7 +31,9 @@ documents.
 - **Shape tweens as morphs**: in SMIL and the JS player one drawing whose paths, colours and
   gradients blend, checked against every frame Animate drew (v3: a drawing per frame).
 - **Lottie and dotLottie export** (Animate has none of its own): the same timelines as Lottie
-  JSON or a `.lottie` archive, checked in three Lottie players.
+  JSON or a `.lottie` archive, checked in three Lottie players; blur, drop shadow and glow as
+  Lottie effects; a state machine in the `.lottie` plays it like the SVG (stop(), start on a
+  click or hover); a preview in the panel (lottie-web or dotLottie).
 - **HTML5 Canvas documents** (v3 refused them), frame scripts `stop()`, `play()`,
   `gotoAndPlay()`, `gotoAndStop()` in AS3 or JavaScript syntax, including the banner idiom
   "play 3 times, then stop" (a pass counter in an `if`). Movie clips keep running after the main
@@ -196,27 +198,42 @@ lottie-ios / lottie-android.
 - Masks become track mattes, shape tweens animated paths, colour effects (tint, brightness,
   advanced, alpha) apply to the colours of the shapes inside, as in Flash; bitmaps are image
   assets — embedded, next to the JSON (*Embed images* off), or inside the .lottie.
-- Only what the Lottie specification has is used, so every player shows the same: each test
-  document is checked frame by frame in lottie-web, dotLottie and Skottie against the SVG output,
-  and validated with the official schema.
-- Not in Lottie (warned): filters are left out; the *subtract* and *add* blends are drawn as
-  multiply by the inverted colours and as screen (close, not exact); sounds, button states and
-  editable text (text is outlined) are not exported; hairlines keep the width they have at the
-  scale their symbol starts with; bitmaps without smoothing are drawn smoothed. Looping and
-  autoplay are settings of the player; if the main timeline ends on `stop()` while movie clips run
-  on, set it to play once.
-- dotLottie (ThorVG) draws a few things differently (measured): thin seams between the tiles of a
-  repeating bitmap fill, faded edges where a clipped bitmap fill stretches its edge pixels, pixel
-  art smoothed.
+- Filters become Lottie layer effects: *blur* a Gaussian blur, *drop shadow* and *glow* a drop
+  shadow (also animated filters); *adjust colour* goes into the colours inside. Effects aren't in
+  the Lottie specification 1.0, but lottie-web, dotLottie, Skottie and the iOS / Android players
+  draw them. The three players disagree on where effect values apply, so the effects sit on a
+  layer of their own in the parent's space, as Animate applies filters.
+- Each test document is checked frame by frame in lottie-web, dotLottie and Skottie against the
+  SVG output, and validated with the official schema.
+- Playback: a Lottie JSON loops and autoplays as the player is told. After a `stop()` while
+  movie clips run on, the markers `intro` (play once) and `loop` (then loop it) hold the two
+  parts. A `.lottie` carries a state machine (`playback`) that plays it as the *Loop*, *Start*
+  and *Poster* settings say — follow the timeline or loop or play once, start automatically, on
+  a click, on hover or from script (fire its event `play`; a click or hover starts it again).
+  dotLottie players run it when asked: `stateMachineId: "playback"`.
+- Not in Lottie (warned): bevels, gradient glows and bevels, inner and knockout shadows and glows,
+  *hide object*; the *subtract* and *add* blends are drawn as multiply by the inverted colours
+  and as screen (close, not exact); sounds, button states and editable text (text is outlined)
+  are not exported; hairlines keep the width they have at the scale their symbol starts with;
+  bitmaps without smoothing are drawn smoothed, and colour effects on bitmaps keep only their
+  alpha.
+- The players differ in a few things (measured): lottie-web blurs drop shadows a little less
+  than the others; dotLottie (ThorVG) blurs narrower (two of its three box-blur passes), draws
+  thin seams between the tiles of a repeating bitmap fill and faded edges where a clipped bitmap
+  fill stretches its edge pixels, smooths pixel art, and its loops run about a frame short.
 - Size: Lottie JSON is wordier than SVG, but compresses as well — the 45 test documents take
-  1347 KB as Lottie and 1022 KB as SMIL, gzipped 368 KB and 369 KB; as .lottie archives 391 KB.
+  1369 KB as Lottie and 1022 KB as SMIL, gzipped 372 KB and 369 KB; as .lottie archives 405 KB.
 
 ```js
 // lottie-web (frame labels are markers: goToAndPlay("intro", true))
 lottie.loadAnimation({ container: document.getElementById("hero"), renderer: "svg", loop: true, autoplay: true, path: "hero.json" });
-// dotLottie (npm @lottiefiles/dotlottie-web)
-new DotLottie({ canvas: document.querySelector("canvas"), src: "hero.lottie", loop: true, autoplay: true });
+// dotLottie (npm @lottiefiles/dotlottie-web): the export's state machine plays it
+const player = new DotLottie({ canvas: document.querySelector("canvas"), src: "hero.lottie", stateMachineId: "playback" });
+// Start "From script": player.stateMachineFireEvent("play") starts it (again)
 ```
+
+The panel's *Result* shows a Lottie export in lottie-web or dotLottie (each loaded only then),
+a `.lottie` with its state machine: click the preview to try a click start.
 
 ## Command line
 
@@ -229,7 +246,7 @@ node dist/cli/flash2svg.js scene.json --image-lossy avif --image-lossless webp -
 node dist/cli/flash2svg.js scene.json --image-resolution 1 --image-full "poster.jpg"
 node dist/cli/flash2svg.js scene.json --format player --sound-format opus --sound-mode "click.wav=lossless"
 node dist/cli/flash2svg.js scene.json --format lottie        # scene.json → <document>.json
-node dist/cli/flash2svg.js scene.json --format dotlottie -o hero.lottie
+node dist/cli/flash2svg.js scene.json --format dotlottie -o hero.lottie --begin click --poster last
 ```
 
 `--help` lists all options. After the export it prints what the size is made of (drawing,
@@ -276,8 +293,8 @@ write it to `tests/out/<name>/model/`.)
   `stop()` the running clips loop on (their common period). Very long timelines with many short
   nested loops of different lengths make big SMIL/CSS files — use the JS player then.
 - *Loop: once* stops everything on the last frame, movie clips included.
-- Lottie: filters, sounds, button states and editable text are not exported; *subtract* and
-  *add* are approximated; see [Lottie](#lottie).
+- Lottie: bevels, gradient filters, inner and knockout shadows and glows, sounds, button states
+  and editable text are not exported; *subtract* and *add* are approximated; see [Lottie](#lottie).
 
 ## Development
 

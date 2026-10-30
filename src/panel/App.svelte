@@ -6,6 +6,7 @@
 	import Section from "./Section.svelte";
 	import Budget from "./Budget.svelte";
 	import Preview from "./Preview.svelte";
+	import LottiePreview from "./LottiePreview.svelte";
 	import { runSelfTestIfRequested } from "./lib/selftest.ts";
 
 	let info = $state<DocInfo>({ open: false });
@@ -265,9 +266,6 @@
 	{#if panel.export.format !== "static"}
 		<Section title="Animation" bind:open={panel.open.animation}>
 			<label class="check"><input type="checkbox" bind:checked={panel.export.smooth} /> Smooth tweens (interpolate between frames)</label>
-			{#if lottie}
-				<p class="hint">Looping, autoplay and the start are set in the Lottie player.</p>
-			{:else}
 			<label class="row">
 				<span>Loop</span>
 				<select bind:value={panel.export.loop}>
@@ -276,27 +274,38 @@
 					<option value="never">Play once</option>
 				</select>
 			</label>
-			<label class="row">
-				<span>Start</span>
-				<select bind:value={panel.export.begin}>
-					<option value="auto">Automatically</option>
-					<option value="click">On click</option>
-					<option value="hover">On hover</option>
-					<option value="manual">From script</option>
-				</select>
-			</label>
-			<label class="row">
-				<span>Delay (s)</span>
-				<input type="number" min="0" step="0.1" bind:value={panel.export.delay} />
-			</label>
-			<label class="row">
-				<span>Poster</span>
-				<select bind:value={panel.export.posterFrame}>
-					<option value="first">First frame</option>
-					<option value="last">Last frame</option>
-				</select>
-			</label>
-			<label class="check" title="Visitors who turned animations off in their system settings see the poster frame (the JS player plays on a click)"><input type="checkbox" bind:checked={panel.export.reducedMotion} /> Still poster for “reduce motion”</label>
+			{#if panel.export.format !== "lottie"}
+				<label class="row">
+					<span>Start</span>
+					<select bind:value={panel.export.begin}>
+						<option value="auto">Automatically</option>
+						<option value="click">On click</option>
+						<option value="hover">On hover</option>
+						<option value="manual">From script</option>
+					</select>
+				</label>
+			{/if}
+			{#if !lottie}
+				<label class="row">
+					<span>Delay (s)</span>
+					<input type="number" min="0" step="0.1" bind:value={panel.export.delay} />
+				</label>
+			{/if}
+			{#if !lottie || (panel.export.format === "dotlottie" && panel.export.begin !== "auto")}
+				<label class="row">
+					<span>Poster</span>
+					<select bind:value={panel.export.posterFrame}>
+						<option value="first">First frame</option>
+						<option value="last">Last frame</option>
+					</select>
+				</label>
+			{/if}
+			{#if !lottie}
+				<label class="check" title="Visitors who turned animations off in their system settings see the poster frame (the JS player plays on a click)"><input type="checkbox" bind:checked={panel.export.reducedMotion} /> Still poster for “reduce motion”</label>
+			{:else if panel.export.format === "lottie"}
+				<p class="hint">Autoplay and looping are set in the Lottie player. After a stop() with movie clips still running, play the marker “intro” once, then “loop”.</p>
+			{:else}
+				<p class="hint">The file's state machine “playback” plays it like this (dotlottie-web: <code>stateMachineId: "playback"</code>; from script: fire its event “play”).</p>
 			{/if}
 		</Section>
 	{/if}
@@ -441,7 +450,7 @@
 				<button class="secondary" onclick={() => revealInExplorer(result!.files[0]!)}>Show file</button>
 			</div>
 			<Budget {result} />
-			{#if result.format !== "lottie" && result.format !== "dotlottie"}<Preview file={result.files[0]!} format={result.format} />{/if}
+			{#if result.format === "lottie" || result.format === "dotlottie"}<LottiePreview file={result.files[0]!} format={result.format} />{:else}<Preview file={result.files[0]!} format={result.format} />{/if}
 			{#if result.images.length}
 				<details class="warnings">
 					<summary>{result.images.length} image{result.images.length > 1 ? "s" : ""}: {kb(result.images.reduce((n, i) => n + i.bytes, 0))}</summary>

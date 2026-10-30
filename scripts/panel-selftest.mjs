@@ -41,9 +41,14 @@ const jobs = [
 	{ fla: fla("f45-morph"), output: join(out, "morph-player.svg"), settings: { format: "player" }, expect: { files: 1, contains: [/"mp":\[/] } },
 	// Lottie: the file name follows the format (.svg chosen, .json / .lottie written); bitmaps embedded,
 	// linked next to the JSON, or inside the archive
-	{ fla: fla("f45-morph"), output: join(out, "morph-lottie.svg"), settings: { format: "lottie" }, expect: { files: 1, ext: ".json", lottie: true, parts: ["drawing", "animation"] } },
-	{ fla: fla("f42-images"), output: join(out, "images.lottie"), settings: { format: "dotlottie", imageLossy: "webp" }, expect: { files: 1, ext: ".lottie", dotlottie: true, parts: ["images"] } },
-	{ fla: fla("f42-images"), output: join(out, "images lottie linked", "images.json"), settings: { format: "lottie", embedImages: false }, expect: { files: 1, ext: ".json", lottie: true, linkedImages: true } },
+	{ fla: fla("f45-morph"), output: join(out, "morph-lottie.svg"), settings: { format: "lottie" }, preview: {}, expect: { files: 1, ext: ".json", lottie: true, parts: ["drawing", "animation"], preview: { svg: true, moving: true } } },
+	{ fla: fla("f42-images"), output: join(out, "images.lottie"), settings: { format: "dotlottie", imageLossy: "webp" }, preview: {}, expect: { files: 1, ext: ".lottie", dotlottie: true, parts: ["images"], preview: { canvas: true, moving: true, state: "play" } } },
+	{ fla: fla("f42-images"), output: join(out, "images lottie linked", "images.json"), settings: { format: "lottie", embedImages: false }, preview: {}, expect: { files: 1, ext: ".json", lottie: true, linkedImages: true, preview: { svg: true, images: true } } },
+	// Lottie effects (filters) and the preview: lottie-web draws them as SVG filters; a JSON in dotLottie;
+	// a .lottie whose state machine waits for a click, then plays the intro (a stop() with running clips)
+	{ fla: fla("f08-filters"), output: join(out, "filters.json"), settings: { format: "lottie" }, preview: {}, expect: { files: 1, lottie: true, contains: [/"ty":25/, /"ty":29/], preview: { svg: true, filters: true } } },
+	{ fla: fla("f02-eases"), output: join(out, "eases-in-dotlottie.json"), settings: { format: "lottie" }, preview: { player: "dotlottie" }, expect: { files: 1, lottie: true, preview: { canvas: true, moving: true } } },
+	{ fla: fla("f27-stop"), output: join(out, "stop-click.lottie"), settings: { format: "dotlottie", begin: "click" }, preview: { click: true }, expect: { files: 1, dotlottie: true, preview: { canvas: true, state: "idle", stateAfterClick: "intro" } } },
 	// selected library symbols: one file per symbol, named after it
 	{ fla: fla("f04-nested"), output: join(out, "lib.svg"), settings: { format: "css" }, source: "library", select: ["spinner", "counter"], expect: { files: 2, names: ["lib_spinner.svg", "lib_counter.svg"] } },
 	// a second scene: only the current one is exported, with a warning
@@ -119,11 +124,25 @@ res.results.forEach((r, i) => {
 		}
 	}
 	if (exp.dotlottie && r.files[0] && existsSync(r.files[0])) {
-		// a ZIP: local file header signature, a manifest, the animation and its images inside
+		// a ZIP: local file header signature, a manifest, the animation (its images, the state machine) inside
 		const zip = readFileSync(r.files[0]);
 		if (zip.readUInt32LE(0) !== 0x04034b50) problems.push("not a ZIP archive");
 		const text = zip.toString("latin1");
-		if (!text.includes("manifest.json") || !/a\/[^/]+\.json/.test(text) || !text.includes("i/")) problems.push("archive without manifest, animation or images");
+		if (!text.includes("manifest.json") || !/a\/[^/]+\.json/.test(text)) problems.push("archive without manifest or animation");
+		if (exp.parts?.includes("images") && !text.includes("i/")) problems.push("archive without its images");
+		if (exp.preview?.state && !text.includes("s/playback.json")) problems.push("archive without the state machine");
+	}
+	if (exp.preview) {
+		const p = r.preview ?? {};
+		const e = exp.preview;
+		if (p.error) problems.push(`preview: ${p.error}`);
+		if (e.svg && !(p.svgElements > 0)) problems.push("preview: lottie-web drew nothing");
+		if (e.filters && !(p.svgFilters > 0)) problems.push("preview: no SVG filters (effects)");
+		if (e.images && !(p.svgImages > 0)) problems.push("preview: no images");
+		if (e.canvas && !(p.canvasPixels > 0)) problems.push("preview: dotLottie drew nothing");
+		if (e.moving && (!p.time || p.time[0] === p.time[1])) problems.push(`preview: the time stands still (${p.time})`);
+		if (e.state && p.state !== e.state) problems.push(`preview: state "${p.state}", expected "${e.state}"`);
+		if (e.stateAfterClick && p.stateAfterClick !== e.stateAfterClick) problems.push(`preview: after a click "${p.stateAfterClick}", expected "${e.stateAfterClick}"`);
 	}
 	if (exp.mimes || exp.noMimes) {
 		const svg = readFileSync(r.files[0], "utf8");

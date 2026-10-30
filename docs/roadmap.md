@@ -45,7 +45,7 @@ support (sources below) before starting a package.
 | 3 | Shape tweens as path morphing (SMIL and player) | very high for shape tweens | medium–high | ✅ |
 | 4 | CSS: `linear()` easing, individual transform properties | medium | small–medium | ⬜ |
 | 5 | Interactivity: triggers, scroll, label state machine | high | medium | ⬜ |
-| 6 | Lottie / dotLottie export | very high (reach) | high | ✅ (effects, state machines ⬜) |
+| 6 | Lottie / dotLottie export | very high (reach) | high | ✅ (effects ✅, state machine ✅, panel preview ✅; constructed inner filters ⬜) |
 | 7 | WOFF2 fonts, video, library export | medium | medium | ⬜ |
 
 ### 1. Media encoding settings
@@ -123,9 +123,16 @@ support (sources below) before starting a package.
   - Repetition: looping movie clips stretch the baked horizon to the common multiple of their loops and repeat their keys; content that repeats is written once and played by a sawtooth time remap (repeats found by comparing tracks as curves where they show). The morph test document 2.2 MB → 251 KB, groups 684 → 15 KB, stress 448 → 186 KB.
   - Hairlines keep their width in pixels at the scale their symbol starts with.
   - Tests: `scripts/e2e-lottie.ts` (schema validation; lottie-web, dotLottie/ThorVG, Skottie frame by frame against the SVG frames, Animate's own frames as arbiter), unit tests, panel self-test jobs in Animate.
-- ⬜ Filters as Lottie layer effects (drop shadow, Gaussian blur): outside the spec 1.0 but drawn by lottie-web, ThorVG and Skottie; needs the blur and shadow scales measured per player.
-- ⬜ dotLottie state machine for a main timeline that stops while movie clips run on (play the first pass once, then loop the tail), and for labels as states (package 5).
-- ⬜ A Lottie preview in the panel (lottie-web loaded on demand).
+- ✅ Filters as Lottie layer effects: blur → Gaussian blur, drop shadow and glow → drop shadow (keyframed when animated), adjust colour → a colour matrix in the paints.
+  - Measured per player first: blur factor (σ = 0.3 × blurriness in all three; lottie-web uses softness / 4 for shadows; ThorVG blurs narrower: two of three box passes, quality setting has no effect), angle (clockwise from up), opacity (0–255), and where effects apply (lottie-web, ThorVG: the layer's own space; Skottie: the composition's). ThorVG clips effects to the precomp and fades a layer before its effects; lottie-web clips drop shadows to the bounding box. Hence effects on an untransformed wrapper precomp with room and a transparent box, alpha one level up.
+  - Effect values carry After Effects' names (lottie-android reads drop shadows by name).
+  - Filter test documents, worst frame: 2.8 % → 0.03 %, 0.45 % → 0.01 %, 0.8 % → 0.00 %.
+- ✅ dotLottie state machine (`s/playback.json`): follow the timeline (intro once, then the tail), loop or play once; start automatically, on click, on hover or from script (event `play`), poster until then, restart on the next click. Markers `intro` / `loop` also in Lottie JSON. dotlottie-rs plays marker ends inclusive: markers in .lottie end a frame earlier. `scripts/e2e-statemachine.ts`.
+- ✅ Lottie preview in the panel: lottie-web or dotLottie (separate bundles loaded on demand), state machine with clicks; checked inside Animate by the panel self-test.
+- ⬜ Inner and knockout shadows and glows, *hide object*: no Lottie effect, but they can be built from track mattes (the instance as an inverted matte of a coloured box, blurred, matted again) and a recoloured, blurred copy.
+- ⬜ Colour effects on bitmaps: a tint (equal multipliers) is Lottie's Fill effect (colour, opacity = amount).
+- ⬜ A seamless loop seam in dotLottie (its loops run about a frame short): a closing key one frame past the end.
+- ⬜ Labels as states (package 5), buttons as state machine interactions.
 - ⬜ Shared tile grids for frame-by-frame bitmap fills (each frame repeats its tiles today).
 
 ### 7. More

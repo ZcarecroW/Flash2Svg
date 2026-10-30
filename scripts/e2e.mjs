@@ -6,6 +6,7 @@
 //   5. checks the JS player's API and interaction (labels, goto, loop, start modes, buttons, sounds)
 //   6. inlines several exports into one HTML page (ids must not clash)
 //   7. checks the Lottie output (schema; lottie-web, dotLottie, Skottie frame by frame; smooth and --steps)
+//   8. runs the .lottie state machine in dotLottie (intro and tail, click start, loop, play once)
 // Usage: node scripts/e2e.mjs [names] [--rebuild] [--skip-animate]
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
@@ -35,5 +36,6 @@ if (!names) failed += run("e2e-player.ts");
 if (!names) failed += run("e2e-inline.ts");
 failed += run("e2e-lottie.ts", names ? [names] : []);
 failed += run("e2e-lottie.ts", [...(names ? [names] : []), "--steps"]);
+if (!names) failed += run("e2e-statemachine.ts");
 console.log(failed ? `\nE2E: ${failed} step(s) reported failures` : "\nE2E: all good");
 process.exitCode = failed ? 1 : 0;

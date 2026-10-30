@@ -9,8 +9,10 @@
  *    layers, bitmap fills and clip paths tiles under a track matte;
  *  - Flash masks become track mattes on a precomp of the masked layers;
  *  - shape tweens (morph.ts) become animated paths, colours and gradients.
- * Only what the Lottie spec 1.0 has is used (no expressions or effects), so every player shows the
- * same; what Lottie lacks (filters, colour effects other than alpha, sounds) is left out with a
+ *  - filters become layer effects (blur, drop shadow, glow; outside the spec 1.0, but lottie-web,
+ *    dotLottie, Skottie and the native players draw them), "adjust colour" a matrix in the paints.
+ * Otherwise only what the Lottie spec 1.0 has is used (no expressions), so every player shows the
+ * same; what Lottie lacks (other filters, colour effects on bitmaps, sounds) is left out with a
  * warning. Measured details of the players: see the "lottie" notes in docs/architecture.md.
  */
 import type { ExportSettings } from "../compile.ts";
@@ -18,14 +20,14 @@ import type { Context } from "../context.ts";
 import { evalBezier, subBezier } from "../easing.ts";
 import { apply, concat, invert, isIdentity, parseTransform } from "../geom.ts";
 import { imageMime } from "../mime.ts";
-import type { Mat } from "../model.ts";
+import type { FilterData, Mat } from "../model.ts";
 import { channelNumbers, channelText, templateNodes, type MorphChannel } from "../morph.ts";
 import { fromProps, toProps, type ColorProp, type TransformProp } from "../program.ts";
 import { valueAt, type Ease, type Track } from "../tracks.ts";
 import { copyArtwork, type Artwork } from "../artwork.ts";
 import { isNode, walk, type XmlNode } from "../xml.ts";
 import { bake, sliceTrack, type BakedInstance, type BakedMorph, type BakedNode, type BakedTimeline, type GTrack, type Interval } from "./bake.ts";
-import { blendHides } from "./filters.ts";
+import { adjustColorMatrix, blendHides, blurSigma, splitColor } from "./filters.ts";
 import { Periods } from "./periods.ts";
 
 type Json = Record<string, unknown>;
@@ -51,6 +53,8 @@ export interface LottieResult {
 	/** Bitmaps as files: linked (next to the JSON) or for the dotLottie's `i/` folder. */
 	images: { name: string; source: string }[];
 	horizon: { ticks: number; fps: number; loop: boolean; tail: number };
+	/** Markers added for playback: the first pass and the looping tail after a stop(), the poster. */
+	segments: { intro?: string; tail?: string; poster?: string };
 }
 
 /** Where the bitmaps go: inside the JSON (data URIs), next to it, or in the dotLottie archive. */
@@ -264,18 +268,37 @@ function bezPoints(list: Bez[]): number[] {
 
 /**
  * A Flash colour transform as multipliers and offsets in 0..1 units:
- * [rm, gm, bm, am, ro, go, bo, ao], c' = c * m + o (per channel, clamped).
+ * [rm, gm, bm, am, ro, go, bo, ao], c' = c * m + o (per channel, clamped); or a colour matrix
+ * (the "adjust colour" filter): 20 numbers, rows r, g, b, a of [cr, cg, cb, ca, offset].
  */
 type CT = number[];
 
+const MATRIX_ID = [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0];
+
+function asMatrix(ct: CT): number[] {
+	if (ct.length === 20) return ct;
+	const [rm, gm, bm, am, ro, go, bo, ao] = ct as [number, number, number, number, number, number, number, number];
+	return [rm, 0, 0, 0, ro, 0, gm, 0, 0, go, 0, 0, bm, 0, bo, 0, 0, 0, am, ao];
+}
+
 function applyCT(ct: CT | null | undefined, c: [number, number, number, number]): [number, number, number, number] {
 	if (!ct) return c;
-	const f = (i: number) => Math.max(0, Math.min(1, c[i]! * ct[i]! + ct[i + 4]!));
+	const clamp = (v: number) => Math.max(0, Math.min(1, v));
+	if (ct.length === 20) {
+		const row = (r: number) => clamp(ct[r]! * c[0] + ct[r + 1]! * c[1] + ct[r + 2]! * c[2] + ct[r + 3]! * c[3] + ct[r + 4]!);
+		return [row(0), row(5), row(10), row(15)];
+	}
+	const f = (i: number) => clamp(c[i]! * ct[i]! + ct[i + 4]!);
 	return [f(0), f(1), f(2), f(3)];
 }
 
 /** True if a colour transform changes colours (not only alpha). */
-const tintsColour = (ct: CT) => [0, 1, 2].some((i) => Math.abs(ct[i]! - 1) > 1e-6 || Math.abs(ct[i + 4]!) > 1e-6);
+const tintsColour = (ct: CT) =>
+	ct.length === 20
+		? ct.slice(0, 15).some((v, i) => Math.abs(v - MATRIX_ID[i]!) > 1e-6)
+		: [0, 1, 2].some((i) => Math.abs(ct[i]! - 1) > 1e-6 || Math.abs(ct[i + 4]!) > 1e-6);
+
+const isIdentityCT = (ct: CT) => ct.every((x, i) => Math.abs(x - (ct.length === 20 ? MATRIX_ID[i]! : i < 4 ? 1 : 0)) < 1e-9);
 
 interface DrawingOptions {
 	/** Content of a Flash mask: everything opaque (alpha x9, as Flash's mask filter). */
@@ -1221,8 +1244,6 @@ class LottieWriter {
 		if (blendHides(n.item.blendMode)) return [];
 		const child = n.child;
 		const t = n.transform;
-		if (n.filters.some((f) => f.filters.length))
-			this.warn("Filters (drop shadow, blur, glow, bevel, colour adjustments) aren't part of Lottie and were left out");
 		const color = n.color;
 		const alphaOnly =
 			!color ||
@@ -1255,9 +1276,19 @@ class LottieWriter {
 		// a looping movie clip: one loop of its content, played again by a time remap
 		const period = this.periods.timeline(child);
 		const out: LayerOut[] = [];
-		for (const [a, b] of vis) {
-			let paint = baked ? composePaint(mode.paint, color!, a, b) : mode.paint;
-			if (recolour) paint = paintThen(paint, recolour, a);
+		for (const run of this.filterRuns(n, vis, mode)) {
+			const { a, b, fx } = run;
+			// Animate fades an instance after its filters (content and shadow together, the content
+			// opaque over its shadow): with effects, its alpha is the effects layer's opacity and only
+			// its tint goes into the paints
+			const effects = fx.slots.length > 0;
+			const own = effects && color ? withoutAlpha(color) : color;
+			const bakeOwn = effects ? !!color && !mode.opaque && !alphaOnly : baked;
+			// the colour after the filters (the shadows' too): own colour, blend recolour, parents'
+			let after = bakeOwn ? composePaint(mode.paint, own!, a, b) : mode.paint;
+			if (recolour) after = paintThen(after, recolour, a);
+			// an "adjust colour" filter: its matrix applied to every paint inside, before the rest
+			const paint = fx.matrix ? paintFirst(after, fx.matrix, a) : after;
 			// hairlines inside: their width in pixels at the scale the instance starts with
 			const scale = this.hairlines(child) ? mode.scale * Math.sqrt(Math.abs(valueAt(t.sx as Track, a) * valueAt(t.sy as Track, a))) : 1;
 			const sub: Mode = { opaque: mode.opaque, paint, scale };
@@ -1277,19 +1308,110 @@ class LottieWriter {
 				ks.sk = trackProp([skw], [-1], [0], 3, true);
 				ks.sa = st(0);
 			}
-			if (color && !baked && !mode.opaque) {
+			let opacity: Json | null = null;
+			if (color && (effects || !baked) && !mode.opaque) {
 				const aP = cut(color.aP, a, b),
 					aA = cut(color.aA, a, b);
 				const o = isConst(aA) ? trackProp([aP], [1], [(aA[0]?.v ?? 0) / 2.55], 2, true) : trackProp([aP], [1], [0], 2, true);
-				ks.o = clampOpacity(o);
+				opacity = clampOpacity(o);
 			}
+			if (opacity && !effects) ks.o = opacity;
 			const json: Json = { ty: 0, refId: ref.id, w: ref.w, h: ref.h, ip: a, op: b, st: 0, ks };
 			if (loop) json.tm = sawtooth(a, b, period, this.fps);
-			if (n.item.name) json.nm = n.item.name;
-			if (bm) json.bm = bm;
-			out.push({ json, box: this.instanceBox(n, ref.box, a, b) });
+			const box = this.instanceBox(n, ref.box, a, b);
+			// effects go on a wrapper (identity transform) holding the instance: see effectsLayer
+			const top = effects ? this.effectsLayer({ json, box }, run, after, opacity) : { json, box };
+			if (n.item.name) top.json.nm = n.item.name;
+			if (bm) top.json.bm = bm;
+			out.push(top);
 		}
 		return out;
+	}
+
+	/**
+	 * Splits an instance's intervals where its filters change their make-up (which Lottie effects,
+	 * the colour matrix); within a run only effect values change (keyframed).
+	 */
+	private filterRuns(n: BakedInstance, vis: Interval[], mode: Mode): FilterRun[] {
+		const none: LottieFilters = { slots: [], matrix: null, sig: "", margin: 0 };
+		if (mode.opaque || !n.filters.some((f) => f.filters.length)) return vis.map(([a, b]) => ({ a, b, fx: none, sets: [] }));
+		const mapped = new Map<FilterData[], LottieFilters>();
+		const map = (fs: FilterData[]) => {
+			let m = mapped.get(fs);
+			if (!m) mapped.set(fs, (m = lottieFilters(fs, this.warn)));
+			return m;
+		};
+		const sets = n.filters;
+		const at = (t: number) => {
+			let s = sets[0]!;
+			for (const x of sets) if (x.t <= t) s = x;
+			return s;
+		};
+		const out: FilterRun[] = [];
+		for (const [a, b] of vis) {
+			const times = [a, ...sets.map((s) => s.t).filter((t) => t > a && t < b)];
+			let run: FilterRun | null = null;
+			for (const t of times) {
+				const fx = map(at(t).filters);
+				if (run && run.fx.sig === fx.sig) {
+					run.sets.push({ t, fx });
+					continue;
+				}
+				if (run) run.b = t;
+				run = { a: t, b, fx, sets: [{ t, fx }] };
+				out.push(run);
+			}
+		}
+		return out;
+	}
+
+	/**
+	 * A layer with the instance's filters as Lottie effects. Players differ in the space of effect
+	 * values (lottie-web and ThorVG: the layer's own, with its transform and parents; Skottie: the
+	 * composition's), so the effects sit on a precomp layer without a transform (the parent's
+	 * space, where Animate's filters work) that holds the instance. ThorVG clips effects to the
+	 * precomp and lottie-web its drop shadows to the layer's bounding box: the precomp gets room for
+	 * the effects and a transparent rectangle over all of it. ThorVG fades a layer before its
+	 * effects (a half transparent instance over its own shadow): the opacity goes one level up.
+	 */
+	private effectsLayer(inner: LayerOut, run: FilterRun, after: Paint | null, opacity: Json | null): LayerOut {
+		const { a, b } = run;
+		const m = Math.max(...run.sets.map((s) => s.fx.margin));
+		const ib = inner.box ?? EMPTY_BOX;
+		const g: Box = { x0: ib.x0 - m, y0: ib.y0 - m, x1: ib.x1 + m, y1: ib.y1 + m };
+		const pts = [
+			[g.x0, g.y0],
+			[g.x1, g.y0],
+			[g.x1, g.y1],
+			[g.x0, g.y1],
+		].map(([x, y]) => [round(x!, 2), round(y!, 2)]);
+		const zero = pts.map(() => [0, 0]);
+		const clear: LayerOut = {
+			json: {
+				ty: 4,
+				ip: a,
+				op: b,
+				st: 0,
+				ks: {},
+				shapes: [
+					{
+						ty: "gr",
+						it: [
+							{ ty: "sh", ks: st({ c: true, v: pts, i: zero, o: zero }) },
+							{ ty: "fl", c: st([1, 1, 1]), o: st(0), r: 1 },
+							{ ty: "tr", o: st(100) },
+						],
+					},
+				],
+			},
+			box: g,
+		};
+		const ref = this.precomp(null, "", () => [inner, clear]);
+		const ef = effectsJson(run, after);
+		const layer: LayerOut = { json: { ty: 0, refId: ref.id, w: ref.w, h: ref.h, ip: a, op: b, st: 0, ks: { a: st([ref.ox, ref.oy]) }, ef }, box: ref.box };
+		if (!opacity) return layer;
+		const up = this.precomp(null, "", () => [layer]);
+		return { json: { ty: 0, refId: up.id, w: up.w, h: up.h, ip: a, op: b, st: 0, ks: { a: st([up.ox, up.oy]), o: opacity } }, box: up.box };
 	}
 
 	/** Where an instance draws in its parent over [a, b): its content's box, sampled every tick. */
@@ -1449,9 +1571,25 @@ function ctOf(c: Record<ColorProp, GTrack>, t: number): CT {
 	return [v("rP") / 100, v("gP") / 100, v("bP") / 100, v("aP") / 100, v("rA") / 255, v("gA") / 255, v("bA") / 255, v("aA") / 255];
 }
 
+/** A colour transform's tint without its alpha. */
+function withoutAlpha(c: Record<ColorProp, GTrack>): Record<ColorProp, GTrack> {
+	return { ...c, aP: c.aP.map((k) => ({ ...k, v: 100 })), aA: c.aA.map((k) => ({ ...k, v: 0 })) };
+}
+
 /** `inner` applied first, then `outer` (as Flash nests colour transforms). */
 function composeCT(inner: CT, outer: CT): CT {
-	return [0, 1, 2, 3].flatMap((i) => [inner[i]! * outer[i]!]).concat([0, 1, 2, 3].map((i) => inner[i + 4]! * outer[i]! + outer[i + 4]!));
+	if (inner.length === 8 && outer.length === 8)
+		return [0, 1, 2, 3].flatMap((i) => [inner[i]! * outer[i]!]).concat([0, 1, 2, 3].map((i) => inner[i + 4]! * outer[i]! + outer[i + 4]!));
+	const I = asMatrix(inner),
+		O = asMatrix(outer);
+	const out: number[] = [];
+	for (let r = 0; r < 4; r++)
+		for (let c = 0; c < 5; c++) {
+			let v = c === 4 ? O[r * 5 + 4]! : 0;
+			for (let k = 0; k < 4; k++) v += O[r * 5 + k]! * I[k * 5 + c]!;
+			out.push(v);
+		}
+	return out;
 }
 
 /** Key times (and eases) of a set of tracks over [a, b]: shared ones, "dense" or "const". */
@@ -1484,7 +1622,7 @@ function composePaint(outer: Paint | null, color: Record<ColorProp, GTrack>, a: 
 	else if (og === "const") grid = paintGrid(outer!, a, b);
 	else grid = ticksOf(a, b);
 	const values = grid.times.map((t) => (outer ? composeCT(ctOf(own, t), paintAt(outer, t)) : ctOf(own, t)));
-	if (values.every((v) => v.every((x, i) => Math.abs(x - (i < 4 ? 1 : 0)) < 1e-9))) return null;
+	if (values.every(isIdentityCT)) return null;
 	const key = hashString(JSON.stringify([grid.times.map((t) => round(t, 4)), grid.eases, values.map((v) => v.map((x) => round(x, 4)))]));
 	return { key, times: grid.times, eases: grid.eases, values };
 }
@@ -1494,6 +1632,179 @@ function paintThen(p: Paint | null, ct: CT, a: number): Paint {
 	const base = p ?? { key: "", times: [a], eases: ["hold" as Ease], values: [[1, 1, 1, 1, 0, 0, 0, 0]] };
 	const values = base.values.map((v) => composeCT(v, ct));
 	return { ...base, key: hashString(base.key + "|" + ct.join(",")), values };
+}
+
+/** A paint with a fixed colour matrix applied before it (a filter of the instance it paints). */
+function paintFirst(p: Paint | null, ct: CT, a: number): Paint {
+	const base = p ?? { key: "", times: [a], eases: ["hold" as Ease], values: [[1, 1, 1, 1, 0, 0, 0, 0]] };
+	const values = base.values.map((v) => composeCT(ct, v));
+	return { ...base, key: hashString(base.key + "|first|" + ct.map((v) => round(v, 5)).join(",")), values };
+}
+
+// ---------------------------------------------------------------- filters as effects
+
+/** One Lottie effect: a Gaussian blur (both directions or one) or a drop shadow (also glows). */
+type Slot =
+	| { kind: "blur"; dim: 1 | 2 | 3; sigma: number }
+	| { kind: "shadow"; rgb: [number, number, number]; alpha: number; dx: number; dy: number; sigma: number; after: CT | null };
+type ShadowSlot = Extract<Slot, { kind: "shadow" }>;
+
+/** Animate filters in Lottie terms: effects, a colour matrix for the paints inside, room needed. */
+interface LottieFilters {
+	slots: Slot[];
+	matrix: CT | null;
+	/** What stays the same within a run (effect kinds, matrices): values may change. */
+	sig: string;
+	margin: number;
+}
+
+/** A stretch of an instance's interval with filters of one make-up, and the filter sets in it. */
+interface FilterRun {
+	a: number;
+	b: number;
+	fx: LottieFilters;
+	sets: { t: number; fx: LottieFilters }[];
+}
+
+const FILTER_NAMES: Record<string, string> = { bevelFilter: "bevel", gradientBevelFilter: "gradient bevel", gradientGlowFilter: "gradient glow" };
+/** Gaussian blur: Lottie's blurriness is 1 / 0.3 of the standard deviation (lottie-web, ThorVG and Skottie agree). */
+const BLUR_TO_SIGMA = 0.3;
+
+/**
+ * Maps Animate filters (in the instance's parent space) to Lottie effects: blur -> Gaussian blur
+ * (two directional ones when blurX and blurY differ), drop shadow and glow (outer) -> drop shadow
+ * (Flash's integer pixel offset as direction and distance), adjust colour -> a colour matrix in
+ * every paint inside (and in the colour of the shadows before it). Bevels, gradient filters and
+ * inner / knockout shadows and glows have no Lottie effect: left out.
+ */
+function lottieFilters(filters: FilterData[], warn: (m: string) => void): LottieFilters {
+	const slots: Slot[] = [];
+	let matrix: CT | null = null;
+	const shadows: ShadowSlot[] = [];
+	let margin = 0;
+	const num = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? v : d);
+	for (const f of filters) {
+		if (f.enabled === false) continue;
+		const sx = blurSigma(num(f.blurX, 5), f.quality),
+			sy = blurSigma(num(f.blurY, 5), f.quality);
+		switch (f.name) {
+			case "blurFilter":
+				if (Math.abs(sx - sy) < 1e-3) {
+					if (sx > 0) slots.push({ kind: "blur", dim: 1, sigma: sx });
+				} else {
+					if (sx > 0) slots.push({ kind: "blur", dim: 2, sigma: sx });
+					if (sy > 0) slots.push({ kind: "blur", dim: 3, sigma: sy });
+				}
+				margin += 3 * Math.max(sx, sy);
+				break;
+			case "dropShadowFilter":
+			case "glowFilter": {
+				const shadow = f.name === "dropShadowFilter";
+				if (f.inner || f.knockout || (shadow && f.hideObject)) {
+					warn(`Inner, knockout and "hide object" ${shadow ? "drop shadows" : "glows"} have no Lottie effect and were left out`);
+					break;
+				}
+				// a glow is a shadow that isn't moved
+				const dist = shadow ? num(f.distance, 4) : 0;
+				const ang = (num(f.angle, 45) * Math.PI) / 180;
+				const c = parseColor(splitColor(f.color).hex) ?? [0, 0, 0, 1];
+				const alpha = splitColor(f.color).alpha * (num(f.strength, 100) / 100);
+				if (Math.abs(sx - sy) > 0.5) warn("Drop shadows and glows with different horizontal and vertical blur are blurred evenly in Lottie");
+				if (alpha > 1 + 1e-6 && sx + sy > 0) warn("Drop shadows and glows stronger than 100% are drawn softer in Lottie");
+				const s: ShadowSlot = {
+					kind: "shadow",
+					rgb: [c[0], c[1], c[2]],
+					alpha: Math.min(1, alpha),
+					dx: Math.round(Math.cos(ang) * dist),
+					dy: Math.round(Math.sin(ang) * dist),
+					sigma: (sx + sy) / 2,
+					after: null,
+				};
+				slots.push(s);
+				shadows.push(s);
+				margin += 3 * Math.max(sx, sy) + Math.abs(s.dx) + Math.abs(s.dy);
+				break;
+			}
+			case "adjustColorFilter": {
+				const m = adjustColorMatrix(f);
+				if (isIdentityCT(m)) break;
+				matrix = matrix ? composeCT(matrix, m) : m;
+				for (const s of shadows) s.after = s.after ? composeCT(s.after, m) : m;
+				break;
+			}
+			default:
+				warn(`The ${FILTER_NAMES[f.name] ?? f.name} filter has no Lottie effect and was left out`);
+		}
+	}
+	const r5 = (ct: CT | null) => (ct ? ct.map((v) => round(v, 5)).join(",") : "");
+	const sig = JSON.stringify([slots.map((s) => (s.kind === "blur" ? `b${s.dim}` : `s${r5(s.after)}`)), r5(matrix)]);
+	return { slots, matrix, sig, margin: slots.length ? margin + 2 : 0 };
+}
+
+/**
+ * The effects of a filter run, values held from each filter set to the next (as Animate shows
+ * them). Drop shadow: opacity 0..255, direction clockwise from up (Flash's angle + 90),
+ * softness = sigma / 0.3 (ThorVG and Skottie; lottie-web blurs shadows by softness / 4, a little
+ * less); its colour goes through the colour transforms after the filter (`after`).
+ */
+function effectsJson(run: FilterRun, after: Paint | null): Json[] {
+	const times = run.sets.map((s) => s.t);
+	const held = (vals: (number | number[])[], ts: number[] = times): Json => {
+		const keys: { t: number; v: number | number[] }[] = [];
+		vals.forEach((v, i) => {
+			if (!keys.length || JSON.stringify(keys[keys.length - 1]!.v) !== JSON.stringify(v)) keys.push({ t: ts[i]!, v });
+		});
+		if (keys.length === 1) return st(keys[0]!.v);
+		return { a: 1, k: keys.map((k, i) => ({ t: round(k.t, 4), s: Array.isArray(k.v) ? k.v : [k.v], ...(i + 1 < keys.length ? { h: 1 } : {}) })) };
+	};
+	return run.fx.slots.map((slot, i): Json => {
+		if (slot.kind === "blur") {
+			const per = run.sets.map((s) => s.fx.slots[i] as Extract<Slot, { kind: "blur" }>);
+			return {
+				ty: 29,
+				nm: "Gaussian Blur",
+				en: 1,
+				ef: [
+					{ ty: 0, nm: "Blurriness", v: held(per.map((s) => round(s.sigma / BLUR_TO_SIGMA, 2))) },
+					{ ty: 7, nm: "Blur Dimensions", v: st(slot.dim) },
+					{ ty: 7, nm: "Repeat Edge Pixels", v: st(0) },
+				],
+			};
+		}
+		const per = run.sets.map((s) => s.fx.slots[i] as ShadowSlot);
+		const rgbAt = (s: ShadowSlot, t: number) => {
+			const c = applyCT(after ? paintAt(after, t) : null, applyCT(s.after, [...s.rgb, 1]));
+			return [round(c[0], 4), round(c[1], 4), round(c[2], 4), 1];
+		};
+		let colour: Json;
+		if (!after || paintConstantIn(after, run.a, run.b)) colour = held(per.map((s, k) => rgbAt(s, times[k]!)));
+		else {
+			// the colour changes with the paint: every tick
+			const ticks: number[] = [];
+			for (let t = run.a; t < run.b; t = Math.floor(t) + 1) ticks.push(t);
+			const slotAt = (t: number) => {
+				let k = 0;
+				while (k + 1 < times.length && times[k + 1]! <= t) k++;
+				return per[k]!;
+			};
+			colour = held(
+				ticks.map((t) => rgbAt(slotAt(t), t)),
+				ticks,
+			);
+		}
+		return {
+			ty: 25,
+			nm: "Drop Shadow",
+			en: 1,
+			ef: [
+				{ ty: 2, nm: "Shadow Color", v: colour },
+				{ ty: 0, nm: "Opacity", v: held(per.map((s) => round(s.alpha * 255, 1))) },
+				{ ty: 1, nm: "Direction", v: held(per.map((s) => (s.dx || s.dy ? round((Math.atan2(s.dx, -s.dy) * 180) / Math.PI, 2) : 0))) },
+				{ ty: 0, nm: "Distance", v: held(per.map((s) => round(Math.hypot(s.dx, s.dy), 2))) },
+				{ ty: 0, nm: "Softness", v: held(per.map((s) => round(s.sigma / BLUR_TO_SIGMA, 2))) },
+			],
+		};
+	});
 }
 
 /** The paint's key times within [s, e] and the eases between them (cut exactly). */
@@ -1782,7 +2093,6 @@ export function renderLottie(ctx: Context, rootId: string, s: ExportSettings, im
 		});
 	}
 	if (Object.keys(ctx.model.sounds).length) w.warn("Sounds aren't exported to Lottie");
-	if (horizon.tail) w.warn("The root timeline stops (stop()) while movie clips keep running: Lottie plays it through once, so set the player to play once");
 	const animation: Json = {
 		v: "5.12.0",
 		fr: horizon.fps,
@@ -1795,8 +2105,29 @@ export function renderLottie(ctx: Context, rootId: string, s: ExportSettings, im
 		layers: out,
 	};
 	const markers = labelsAsMarkers(ctx, rootId, frames, H);
+	// segments for the state machine (statemachine.ts) and for players told to play markers
+	const segments: LottieResult["segments"] = {};
+	const add = (base: string, tm: number, dr: number) => {
+		let cm = base;
+		for (let k = 2; markers.some((m) => m.cm === cm); k++) cm = `${base} ${k}`;
+		markers.push({ cm, tm, dr });
+		return cm;
+	};
+	const tail = horizon.loop ? 0 : horizon.tail;
+	if (tail) {
+		// dotLottie players (dotlottie-rs) play a marker's last frame too, [tm, tm + dr], as they play
+		// a whole animation over [0, op - 1]; lottie-web plays [tm, tm + dr)
+		const end = images === "dotlottie" ? 1 : 0;
+		segments.intro = add("intro", 0, tail - end);
+		segments.tail = add("loop", tail, H - tail - end);
+		if (images !== "dotlottie")
+			w.warn(
+				`The root timeline stops (stop()) while movie clips keep running: play the marker "${segments.intro}" once, then "${segments.tail}" in a loop (a .lottie file's state machine does that)`,
+			);
+	}
+	if (images === "dotlottie" && s.begin !== "auto" && H > 1) segments.poster = add("poster", s.posterFrame === "last" ? H - 1 : 0, 1);
 	if (markers.length) animation.markers = markers;
-	return { animation, images: w.files, horizon };
+	return { animation, images: w.files, horizon, segments };
 }
 
 /** Frame labels of the root timeline as markers, at the tick where the playhead first shows them. */
@@ -1835,4 +2166,4 @@ export function lottieParts(animation: Json, total: number): { drawing: number; 
 }
 
 /** For tests. */
-export const internals = { bezierPaths, trackProp, sawtooth };
+export const internals = { bezierPaths, trackProp, sawtooth, lottieFilters, effectsJson, composeCT, applyCT };

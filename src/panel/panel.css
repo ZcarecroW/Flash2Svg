@@ -280,12 +280,25 @@ section h2 button {
 	outline: 1px dashed var(--muted);
 	outline-offset: -1px;
 }
-.preview iframe {
+.preview iframe,
+.preview .stage {
 	width: 100%;
 	aspect-ratio: 4 / 3;
 	border: 1px solid var(--line);
 	border-radius: var(--radius);
 	background: repeating-conic-gradient(#8884 0% 25%, transparent 0% 50%) 50% / 16px 16px;
+}
+.preview .stage {
+	box-sizing: border-box;
+	overflow: hidden;
+}
+.preview .stage canvas {
+	display: block;
+	width: 100%;
+	height: 100%;
+}
+.preview .controls .row {
+	flex: 1;
 }
 .controls {
 	display: flex;
