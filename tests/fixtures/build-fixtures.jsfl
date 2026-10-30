@@ -12,7 +12,7 @@
 	var log = [];
 	var only = null; // set by e2e runner through fixtures-only.txt (comma separated names)
 	if (FLfile.exists(outDir + "/fixtures-only.txt")) {
-		only = "," + FLfile.read(outDir + "/fixtures-only.txt").replace(/\s+/g, "") + ",";
+		only = "," + FLfile.read(outDir + "/fixtures-only.txt").replace(/^\s+|\s+$/g, "").replace(/\s*,\s*/g, ",") + ",";
 	}
 
 	var doc, lib;
@@ -1390,6 +1390,247 @@
 		var info = [];
 		for (var i = 0; i < t.layers.length; i++) info.push(t.layers[i].name + ":" + t.layers[i].layerType + (t.layers[i].parentLayer ? "<" + t.layers[i].parentLayer.name : "") + (t.layers[i].visible ? "" : "(hidden)"));
 		log.push("f34 layers: " + info.join(", "));
+		extendAll(24);
+	});
+
+	// ---------------------------------------------------------------- f35: edge cases: late content, flips and collapses through zero, special characters, odd frame rate, goto into the timeline
+	build("f35-edge", function () {
+		newDoc("timeline", 480, 320, 23.976);
+		boxSymbol();
+		symbol("Grafik ä & <b>", "graphic", function () {
+			rect(-20, -20, 20, 20, "#00AA88");
+			var t = tl();
+			t.insertBlankKeyframe(3);
+			t.currentFrame = 3;
+			oval(-20, -20, 20, 20, "#AA0088");
+			t.insertFrames(2, false, 4);
+		});
+		layer("late");
+		var t = tl();
+		t.insertBlankKeyframe(6);
+		place("box", 60, 60, 6);
+		t.insertBlankKeyframe(18);
+		layer("flip");
+		classicTween("box", 170, 60, 23, function (e) { e.scaleX = -1; });
+		layer("collapse");
+		classicTween("box", 280, 60, 23, function (e) {
+			doc.selectNone(); e.selected = true;
+			doc.addFilter("dropShadowFilter"); doc.setFilterProperty("distance", 0, 6);
+			doc.selectNone();
+		}, function (f) { f.elements[0].scaleX = 0; f.elements[0].scaleY = 0; });
+		layer("fade");
+		classicTween("box", 400, 60, 23, function (e) {
+			doc.selectNone(); e.selected = true; doc.setInstanceAlpha(100); doc.selectNone();
+		}, function (f) { doc.selectNone(); f.elements[0].selected = true; doc.setInstanceAlpha(0); doc.selectNone(); });
+		layer("Ebene <&> 日本");
+		var g = place("Grafik ä & <b>", 60, 160, 0);
+		g.loop = "loop";
+		t = tl();
+		t.insertKeyframe(4);
+		t.layers[t.currentLayer].frames[4].name = "start ä&<x>";
+		layer("text");
+		doc.selectNone();
+		doc.addNewText({ left: 120, top: 140, right: 460, bottom: 180 }, "Größe <&> „quotes“ €");
+		doc.setElementTextAttr("size", 22);
+		layer("cache");
+		var el = place("box", 160, 240, 0);
+		el.cacheAsBitmap = true; el.rotation = 15;
+		layer("tiny");
+		el = place("box", 250, 240, 0);
+		el.scaleX = 0.05; el.scaleY = 0.05;
+		layer("huge");
+		el = place("box", 470, 310, 0);
+		el.scaleX = 8; el.scaleY = 8;
+		layer("oneframe");
+		classicTween("box", 360, 250, 1, function (e) { e.rotation = 45; e.y = 230; });
+		layer("mirrored");
+		el = place("box", 60, 270, 0);
+		el.scaleY = -1; el.name = "inst_ü";
+		doc.selectNone(); el.selected = true;
+		doc.addFilter("dropShadowFilter"); doc.setFilterProperty("distance", 0, 5); doc.setFilterProperty("angle", 0, 45);
+		doc.selectNone();
+		extendAll(24);
+		layer("actions");
+		t = tl();
+		t.insertKeyframe(23);
+		t.layers[t.currentLayer].frames[23].actionScript = "gotoAndPlay(\"start ä&<x>\"); // back to the label";
+	});
+
+	// ---------------------------------------------------------------- f36: two scenes, a script jumps into the second one
+	build("f36-scenes", function () {
+		newDoc("timeline", 300, 200, 24);
+		boxSymbol();
+		layer("mover");
+		classicTween("box", 50, 100, 11, function (e) { e.x = 250; e.rotation = 90; });
+		layer("actions");
+		var t = tl();
+		t.insertKeyframe(11);
+		t.layers[t.currentLayer].frames[11].actionScript = "gotoAndPlay(1, \"Zweite Szene\");";
+		doc.addNewScene("Zweite Szene");
+		rect(20, 20, 280, 180, "#CC0000");
+		doc.editScene(0);
+	});
+
+	// ---------------------------------------------------------------- f37: an empty document
+	build("f37-empty", function () {
+		newDoc("timeline", 200, 100, 24);
+	});
+
+	// ---------------------------------------------------------------- f38: a file name with spaces, umlauts and an ampersand
+	build("f38 Ümlaut & Co", function () {
+		newDoc("timeline", 300, 200, 24);
+		boxSymbol();
+		layer("mover");
+		classicTween("box", 50, 100, 11, function (e) { e.x = 250; });
+	});
+
+	// ---------------------------------------------------------------- f39: large stage, high frame rate, dark background, long timeline
+	build("f39-big", function () {
+		newDoc("timeline", 1920, 1080, 60);
+		doc.backgroundColor = "#202030";
+		runningClips();
+		layer("mover");
+		classicTween("box", 100, 540, 239, function (e) { e.x = 1820; e.rotation = 170; e.scaleX = 4; e.scaleY = 4; }, function (f) { f.tweenEasing = -60; });
+		layer("spin");
+		var el = place("spin8", 960, 200, 0);
+		el.scaleX = 6; el.scaleY = 6;
+		layer("shape");
+		var t = tl();
+		oval(200, 800, 400, 1000, "#FFCC00");
+		t.insertBlankKeyframe(119);
+		t.currentFrame = 119;
+		rect(1500, 800, 1800, 1000, "#00CCFF");
+		t.setSelectedFrames(0, 1);
+		t.setFrameProperty("tweenType", "shape");
+		extendAll(240);
+	});
+
+	// ---------------------------------------------------------------- f41: alpha on symbols: per shape (overlaps show), masks, nesting, bitmaps, filters, cache
+	build("f41-alpha", function () {
+		newDoc("timeline", 500, 320, 24);
+		doc.importFile(root + "/assets/checker.png", true);
+		var bmp = null;
+		for (var i = 0; i < lib.items.length; i++) if (lib.items[i].itemType == "bitmap") bmp = lib.items[i];
+		if (!bmp) throw new Error("bitmap import failed");
+		// stroked shape with an overlapping drawing on a second layer
+		symbol("card", "movie clip", function () {
+			doc.setCustomFill({ style: "solid", color: "#3366CC" });
+			doc.setCustomStroke({ style: "solid", color: "#001133", thickness: 6, capType: "round", joinType: "round" });
+			doc.addNewRectangle({ left: -40, top: -25, right: 40, bottom: 25 }, 0);
+			var t = tl();
+			var l = t.addNewLayer("over", "normal", true);
+			t.setSelectedLayers(l); t.currentLayer = l;
+			oval(-10, -35, 50, 15, "#FF9900");
+		});
+		symbol("maskedCard", "movie clip", function () {
+			var t = tl();
+			rect(-45, -30, 45, 30, "#00AA66", "#003322");
+			var m = t.addNewLayer("mask", "normal", true);
+			t.setSelectedLayers(m); t.currentLayer = m;
+			oval(-30, -30, 30, 30, "#000000");
+			var mi = -1, ci = -1;
+			for (var k = 0; k < t.layers.length; k++) { if (t.layers[k].name == "mask") mi = k; else ci = k; }
+			t.layers[mi].layerType = "mask";
+			t.layers[ci].layerType = "masked";
+			t.layers[ci].parentLayer = t.layers[mi];
+		});
+		symbol("outer", "movie clip", function () {
+			var e = place("card", 0, 0, 0);
+			doc.selectNone(); e.selected = true; doc.setInstanceAlpha(50); doc.selectNone();
+			rect(30, 10, 70, 40, "#CC0000");
+		});
+		symbol("photo", "movie clip", function () {
+			lib.addItemToDocument({ x: 0, y: 0 }, bmp.name);
+			rect(10, 10, 50, 40, "#FFFFFF", "#000000");
+		});
+		function alpha(e, a) { doc.selectNone(); e.selected = true; doc.setInstanceAlpha(a); doc.selectNone(); return e; }
+		layer("plain");
+		alpha(place("card", 70, 60, 0), 50);
+		layer("fade");
+		classicTween("card", 190, 60, 23, function (e) { alpha(e, 100); }, function (f) { alpha(f.elements[0], 10); });
+		layer("masked");
+		classicTween("maskedCard", 320, 60, 23, function (e) { alpha(e, 90); }, function (f) { alpha(f.elements[0], 20); });
+		layer("nested");
+		alpha(place("outer", 430, 60, 0), 60);
+		layer("bitmap");
+		alpha(place("photo", 40, 150, 0), 50);
+		layer("filtered");
+		var e = alpha(place("card", 220, 190, 0), 50);
+		doc.selectNone(); e.selected = true; doc.addFilter("dropShadowFilter"); doc.setFilterProperty("distance", 0, 4); doc.selectNone();
+		layer("cached");
+		e = alpha(place("card", 360, 190, 0), 50);
+		e.cacheAsBitmap = true;
+		layer("blended");
+		e = alpha(place("card", 90, 270, 0), 50);
+		e.blendMode = "multiply";
+		layer("text");
+		doc.selectNone();
+		doc.addNewText({ left: 200, top: 255, right: 480, bottom: 300 }, "Alpha 50 %");
+		doc.setElementTextAttr("size", 26);
+		symbol("label", "movie clip", function () {
+			doc.addNewText({ left: 0, top: 0, right: 200, bottom: 40 }, "Label");
+			doc.setElementTextAttr("size", 30);
+			doc.setElementTextAttr("fillColor", "#AA0000");
+		});
+		layer("labelAlpha");
+		alpha(place("label", 300, 270, 0), 40);
+		extendAll(24);
+	});
+
+	// ---------------------------------------------------------------- f40: stroke scale modes, hairlines, styles, caps and joins in scaled instances
+	build("f40-strokes", function () {
+		newDoc("timeline", 500, 360, 24);
+		var modes = ["normal", "none", "horizontal", "vertical"];
+		for (var i = 0; i < modes.length; i++) {
+			(function (mode) {
+				symbol("frame_" + mode, "movie clip", function () {
+					doc.setCustomFill({ style: "solid", color: "#99CCFF" });
+					doc.setCustomStroke({ style: "solid", color: "#003366", thickness: 3, capType: "round", joinType: "round", scaleType: mode });
+					doc.addNewRectangle({ left: -20, top: -15, right: 20, bottom: 15 }, 0);
+				});
+			})(modes[i]);
+		}
+		for (i = 0; i < modes.length; i++) {
+			layer("mode_" + modes[i]);
+			var el = place("frame_" + modes[i], 70 + i * 120, 70, 0);
+			el.scaleX = 2.5; el.scaleY = 1.5;
+		}
+		symbol("hair", "movie clip", function () {
+			// the thinnest stroke (0.1) draws as a hairline at any scale
+			doc.setCustomStroke({ style: "solid", color: "#CC0000", thickness: 0.1, capType: "round", joinType: "round" });
+			doc.addNewLine({ x: -20, y: -20 }, { x: 20, y: 20 });
+			doc.addNewLine({ x: -20, y: 20 }, { x: 20, y: -20 });
+		});
+		layer("hairline");
+		el = place("hair", 70, 170, 0);
+		el.scaleX = 3; el.scaleY = 2;
+		symbol("styles", "graphic", function () {
+			var y = -30;
+			var st = [
+				{ style: "dotted", color: "#006600", thickness: 3, dotSpace: 3 },
+				{ style: "dashed", color: "#660066", thickness: 4, dash1: 10, dash2: 5, capType: "square" },
+				{ style: "ragged", color: "#666600", thickness: 2 },
+				{ style: "solid", color: "#000000", thickness: 8, capType: "none", joinType: "miter", miterLimit: 2 }
+			];
+			for (var k = 0; k < st.length; k++) {
+				doc.setCustomStroke(st[k]);
+				doc.addNewLine({ x: -60, y: y + k * 18 }, { x: 60, y: y + k * 18 });
+			}
+		});
+		layer("styles");
+		el = place("styles", 330, 190, 0);
+		el.scaleX = 1.5; el.scaleY = 1.5;
+		symbol("zigzag", "graphic", function () {
+			doc.setCustomStroke({ style: "solid", color: "#AA5500", thickness: 6, capType: "square", joinType: "miter", miterLimit: 4 });
+			doc.addNewLine({ x: -50, y: 10 }, { x: -25, y: -10 });
+			doc.addNewLine({ x: -25, y: -10 }, { x: 0, y: 10 });
+			doc.addNewLine({ x: 0, y: 10 }, { x: 25, y: -10 });
+			doc.addNewLine({ x: 25, y: -10 }, { x: 50, y: 10 });
+		});
+		layer("zigzag");
+		el = place("zigzag", 130, 290, 0);
+		layer("thin-tween");
+		classicTween("frame_normal", 380, 300, 23, function (e) { e.scaleX = 0.1; e.scaleY = 0.1; }, function (f) { f.elements[0].scaleX = 2; f.elements[0].scaleY = 1; });
 		extendAll(24);
 	});
 

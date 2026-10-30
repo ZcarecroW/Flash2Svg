@@ -30,7 +30,8 @@ const HELP = `flash2svg <scene.json> [options]
 `;
 
 function main(argv: string[]) {
-	const args = [...argv];
+	// "--format=css" is the same as "--format css"
+	const args = argv.flatMap((a) => (/^--[\w-]+=/.test(a) ? [a.slice(0, a.indexOf("=")), a.slice(a.indexOf("=") + 1)] : [a]));
 	if (!args.length || args.includes("-h") || args.includes("--help")) {
 		process.stdout.write(HELP);
 		return;

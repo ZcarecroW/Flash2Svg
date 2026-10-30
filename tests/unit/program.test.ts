@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { compose, decompose } from "../../src/core/geom.ts";
 import type { InstanceElement, Mat, SceneModel } from "../../src/core/model.ts";
-import { buildPrograms, fromProps, parseActions, toProps, TRANSFORM_PROPS, type InstanceItem } from "../../src/core/program.ts";
+import { buildPrograms, fromProps, markShapeAlpha, parseActions, toProps, TRANSFORM_PROPS, type InstanceItem } from "../../src/core/program.ts";
 import { valueAt } from "../../src/core/tracks.ts";
 import { playhead } from "../../src/core/emit/timing.ts";
 import type { Program } from "../../src/core/program.ts";
@@ -93,6 +93,15 @@ describe("frame actions", () => {
 		expect(parseActions("gotoAndStop(5);")).toEqual([{ type: "goto", target: 5, play: false }]);
 		expect(parseActions("myClip.stop();")).toEqual([]);
 	});
+
+	it("reads labels with commas and brackets, and leaves out jumps into other scenes", () => {
+		expect(parseActions('gotoAndPlay("a, (b)");')).toEqual([{ type: "goto", target: "a, (b)", play: true }]);
+		const warnings: string[] = [];
+		const warn = (m: string) => warnings.push(m);
+		expect(parseActions('gotoAndPlay(1, "Scene 2");', { scene: "Scene 1", warn })).toEqual([]);
+		expect(warnings[0]).toMatch(/Scene 2/);
+		expect(parseActions("gotoAndStop(3, 'Scene 1');", { scene: "Scene 1", warn })).toEqual([{ type: "goto", target: 3, play: false }]);
+	});
 });
 
 describe("frame actions: conditions", () => {
@@ -159,5 +168,44 @@ describe("alpha / erase blends", () => {
 		const mask = layers.find((l) => l.type === "mask")!;
 		expect(mask.maskMode).toBe("alpha");
 		expect(mask.maskBox).toBeDefined();
+	});
+});
+
+describe("instance alpha", () => {
+	const track = (v: number) => [{ t: 0, v, ease: "hold" as const }];
+	const color = (a: number) => ({ rP: track(100), gP: track(100), bP: track(100), aP: track(a), rA: track(0), gA: track(0), bA: track(0), aA: track(0) });
+	const inst = (symbol: string, alpha: number | null, extra: Partial<InstanceItem> = {}): InstanceItem =>
+		({
+			kind: "instance", start: 0, end: 1, symbol, symbolType: "movie clip", name: "", transform: {} as InstanceItem["transform"],
+			color: alpha === null ? null : color(alpha), filters: [], blendMode: "normal", visible: true, cacheAsBitmap: false,
+			bounds: { left: 0, top: 0, width: 1, height: 1 }, ...extra,
+		}) as InstanceItem;
+	const prog = (id: string, items: Program["layers"][number]["items"]): Program => ({ id, name: id, kind: "movie clip", frameCount: 1, layers: [{ index: 0, name: "l", type: "normal", maskedBy: -1, items }], labels: [], actions: {} });
+
+	it("applies to each shape like Flash, except where shapes cannot inherit it", () => {
+		const outer = inst("sym:a", 50);
+		const plain = inst("sym:b", null);
+		const filtered = inst("sym:b", 50, { filters: [{ t: 0, filters: [{ name: "blurFilter" } as never] }] });
+		const photo = inst("sym:p", 50);
+		const blended = inst("sym:b", 50, { blendMode: "multiply" });
+		const layered = inst("sym:b", 50, { blendMode: "layer" });
+		const inner = inst("sym:b", 40);
+		const programs: Record<string, Program> = {
+			root: prog("root", [outer, plain, filtered, photo, blended, layered]),
+			"sym:a": prog("sym:a", [inner]),
+			"sym:b": prog("sym:b", [{ kind: "art", start: 0, end: 1, uid: "1", slot: 0, art: "x" }]),
+			"sym:p": prog("sym:p", [{ kind: "art", start: 0, end: 1, uid: "2", slot: 0, art: "photo" }]),
+		};
+		markShapeAlpha(programs, ["root"], (art) => (art === "photo" ? 4 : 1));
+		expect(outer.shapeAlpha).toBe(1); // fills only: fill-opacity
+		expect(plain.shapeAlpha).toBe(0);
+		expect(filtered.shapeAlpha).toBe(0);
+		expect(blended.shapeAlpha).toBe(1); // multiply: still per shape, as Animate draws it
+		expect(layered.shapeAlpha).toBe(0);
+		expect(photo.shapeAlpha).toBe(0); // images ignore fill-opacity
+		// inherited values do not multiply: inside, alpha stays a group opacity
+		expect(inner.shapeAlpha).toBe(0);
+		expect(programs["sym:a"]!.inShapeAlpha).toBe(true);
+		expect(programs.root!.inShapeAlpha).toBeUndefined();
 	});
 });

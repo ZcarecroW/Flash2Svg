@@ -102,6 +102,7 @@ export function renderPlayer(ctx: Context, rootId: string, s: ExportSettings): {
 			const fixed = (k: (typeof COLOR_PROPS)[number], v: number) => it.color![k].every((key) => Math.abs(key.v - v) < 1e-9);
 			const alphaOnly = fixed("rP", 100) && fixed("gP", 100) && fixed("bP", 100) && fixed("rA", 0) && fixed("gA", 0) && fixed("bA", 0) && fixed("aA", 0);
 			if (!alphaOnly) p.cm = 1;
+			else if (it.shapeAlpha) p.sa = it.shapeAlpha;
 		}
 		if (it.filters.length) {
 			// applied outside the instance transform, in the parent's units (see the runtime)
@@ -138,6 +139,7 @@ export function renderPlayer(ctx: Context, rootId: string, s: ExportSettings): {
 				});
 			}
 		}
+		if (prog.inShapeAlpha) t.ia = 1;
 		if (prog.view) t.vw = (["x", "y", "rot", "skw", "sx", "sy"] as const).map((k) => track(prog.view![k], k === "sx" || k === "sy" ? 4 : 3));
 		const indexOfLayer = new Map(prog.layers.map((l, i) => [l.index, i]));
 		for (const l of prog.layers) {
@@ -188,7 +190,10 @@ export function renderPlayer(ctx: Context, rootId: string, s: ExportSettings): {
 	// Poster: the static frame, removed by the runtime when it starts
 	const root = ctx.programs[rootId]!;
 	const ph = playhead(root);
-	const posterFrame = s.posterFrame === "last" ? (ph.cycle.length ? root.frameCount - 1 : (ph.prefix[ph.prefix.length - 1] ?? 0)) : 0;
+	// the first pass: the prefix and one round of the cycle (frame scripts may loop to any frame)
+	const pass = [...ph.prefix, ...ph.cycle];
+	if (ph.cycle.length && (ph.prefix.length || pass.some((f, i) => f !== i))) P.on = pass.length;
+	const posterFrame = s.posterFrame === "last" ? (pass[pass.length - 1] ?? 0) : 0;
 	const sr = new StaticRenderer(ctx, doc, { movieClips: "first", textAsOutlines: s.textAsOutlines });
 	const poster = el("g", { class: "f2s-poster" }, sr.timeline(root, posterFrame, posterFrame, 0));
 

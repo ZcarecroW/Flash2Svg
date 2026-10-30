@@ -166,7 +166,7 @@ class Writer {
 			if (!nodes.length) continue;
 			const id = this.doc.uid("mask");
 			// kept inside the subtree (not in <defs>) so a copied subtree carries its own masks
-			out.push(this.doc.maskElement(id, nodes, bl.layer.maskMode, bl.layer.maskBox));
+			out.push(this.doc.maskElement(id, nodes, bl.layer.maskMode, bl.layer.maskBox, bt.program.inShapeAlpha));
 			masks.set(bl.layer.index, id);
 		}
 		let group: { mask: number; nodes: XmlNode[] } | null = null;
@@ -267,10 +267,21 @@ class Writer {
 		const anims: XmlNode[] = [];
 
 		if (color && alphaOnly) {
-			if (colorAnimated) {
-				this.animate(anims, style, "opacity", [color.aP], (v) => fmt(Math.max(0, v[0]!) / 100, 3), "attr");
+			const alpha = (v: number[]) => fmt(Math.max(0, v[0]!) / 100, 3);
+			const sa = n.item.shapeAlpha ?? 0;
+			if (sa) {
+				// alpha of each shape inside (inherited), as in Flash: see markShapeAlpha
+				const props = [sa & 1 ? "fill-opacity" : "", sa & 2 ? "stroke-opacity" : ""].filter(Boolean);
+				if (colorAnimated) {
+					// CSS: one animation sets both properties
+					if (this.css) this.animate(anims, style, props[0]!, [color.aP], (v) => props.map((p, i) => (i ? `;${p}:` : "") + alpha(v)).join(""), "attr");
+					else for (const p of props) this.animate(anims, style, p, [color.aP], alpha, "attr");
+				}
+				if (poster && poster.aP !== 100) for (const p of props) attrs[p] = alpha([poster.aP]);
+			} else {
+				if (colorAnimated) this.animate(anims, style, "opacity", [color.aP], alpha, "attr");
+				if (poster && poster.aP !== 100) attrs.opacity = alpha([poster.aP]);
 			}
-			if (poster && poster.aP !== 100) attrs.opacity = fmt(Math.max(0, poster.aP) / 100, 3);
 		}
 		const fixedFilters = filterSets.length ? filterSets[0]!.filters : [];
 		if (color && !alphaOnly && colorAnimated && this.css) {

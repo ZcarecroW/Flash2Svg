@@ -48,4 +48,6 @@ jobs:
         run: |
           $files = Get-ChildItem dist -File | Where-Object { $_.Extension -in ".zxp", ".zip" } | ForEach-Object { $_.FullName }
           Compress-Archive -Path dist/cli/* -DestinationPath dist/flash2svg-cli.zip -Force
-          gh release create $env:GITHUB_REF_NAME @files dist/flash2svg-cli.zip --title "Flash2SVG $env:GITHUB_REF_NAME" --generate-notes --prerelease
+          # only versions with a suffix (v4.1.0-rc.1) are pre-releases
+          $pre = if ($env:GITHUB_REF_NAME -match "-") { "--prerelease" } else { "--latest" }
+          gh release create $env:GITHUB_REF_NAME @files dist/flash2svg-cli.zip --title "Flash2SVG $env:GITHUB_REF_NAME" --generate-notes $pre

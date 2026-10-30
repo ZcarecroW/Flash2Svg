@@ -688,7 +688,11 @@
 		if (members) for (var m = 0; m < members.length; m++) linearGradients(members[m], out, depth + 1, strokes);
 	}
 
-	/** Linear RGB gradient strokes, read only for shapes whose exported SVG has a gradient stroke. */
+	/**
+	 * Stroke details the SVG export drops, read only for shapes whose exported SVG has strokes (a
+	 * property read per edge): Linear RGB gradient strokes, and strokes that keep their width when
+	 * scaled (scale "none").
+	 */
 	function checkStrokes() {
 		var svg = {};
 		for (var i = 0; i < job.strokeChecks.length; i++) {
@@ -696,12 +700,41 @@
 			var item = job.model.atlas[c.owner.atlas];
 			if (!item) continue;
 			if (svg[item.file] === undefined) svg[item.file] = FLfile.read(job.outDir + "/" + item.file) || "";
-			if (svg[item.file].indexOf('stroke="url(#') < 0) continue;
-			var lin = c.owner.linearRGB || [];
-			try { linearGradients(c.el, lin, 0, true); } catch (e) {}
-			if (lin.length) c.owner.linearRGB = lin;
+			var text = svg[item.file];
+			if (text.indexOf('stroke="url(#') >= 0) {
+				var lin = c.owner.linearRGB || [];
+				try { linearGradients(c.el, lin, 0, true); } catch (e) {}
+				if (lin.length) c.owner.linearRGB = lin;
+			}
+			if (text.indexOf('stroke="#') < 0) continue;
+			var fixed = c.owner.fixedStrokes || [];
+			try { fixedStrokes(c.el, fixed, 0); } catch (e) {}
+			if (fixed.length) c.owner.fixedStrokes = fixed;
 		}
 		job.strokeChecks = [];
+	}
+
+	/** Signatures ("#rrggbb|width") of strokes that keep their width when scaled. */
+	function fixedStrokes(el, out, depth) {
+		if (depth > 8) return;
+		var edges = get(el, "edges", null);
+		if (edges) {
+			for (var e = 0; e < edges.length; e++) {
+				var st = get(edges[e], "stroke", null);
+				if (!st || st.style == "noStroke") continue;
+				var scale = get(st, "scaleType", "normal");
+				if (scale == "normal") continue;
+				if (scale != "none") {
+					if (!job.warnedScale) warn("Strokes that scale only horizontally or vertically are exported as normal strokes");
+					job.warnedScale = true;
+					continue;
+				}
+				var sig = String(st.color).substr(0, 7).toLowerCase() + "|" + round(st.thickness);
+				if (indexOf(out, sig) < 0) out.push(sig);
+			}
+		}
+		var members = get(el, "members", null);
+		if (members) for (var m = 0; m < members.length; m++) fixedStrokes(members[m], out, depth + 1);
 	}
 
 	/** Symbol and bitmap instances inside a group and its sub-groups, in drawing order. */

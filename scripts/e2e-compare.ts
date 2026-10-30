@@ -23,8 +23,10 @@ const threshold = parseFloat(opt("threshold", "0.003"));
 const list = args.find((a) => !a.startsWith("--"));
 // f22: Animate snaps the strokes of the scaled 9-slice panel to whole pixels and hints the
 // dynamic text; our geometry is the unsnapped one. f31 is mostly text: Animate hints glyphs
-// (same outlines and positions, edge pixels differ).
-const TOLERANCE: Record<string, number> = { "f22-layers": 0.006, "f31-text2": 0.008 };
+// (same outlines and positions, edge pixels differ). f35: Animate never draws a stroke thinner
+// than a pixel (the box flipping through scale 0); f40: strokes that scale only horizontally or
+// vertically are drawn as normal strokes (both are known limits).
+const TOLERANCE: Record<string, number> = { "f22-layers": 0.006, "f31-text2": 0.008, "f35-edge": 0.005, "f40-strokes": 0.004 };
 const names = list ? list.split(",") : readdirSync(out).filter((d) => existsSync(join(out, d, "model", "scene.json")));
 
 interface Row {
@@ -85,7 +87,9 @@ for (const name of names) {
 			return { ratio: bad / (ref.width * ref.height), diffPng };
 		};
 		let resvg = NaN;
-		try {
+		// resvg panics (and takes the process down) on far off-stage coordinates, which Animate
+		// produces itself for tweens that start at scale 0
+		if (!/[ (-]\d{6,}[. )]/.test(svg)) try {
 			const r = new Resvg(svg, { fitTo: { mode: "width", value: ref.width }, background: "white" });
 			resvg = compare(PNG.sync.read(r.render().asPng())).ratio;
 		} catch (e) {

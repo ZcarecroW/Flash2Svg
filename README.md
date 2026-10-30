@@ -131,6 +131,11 @@ node dist/cli/flash2svg.js path/to/scene.json -o out.svg --format css --loop alw
   exported. Layer parenting follows Animate's per-frame rig matrices (between frames they are
   interpolated linearly).
 - Shape tweens become one drawing per frame.
+- Strokes: the scale options *Horizontal* and *Vertical* are drawn like *Normal* (warned; *None*
+  works). Animate never draws a stroke thinner than one pixel, SVG does: a stroked symbol scaled
+  far down (a card flipping through scale 0) shows thinner outlines than in Animate.
+- Alpha on a symbol applies to each shape inside, like in Flash; inside such a symbol, alpha on
+  nested symbols applies to them as a whole (SVG can't multiply inherited alpha).
 - Groups that hold symbol instances are split: the group's drawing first, its instances above
   it (a drawing sub-group placed above an instance inside the same group ends up below it).
 - 9-slice: an animated scale is sliced frame by frame for symbols that only contain drawings;
@@ -138,6 +143,7 @@ node dist/cli/flash2svg.js path/to/scene.json -o out.svg --format css --loop alw
   movie clips, bitmaps and text inside 9-slice symbols scale normally, as in Flash.
 - Only the current scene is exported (Flash plays all scenes in a row): a warning tells you when
   the document has more than one. Put scenes into one timeline, or export them one by one.
+  Frame scripts that jump into another scene are left out.
 - In SMIL/CSS output a movie clip that is visible for the whole timeline keeps running across
   the loop; one that appears and disappears restarts each time it appears (like Flash). After a
   `stop()` the running clips loop on (their common period). Very long timelines with many short

@@ -83,7 +83,8 @@ class Clip {
 				const mask = el("mask", l.mm ? { id, maskUnits: "userSpaceOnUse", ...area } : { id });
 				if (l.mm === 2 || l.mx) mask.appendChild(el("rect", { ...area, fill: "#fff" }));
 				if (l.mx) mask.appendChild(el("rect", { x: "" + l.mx[0], y: "" + l.mx[1], width: "" + l.mx[2], height: "" + l.mx[3] }));
-				const inner = el("g", { filter: `url(#${l.mm === 1 ? this.P.wf : l.mm === 2 ? this.P.bf : this.P.mf})` }) as SVGGElement;
+				// inside an instance whose shapes inherit its alpha: the mask must not
+				const inner = el("g", { filter: `url(#${l.mm === 1 ? this.P.wf : l.mm === 2 ? this.P.bf : this.P.mf})`, ...(tl.ia ? { "fill-opacity": "1", "stroke-opacity": "1" } : {}) }) as SVGGElement;
 				mask.appendChild(inner);
 				this.node.appendChild(mask);
 				this.maskIds[i] = id;
@@ -167,8 +168,9 @@ class Clip {
 				this.frame = this.frame + 1 >= this.tl.n ? 0 : this.frame + 1;
 			}
 			this.runActions();
-			// not looping: the root ends on arriving at its last frame
-			if (this.kind === -1 && !this.player.loop && this.playing && this.frame === this.tl.n - 1) {
+			// not looping: the root ends on arriving at its last frame, or after the first pass when
+			// frame scripts loop it
+			if (this.kind === -1 && !this.player.loop && this.playing && (this.P.on ? ++this.age >= this.P.on - 1 : this.frame === this.tl.n - 1)) {
 				this.playing = false;
 				this.ended = true;
 				this.player.emit({ type: "end", frame: this.frame });
@@ -239,9 +241,12 @@ class Clip {
 
 	/** Root only: stopped because the end was reached without looping (not by a stop() script). */
 	ended = false;
+	/** Root only: ticks played since the last goto (see PProgram.on). */
+	age = 0;
 
 	gotoFrame(f: number, play: boolean) {
 		this.ended = false;
+		this.age = 0;
 		this.frame = f;
 		this.playing = play;
 		this.enteredFrame = -1;
@@ -355,7 +360,12 @@ class Inst {
 		if (it.c) {
 			const cv = it.c.map((tk, i) => trackAt(P, tk, t, i < 4 ? 100 : 0));
 			if (!it.cm) {
-				this.node.setAttribute("opacity", String(Math.max(0, cv[3]!) / 100));
+				const a = String(Math.max(0, cv[3]!) / 100);
+				if (!it.sa) this.node.setAttribute("opacity", a);
+				else {
+					if (it.sa & 1) this.node.setAttribute("fill-opacity", a);
+					if (it.sa & 2) this.node.setAttribute("stroke-opacity", a);
+				}
 			} else {
 				if (!this.cm) {
 					const id = `${this.owner.player.svg.id}_c${uidCounter++}`;

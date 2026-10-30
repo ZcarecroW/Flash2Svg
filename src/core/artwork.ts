@@ -23,6 +23,8 @@ export interface ArtworkOptions {
 	linearRGB?: Set<string>;
 	/** Bitmaps the drawing uses as fills. */
 	bitmapFills?: BitmapFill[];
+	/** Strokes that keep their width when scaled (scale "none"): "#rrggbb|width". */
+	fixedStrokes?: Set<string>;
 }
 
 function srgbToLinear(c: number): number {
@@ -146,7 +148,34 @@ function compactNumbers(node: XmlNode, digits: number) {
 				n.attrs[k] = fmt(parseFloat(v) / 100, 4);
 			}
 		}
+		// alpha as part of the colour (#rrggbbaa): an own fill-opacity would block the alpha that
+		// shapes inherit from their instance (see markShapeAlpha), and the colour is shorter
+		for (const p of ["fill", "stroke"]) {
+			const o = n.attrs[p + "-opacity"];
+			const c = n.attrs[p];
+			if (o === undefined || !c || !/^#[0-9a-fA-F]{6}$/.test(c)) continue;
+			const a = Math.round(Math.max(0, Math.min(1, parseFloat(o) || 0)) * 255);
+			if (a < 255) n.attrs[p] = c + (a < 16 ? "0" : "") + a.toString(16);
+			delete n.attrs[p + "-opacity"];
+		}
 	});
+}
+
+/** Strokes with scale "none" keep their width however the instance is scaled. */
+function markFixedStrokes(nodes: XmlNode[], sigs: Set<string>) {
+	const widths = new Map<string, number[]>();
+	for (const s of sigs) {
+		const [col, w] = s.split("|") as [string, string];
+		(widths.get(col) ?? widths.set(col, []).get(col)!).push(parseFloat(w));
+	}
+	for (const n of nodes)
+		walk(n, (x) => {
+			const c = x.attrs.stroke;
+			const list = c && c[0] === "#" ? widths.get(c.slice(0, 7).toLowerCase()) : undefined;
+			if (!list) return;
+			const w = parseFloat(x.attrs["stroke-width"] ?? "1");
+			if (list.some((t) => Math.abs(t - w) < 0.01)) x.attrs["vector-effect"] = "non-scaling-stroke";
+		});
 }
 
 /** Parses one exported SVG. `prefix` makes every id unique in the output document. */
@@ -212,6 +241,8 @@ export function importArtwork(svgText: string, id: string, opts: ArtworkOptions)
 			if (gradient && (opts.linearRGB.has("*") || opts.linearRGB.has(gradientSignature(d)))) expandLinearRGB(d);
 		}
 	}
+
+	if (opts.fixedStrokes?.size) markFixedStrokes([...keptDefs, body], opts.fixedStrokes);
 
 	// Unique ids
 	const map = new Map<string, string>();
@@ -371,6 +402,26 @@ function hasDrawing(node: XmlNode): boolean {
 		if (n.name === "path" || n.name === "use" || n.name === "image" || n.name === "rect" || n.name === "circle" || n.name === "ellipse" || n.name === "polygon" || n.name === "polyline" || n.name === "line" || n.name === "text") found = true;
 	});
 	return found;
+}
+
+const SHAPES = new Set(["path", "rect", "circle", "ellipse", "polygon", "polyline", "line", "text"]);
+const paintsCache = new WeakMap<Artwork, number>();
+
+/** What the artwork paints: 1 = fills, 2 = strokes (3 = both); images are not counted. */
+export function artworkPaints(a: Artwork): number {
+	let r = paintsCache.get(a);
+	if (r !== undefined) return r;
+	r = 0;
+	const visit = (n: XmlNode, fill: boolean, stroke: boolean) => {
+		if (n.attrs.fill !== undefined) fill = n.attrs.fill !== "none";
+		if (n.attrs.stroke !== undefined) stroke = n.attrs.stroke !== "none";
+		if (SHAPES.has(n.name)) r! |= (fill ? 1 : 0) | (stroke ? 2 : 0);
+		for (const c of n.children) if (isNode(c)) visit(c, fill, stroke);
+	};
+	// SVG defaults: black fill, no stroke
+	for (const n of [...a.defs, a.body]) visit(n, true, false);
+	paintsCache.set(a, r);
+	return r;
 }
 
 /** A copy of the artwork whose ids (and references to them) start with `prefix`. */

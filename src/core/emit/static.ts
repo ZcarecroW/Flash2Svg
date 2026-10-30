@@ -193,7 +193,12 @@ export class StaticRenderer {
 		const filters = activeFilters(item, frame);
 		let colorForFilter: ColorMatrixValues | null = null;
 		if (color && isAlphaOnly(color)) {
-			if (color.aP !== 100) attrs.opacity = fmt(Math.max(0, color.aP) / 100, 3);
+			const a = color.aP !== 100 ? fmt(Math.max(0, color.aP) / 100, 3) : undefined;
+			if (!item.shapeAlpha) attrs.opacity = a;
+			else {
+				if (item.shapeAlpha & 1) attrs["fill-opacity"] = a;
+				if (item.shapeAlpha & 2) attrs["stroke-opacity"] = a;
+			}
 		} else if (color) colorForFilter = color;
 		// Animate filters work in the parent's orientation and units (a rotated instance keeps its
 		// shadow direction): applied on a group around the transformed <use>

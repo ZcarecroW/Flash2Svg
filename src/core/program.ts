@@ -67,6 +67,9 @@ export interface InstanceItem extends ItemBase {
 	bounds: { left: number; top: number; width: number; height: number };
 	/** Graphic symbols: how the child frame is chosen, per keyframe range. */
 	graphic?: GraphicRange[];
+	/** Alpha applies to each shape inside, not to the instance as a whole (see markShapeAlpha):
+	 * 1 = to fills, 2 = to strokes, 3 = both. */
+	shapeAlpha?: number;
 }
 
 export interface GraphicRange {
@@ -142,6 +145,8 @@ export interface Program {
 	camera?: TimelineData["camera"];
 	/** Camera (root scenes): transform applied to all layers, in this timeline's frame time. */
 	view?: TransformTracks;
+	/** Placed inside an instance with shapeAlpha: masks must not inherit that alpha. */
+	inShapeAlpha?: boolean;
 }
 
 export interface CompileResult {
@@ -217,6 +222,68 @@ export function buildPrograms(model: SceneModel, opts: CompileOptions): CompileR
 		wrapErase(programs, target);
 	}
 	return { programs, warnings };
+}
+
+/**
+ * Flash applies an instance's alpha to every shape inside it, so overlapping parts (the inner half
+ * of a stroke over its fill, overlapping shapes) show through each other, also with blend modes
+ * like multiply and with cacheAsBitmap (as Animate draws them); filters and the layer, invert
+ * and subtract blends draw the instance as one picture first. SVG gets the same result from
+ * the inherited fill-opacity / stroke-opacity instead of a group opacity, and is faster too (no
+ * offscreen group). Inherited values do not multiply, so inside such an instance alpha falls back
+ * to a group opacity; images ignore fill-opacity, so instances showing bitmaps keep it as well.
+ * Only the properties that are needed are set: `paint(art)` tells what an artwork paints
+ * (1 fills, 2 strokes, 4 images).
+ */
+const GROUP_BLENDS = new Set(["layer", "invert", "subtract", "alpha", "erase"]);
+
+export function markShapeAlpha(programs: Record<string, Program>, roots: string[], paint: (art: string) => number) {
+	const known = new Map<string, number>();
+	const paintsOf = (id: string): number => {
+		let r = known.get(id);
+		if (r !== undefined) return r;
+		known.set(id, 0); // cycle guard
+		r = 0;
+		const p = programs[id];
+		if (p)
+			for (const l of p.layers)
+				for (const it of l.items)
+					r |= it.kind === "bitmap" ? 4 : it.kind === "text" ? 1 : it.kind === "art" ? paint(it.art) : it.kind === "artSeq" ? it.arts.reduce((a, x) => a | paint(x), 0) : paintsOf(it.symbol);
+		known.set(id, r);
+		return r;
+	};
+	const shapeAlpha = (it: InstanceItem): number => {
+		const c = it.color;
+		if (!c || GROUP_BLENDS.has(it.blendMode) || it.filters.some((f) => f.filters.length) || it.symbol.includes(LAYER_FX)) return 0;
+		const all = (p: ColorProp, v: number) => c[p].every((k) => k.v === v);
+		if (!(all("rP", 100) && all("gP", 100) && all("bP", 100) && all("rA", 0) && all("gA", 0) && all("bA", 0) && all("aA", 0)) || all("aP", 100)) return 0;
+		const paints = paintsOf(it.symbol);
+		return paints & 4 ? 0 : paints;
+	};
+	// parents before children, so a program's context is known before its instances are decided
+	const order: string[] = [];
+	const seen = new Set<string>();
+	const visit = (id: string) => {
+		if (seen.has(id)) return;
+		seen.add(id);
+		const p = programs[id];
+		if (p) for (const l of p.layers) for (const it of l.items) if (it.kind === "instance") visit(it.symbol);
+		order.push(id);
+	};
+	for (const r of roots) visit(r);
+	const inside = new Set<string>();
+	for (let i = order.length - 1; i >= 0; i--) {
+		const p = programs[order[i]!];
+		if (!p) continue;
+		const tainted = inside.has(p.id);
+		if (tainted) p.inShapeAlpha = true;
+		for (const l of p.layers)
+			for (const it of l.items) {
+				if (it.kind !== "instance") continue;
+				it.shapeAlpha = tainted ? 0 : shapeAlpha(it);
+				if (tainted || it.shapeAlpha) inside.add(it.symbol);
+			}
+	}
 }
 
 /**
@@ -447,7 +514,11 @@ function buildProgram(tl: TimelineData, opts: CompileOptions, warnings: string[]
 		for (const kf of layer.keyframes) {
 			if (kf.label && kf.label.type !== "comment") prog.labels.push({ frame: kf.index, name: kf.label.name });
 			if (kf.script) {
-				const acts = parseActions(kf.script, { zeroBased: doc.type !== "Flash", warn: (m) => warnings.push(`${tl.name}, frame ${kf.index + 1}: ${m}`) });
+				const acts = parseActions(kf.script, {
+					zeroBased: doc.type !== "Flash",
+					scene: tl.kind === "scene" ? tl.name : undefined,
+					warn: (m) => warnings.push(`${tl.name}, frame ${kf.index + 1}: ${m}`),
+				});
 				if (acts.length) (prog.actions[kf.index] ??= []).push(...acts);
 			}
 		}
@@ -551,11 +622,13 @@ function concatM(first: Mat, then: Mat): Mat {
  * Scripts aren't run. Of conditions only the banner idiom "count the passes" is understood
  * (`if (n < 3) gotoAndPlay(0); else stop();`, `if (++n == 3) stop();`): such actions get
  * the passes over the frame they apply to. Other conditional actions always run (warned).
+ * Only the current `scene` is exported: jumps into other scenes are left out (warned).
  */
-export function parseActions(script: string, opts: { zeroBased?: boolean; warn?: (m: string) => void } = {}): FrameAction[] {
+export function parseActions(script: string, opts: { zeroBased?: boolean; scene?: string; warn?: (m: string) => void } = {}): FrameAction[] {
 	const out: FrameAction[] = [];
 	const code = script.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-	const re = /(?:^|[^\w.])(?:this\s*\.\s*)?(stop|play|gotoAndPlay|gotoAndStop)\s*\(\s*([^)]*?)\s*\)/g;
+	// arguments may be strings with any character (labels like "a, (b)")
+	const re = /(?:^|[^\w.])(?:this\s*\.\s*)?(stop|play|gotoAndPlay|gotoAndStop)\s*\(\s*((?:"[^"]*"|'[^']*'|[^)"'])*?)\s*\)/g;
 	// a counter is incremented in the script: x++, ++x, x += 1, x + 1
 	const counts = /\+\+|\+=\s*1\b|\+\s*1\b/.test(code);
 	let m: RegExpExecArray | null;
@@ -565,10 +638,17 @@ export function parseActions(script: string, opts: { zeroBased?: boolean; warn?:
 		if (fn === "stop") action = { type: "stop" };
 		else if (fn === "play") action = { type: "play" };
 		else {
-			const arg = m[2]!.split(",")[0]!.trim();
+			const args = (m[2]!.match(/"[^"]*"|'[^']*'|[^,]+/g) ?? []).map((a) => a.trim());
+			const unquote = (a: string | undefined) => /^["'](.*)["']$/.exec(a ?? "")?.[1];
+			const arg = args[0] ?? "";
+			const scene = unquote(args[1]);
+			if (scene !== undefined && scene !== opts.scene) {
+				opts.warn?.(`${fn}() into the scene "${scene}" is left out: only the current scene is exported`);
+				continue;
+			}
 			let target: number | string;
-			const str = /^["'](.*)["']$/.exec(arg);
-			if (str) target = str[1]!;
+			const str = unquote(arg);
+			if (str !== undefined) target = str;
 			else if (/^\d+$/.test(arg)) target = parseInt(arg, 10) + (opts.zeroBased ? 1 : 0);
 			else continue;
 			action = { type: "goto", target, play: fn === "gotoAndPlay" };

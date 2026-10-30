@@ -58,3 +58,19 @@ describe("strokes", () => {
 		expect(s).toMatch(/stroke-width="2"/);
 	});
 });
+
+describe("stroke and fill alpha", () => {
+	const SVG = `<svg xmlns="http://www.w3.org/2000/svg"><path fill="#336699" fill-opacity="0.5019607843137255" stroke="#000000" stroke-opacity="1" stroke-width="3" d="M0 0L10 0 10 10Z"/></svg>`;
+
+	it("moves alpha into the colour, so the shape can inherit its instance's alpha", () => {
+		const s = text(importArtwork(SVG, "s1", { digits: 2 }));
+		expect(s).toMatch(/fill="#33669980"/);
+		expect(s).toMatch(/stroke="#000000"/);
+		expect(s).not.toMatch(/-opacity/);
+	});
+
+	it("keeps strokes with scale 'none' at their width", () => {
+		expect(text(importArtwork(SVG, "s1", { digits: 2, fixedStrokes: new Set(["#000000|3"]) }))).toMatch(/vector-effect="non-scaling-stroke"/);
+		expect(text(importArtwork(SVG, "s1", { digits: 2, fixedStrokes: new Set(["#000000|2"]) }))).not.toMatch(/vector-effect/);
+	});
+});

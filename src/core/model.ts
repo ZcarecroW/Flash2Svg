@@ -122,6 +122,8 @@ export interface ShapeElement extends ElementBase {
 	atlas: string;
 	/** Gradients drawn with "Linear RGB" interpolation, as "#rrggbb,#rrggbb|0,255" signatures. */
 	linearRGB?: string[];
+	/** Strokes that keep their width when scaled (scale "none"), as "#rrggbb|width". */
+	fixedStrokes?: string[];
 	/** Library bitmaps used as fills (Animate's SVG export only links them by file name). */
 	bitmapFills?: BitmapFill[];
 }

@@ -1,9 +1,9 @@
-import { importArtwork, artworkSignature, type Artwork } from "./artwork.ts";
+import { importArtwork, artworkPaints, artworkSignature, type Artwork } from "./artwork.ts";
 import { fmt } from "./geom.ts";
 import { el } from "./xml.ts";
 import type { BitmapFill, SceneModel } from "./model.ts";
 import { applyNineSlice } from "./nineslice.ts";
-import { buildPrograms, type CompileOptions, type Program } from "./program.ts";
+import { buildPrograms, markShapeAlpha, type CompileOptions, type Program } from "./program.ts";
 
 /** Reads files that sit next to scene.json (atlas SVGs, bitmaps, sounds). */
 export interface FileSource {
@@ -42,6 +42,13 @@ export function createContext(model: SceneModel, files: FileSource, opts: Compil
 		for (const g of sigs) s.add(g);
 		linear.set(atlas, s);
 	};
+	// atlas id -> strokes that keep their width when scaled
+	const fixed = new Map<string, Set<string>>();
+	const addFixed = (atlas: string, sigs: string[]) => {
+		const s = fixed.get(atlas) ?? new Set<string>();
+		for (const g of sigs) s.add(g);
+		fixed.set(atlas, s);
+	};
 	// atlas id -> bitmaps used as fills
 	const bitmapFills = new Map<string, BitmapFill[]>();
 	const addBitmaps = (atlas: string, fills: BitmapFill[]) => {
@@ -56,12 +63,15 @@ export function createContext(model: SceneModel, files: FileSource, opts: Compil
 					if (e.kind !== "shape") continue;
 					if (e.linearRGB?.length) addLinear(e.atlas, e.linearRGB);
 					if (e.bitmapFills?.length) addBitmaps(e.atlas, e.bitmapFills);
+					if (e.fixedStrokes?.length) addFixed(e.atlas, e.fixedStrokes);
 				}
 				// shape tween frames: in-between gradients have in-between colours, so match them all ("*")
 				const frames = kf.tween?.type === "shape" ? kf.tween.shapeFrames : undefined;
 				if (!frames) return;
 				const bmps = [...kf.elements, ...(l.keyframes[k + 1]?.elements ?? [])].flatMap((e) => (e.kind === "shape" ? (e.bitmapFills ?? []) : []));
 				if (bmps.length) for (const id of frames) addBitmaps(id, bmps);
+				const fx = [...kf.elements, ...(l.keyframes[k + 1]?.elements ?? [])].flatMap((e) => (e.kind === "shape" ? (e.fixedStrokes ?? []) : []));
+				if (fx.length) for (const id of frames) addFixed(id, fx);
 				const lin = (els: typeof kf.elements | undefined) => (els ?? []).flatMap((e) => (e.kind === "shape" ? (e.linearRGB ?? []) : []));
 				const a = lin(kf.elements),
 					b = lin(l.keyframes[k + 1]?.elements);
@@ -85,7 +95,7 @@ export function createContext(model: SceneModel, files: FileSource, opts: Compil
 			} else {
 				try {
 					const text = files.readText(item.file);
-					const a = importArtwork(text, "s" + id.replace(/[^A-Za-z0-9_]/g, "_"), { digits, linearRGB: linear.get(id), bitmapFills: bitmapFills.get(id) });
+					const a = importArtwork(text, "s" + id.replace(/[^A-Za-z0-9_]/g, "_"), { digits, linearRGB: linear.get(id), bitmapFills: bitmapFills.get(id), fixedStrokes: fixed.get(id) });
 					const off = item.offset;
 					if (off && (Math.abs(off.x) > 1e-6 || Math.abs(off.y) > 1e-6)) {
 						a.body = el("g", { transform: `translate(${fmt(-off.x, digits)} ${fmt(-off.y, digits)})` }, [a.body]);
@@ -119,5 +129,9 @@ export function createContext(model: SceneModel, files: FileSource, opts: Compil
 	};
 	const addArt = (id: string, a: Artwork | null) => derived.set(id, a);
 	applyNineSlice(model, programs, ctx.art, addArt, digits, warn, opts.smooth);
+	markShapeAlpha(programs, model.roots, (id) => {
+		const a = ctx.art(id);
+		return (bitmapFills.has(id) ? 4 : 0) | (a ? artworkPaints(a) : 0);
+	});
 	return ctx;
 }

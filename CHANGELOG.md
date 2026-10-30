@@ -1,6 +1,6 @@
 # Changelog
 
-## 4.0.0 (unreleased)
+## 4.0.0 (2026-10-30)
 
 Complete rewrite.
 
@@ -17,6 +17,33 @@ Complete rewrite.
 - New panel (Svelte 5, CEP 11/12) with presets, preview, per-document settings.
 - Command line compiler, unit tests and Animate/browser end-to-end tests.
 - Requires Animate 2022 or later. (3.x supported CS5.5–CC 2019.)
+
+### 4.0.0 (2026-10-30): changes since rc.1
+
+- **Semi-transparent symbols look like in Animate.** Flash applies an instance's alpha to every
+  shape inside it, so overlapping parts show through each other (most visibly the inner half of a
+  stroke over its fill). The export used a group opacity, which hid them; it now sets the alpha
+  on the shapes (inherited `fill-opacity` / `stroke-opacity`), which browsers also draw faster (no
+  offscreen group). Instances with filters, the *layer*, *invert* or *subtract* blend, or bitmaps
+  inside stay one picture.
+- Strokes with the scale option *None* keep their width when the symbol is scaled (they scaled
+  like normal strokes). *Horizontal* and *Vertical* scale like normal strokes (warned).
+- *Loop: once* with a frame script that jumps back (`gotoAndPlay("intro")` on the last frame):
+  the JS player now ends after the first pass like SMIL and CSS (it kept playing); its *last
+  frame* poster and the reported duration follow the scripts too.
+- Frame scripts: `gotoAndPlay(1, "Scene 2")` into another scene is left out with a warning (it
+  was read as a jump within the current scene); labels may contain commas and brackets.
+- Alpha in fill and stroke colours is written as `#rrggbbaa` (shorter, and it leaves the
+  inherited alpha alone).
+- Tests: new fixtures for edge cases (content appearing late, instances flipping and collapsing
+  through scale 0, special characters in symbol, layer, label and instance names and in the file
+  name, an odd frame rate, a cross-scene jump, an empty document, a 1920×1080 stage at 60 fps,
+  stroke scale options, hairlines, dotted, dashed and ragged strokes, caps, joins and miter limits)
+  and for alpha on symbols (masks, nesting, bitmaps, filters, blend modes, cache as bitmap).
+- Tests notice when Animate crashes, hangs or shows a dialog: the dialog is saved as a picture
+  and closed (Esc), a hung or crashed Animate is ended, and the run fails with the reason instead
+  of waiting for the timeout.
+- CLI: options also take the `--format=css` form.
 
 ### 4.0.0-rc.1 (2026-10-30): changes since alpha.2
 

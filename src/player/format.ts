@@ -26,6 +26,8 @@ export interface PProgram {
 	/** ids of the filters painting white / black with the alpha kept (alpha and erase masks) */
 	wf?: string;
 	bf?: string;
+	/** not looping: the root ends after this many ticks (frame scripts loop it; default: on its last frame) */
+	on?: number;
 }
 
 export interface PTimeline {
@@ -41,6 +43,8 @@ export interface PTimeline {
 	sd?: [number, string, number, number, number][];
 	/** camera view transform tracks (x y rot skw sx sy), root scenes */
 	vw?: PTrack[];
+	/** 1 = placed inside an instance with `sa`: masks ignore the inherited alpha */
+	ia?: 1;
 }
 
 export interface PLayer {
@@ -91,6 +95,8 @@ export interface PInst extends PBase {
 	c?: PTrack[];
 	/** 1 = colour needs a matrix at some point (otherwise plain opacity is used throughout) */
 	cm?: 1;
+	/** alpha applies to each shape inside, as in Flash (inherited): 1 = fill-opacity, 2 = stroke-opacity, 3 = both */
+	sa?: number;
 	/** filters: [frame, filterId] */
 	f?: [number, string][];
 	/** css blend mode */

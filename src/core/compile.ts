@@ -5,6 +5,7 @@ import { createContext, type FileSource } from "./context.ts";
 import { renderAnimated, type BeginMode } from "./emit/animate.ts";
 import { renderPlayer } from "./emit/player.ts";
 import { renderStatic } from "./emit/static.ts";
+import { playhead } from "./emit/timing.ts";
 import type { SceneModel } from "./model.ts";
 
 export type OutputFormat = "smil" | "css" | "player" | "static";
@@ -107,8 +108,10 @@ export function compileScene(model: SceneModel, files: FileSource, partial: Part
 		const r = renderPlayer(ctx, rootId, { ...s, idPrefix: prefixFor("") });
 		out.files.push({ suffix: "", svg: r.svg });
 		r.assets.forEach((a) => assets.set(a.path, a));
-		out.stats.frames = prog.frameCount;
-		out.stats.durationSeconds = prog.frameCount / fps;
+		// the first pass, as frame scripts play it
+		const ph = playhead(prog);
+		out.stats.frames = ph.prefix.length + ph.cycle.length;
+		out.stats.durationSeconds = out.stats.frames / fps;
 	} else {
 		const r = renderAnimated(ctx, rootId, {
 			idPrefix: prefixFor(""),

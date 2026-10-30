@@ -189,7 +189,9 @@ export class OutputDoc {
 	}
 
 	/** A <mask> showing `content` as a mask layer (Animate: shape only), or by its alpha. */
-	maskElement(id: string, content: XmlNode[], mode?: "alpha" | "erase", box?: { left: number; top: number; width: number; height: number }): XmlNode {
+	/** `own`: the mask sits inside an instance whose alpha the shapes inherit; masks ignore it. */
+	maskElement(id: string, content: XmlNode[], mode?: "alpha" | "erase", box?: { left: number; top: number; width: number; height: number }, own?: boolean): XmlNode {
+		if (own) content = [el("g", { "fill-opacity": "1", "stroke-opacity": "1" }, content)];
 		if (!mode) return el("mask", { id }, [el("g", { filter: this.maskFilter() }, content)]);
 		const area = { x: -1e5, y: -1e5, width: 2e5, height: 2e5 };
 		const all = el("rect", { ...area, fill: "#fff" });
