@@ -43,6 +43,31 @@ const panelBuild = {
 	legalComments: "none",
 };
 
+// image codecs for the panel, loaded only when an export has bitmaps. Without `process` the
+// emscripten builds take the browser path (with `process`, as in CEP, they'd load Node modules).
+const codecsBuild = {
+	...panelBuild,
+	entryPoints: [join(repo, "src/panel/codecs-entry.ts")],
+	outfile: join(ext, "panel/codecs.js"),
+	plugins: [],
+	// the codecs build a URL from import.meta.url at start-up (unused: the WebAssembly is passed in)
+	define: { process: "undefined", "import.meta.url": JSON.stringify("file:///flash2svg/codecs.js") },
+};
+
+// mpg123-decoder's unused worker variant (see src/core/vendor/no-worker.ts)
+const NO_WORKER = { "@eshaz/web-worker": join(repo, "src/core/vendor/no-worker.ts") };
+
+// audio codecs for the panel, loaded only for player exports with sounds. libopus asks
+// globalThis.process whether it runs in Node (in CEP it would then import Node modules).
+const audioBuild = {
+	...codecsBuild,
+	entryPoints: [join(repo, "src/panel/audio-entry.ts")],
+	outfile: join(ext, "panel/audio.js"),
+	define: { ...codecsBuild.define, "globalThis.process": "undefined", "import.meta.url": JSON.stringify("file:///flash2svg/audio.js") },
+	external: ["node:*"],
+	alias: NO_WORKER,
+};
+
 const cliBuild = {
 	entryPoints: [join(repo, "src/cli/flash2svg.ts")],
 	bundle: true,
@@ -50,6 +75,7 @@ const cliBuild = {
 	format: "esm",
 	target: "node24",
 	outfile: join(dist, "cli/flash2svg.js"),
+	alias: NO_WORKER,
 	// the shebang comes from src/cli/flash2svg.ts (esbuild keeps it); a banner would duplicate it
 	logLevel: "info",
 };
@@ -68,7 +94,23 @@ function copyStatic() {
 	writeFileSync(join(ext, "CSXS/manifest.xml"), manifest);
 	cpSync(join(repo, "LICENSE"), join(ext, "LICENSE"));
 	writeIcons(join(ext, "icons"));
+	// image and audio codecs (src/core/images.ts, audio-codecs.ts): WebAssembly next to the panel and the CLI
+	for (const dir of [join(ext, "wasm"), join(dist, "cli", "wasm")]) {
+		mkdirSync(dir, { recursive: true });
+		for (const src of WASM) copyFileSync(join(repo, "node_modules", src), join(dir, src.slice(src.lastIndexOf("/") + 1)));
+		copyFileSync(join(repo, "node_modules/wasm-media-encoders/wasm/mp3.wasm"), join(dir, "mp3.wasm"));
+	}
 }
+
+// keep in sync with WASM_SOURCES in src/core/images.ts
+const WASM = [
+	"@jsquash/png/codec/pkg/squoosh_png_bg.wasm",
+	"@jsquash/oxipng/codec/pkg/squoosh_oxipng_bg.wasm",
+	"@jsquash/resize/lib/resize/pkg/squoosh_resize_bg.wasm",
+	"@jsquash/webp/codec/enc/webp_enc.wasm",
+	"@jsquash/jpeg/codec/enc/mozjpeg_enc.wasm",
+	"@jsquash/avif/codec/enc/avif_enc.wasm",
+];
 
 copyStatic();
 if (watch) {
@@ -77,6 +119,9 @@ if (watch) {
 	console.log("watching panel sources…");
 } else {
 	await esbuild.build(panelBuild);
+	await esbuild.build(codecsBuild);
+	await esbuild.build(audioBuild);
 	await esbuild.build(cliBuild);
-	console.log(`player runtime ${(runtimeSize / 1024).toFixed(1)} KB; extension ${version} in ${ext}`);
+	const kb = (n) => (n / 1024).toFixed(1) + " KB";
+	console.log(`player runtime ${kb(runtimeSize[0])} (with sound ${kb(runtimeSize[1])}, morphs ${kb(runtimeSize[2])}); extension ${version} in ${ext}`);
 }

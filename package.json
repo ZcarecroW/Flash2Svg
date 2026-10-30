@@ -24,12 +24,26 @@
     "format": "prettier --write \"src/**/*.{ts,svelte,css}\" \"scripts/**/*.{mjs,ts}\" \"tests/**/*.ts\""
   },
   "devDependencies": {
+    "@jsquash/avif": "^2.1.1",
+    "@jsquash/jpeg": "^1.6.0",
+    "@jsquash/oxipng": "^2.3.0",
+    "@jsquash/png": "^3.1.1",
+    "@jsquash/resize": "^2.1.1",
+    "@jsquash/webp": "^1.5.0",
+    "@lottie-animation-community/lottie-specs": "^0.3.2",
+    "@lottiefiles/dotlottie-web": "^0.82.0",
     "@resvg/resvg-js": "^2.6.2",
     "@types/node": "^26.6.6",
     "@types/pngjs": "^6.0.5",
     "@typescript/native": "npm:typescript@^7.0.2",
+    "ajv": "^8.20.0",
+    "canvaskit-wasm": "^0.42.0",
     "esbuild": "^0.28.2",
     "esbuild-svelte": "^0.9.5",
+    "fflate": "^0.8.3",
+    "libopus-wasm": "^0.4.1",
+    "lottie-web": "^5.13.0",
+    "mpg123-decoder": "^1.0.3",
     "pixelmatch": "^8.0.0",
     "playwright-core": "^1.64.1",
     "pngjs": "^7.0.0",
@@ -38,7 +52,8 @@
     "svelte": "^5.57.3",
     "svelte-check": "^4.7.7",
     "typescript": "^6.0.3",
-    "vitest": "^5.0.5"
+    "vitest": "^5.0.5",
+    "wasm-media-encoders": "^0.7.0"
   },
   "allowScripts": {
     "esbuild@0.28.2": true

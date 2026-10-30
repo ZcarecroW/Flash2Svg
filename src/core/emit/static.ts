@@ -31,7 +31,7 @@ export interface StaticOptions {
 	idPrefix?: string;
 }
 
-export function renderStatic(ctx: Context, rootId: string, opts: StaticOptions): { svg: string; assets: OutputDoc["assets"] } {
+export function renderStatic(ctx: Context, rootId: string, opts: StaticOptions): { svg: string; assets: OutputDoc["assets"]; drawingBytes: OutputDoc["drawingBytes"] } {
 	const doc = new OutputDoc(ctx, { embedImages: opts.embedImages, idPrefix: opts.idPrefix ?? "" });
 	const root = svgRoot(ctx);
 	if (opts.includeBackground) {
@@ -42,7 +42,7 @@ export function renderStatic(ctx: Context, rootId: string, opts: StaticOptions):
 	const prog = ctx.programs[rootId];
 	if (!prog) throw new Error(`Unknown timeline ${rootId}`);
 	root.children.push(...r.timeline(prog, opts.frame, opts.ticks ?? opts.frame, 0));
-	return { svg: doc.toString(root, { pretty: opts.pretty }), assets: doc.assets };
+	return { svg: doc.toString(root, { pretty: opts.pretty }), assets: doc.assets, drawingBytes: doc.drawingBytes };
 }
 
 export class StaticRenderer {

@@ -1634,6 +1634,284 @@
 		extendAll(24);
 	});
 
+	// ---------------------------------------------------------------- f42: bitmaps with Animate's compression settings: photo (JPEG) and lossless, alpha, a pixel pattern
+	build("f42-images", function () {
+		newDoc("timeline", 500, 340, 24);
+		var files = ["photo.jpg", "photo-as-png.png", "icon.png", "pattern.png", "glow.png"];
+		var items = {};
+		for (var i = 0; i < files.length; i++) {
+			doc.importFile(root + "/assets/" + files[i], true);
+			var it = lib.items[lib.findItemIndex(files[i])];
+			if (!it) throw new Error("import failed: " + files[i]);
+			items[files[i]] = it;
+		}
+		// a PNG Animate is told to compress as a photo, and a transparent one
+		items["photo-as-png.png"].compressionType = "photo";
+		items["photo-as-png.png"].quality = 50;
+		items["glow.png"].compressionType = "photo";
+		items["glow.png"].quality = 70;
+		items["pattern.png"].allowSmoothing = false;
+		var info = [];
+		for (var k in items) info.push(k + ":" + items[k].compressionType + "/" + items[k].quality + "/" + items[k].originalCompressionType);
+		log.push("f42 bitmaps: " + info.join(", "));
+		layer("photo");
+		lib.addItemToDocument({ x: 130, y: 90 }, "photo.jpg");
+		layer("photoPng");
+		lib.addItemToDocument({ x: 370, y: 90 }, "photo-as-png.png");
+		layer("pattern");
+		doc.selectNone();
+		// the fill matrix is in twips: 60 = scale 3; one repeated, one clipped (edges stretched)
+		doc.setCustomFill({ style: "bitmap", bitmapPath: "pattern.png", bitmapIsClipped: false, matrix: { a: 60, b: 0, c: 0, d: 60, tx: 20, ty: 200 } });
+		noStroke();
+		doc.addNewRectangle({ left: 20, top: 200, right: 110, bottom: 320 }, 0, false, true);
+		layer("patternClip");
+		doc.selectNone();
+		doc.setCustomFill({ style: "bitmap", bitmapPath: "pattern.png", bitmapIsClipped: true, matrix: { a: 60, b: 0, c: 0, d: 60, tx: 130, ty: 220 } });
+		noStroke();
+		doc.addNewRectangle({ left: 120, top: 200, right: 200, bottom: 320 }, 0, false, true);
+		layer("glow");
+		lib.addItemToDocument({ x: 330, y: 260 }, "glow.png");
+		symbol("iconClip", "movie clip", function () { lib.addItemToDocument({ x: 0, y: 0 }, "icon.png"); });
+		layer("icon");
+		classicTween("iconClip", 260, 250, 23, function (e) { e.x = 440; e.rotation = 90; e.scaleX = e.scaleY = 1.5; });
+		extendAll(24);
+	});
+
+	// ---------------------------------------------------------------- f44: bitmaps shown smaller than their pixels (downscaling)
+	build("f44-bitmap-sizes", function () {
+		newDoc("timeline", 500, 400, 24);
+		var files = ["large.png", "nested.png", "fill.png", "tile.png", "pixels.png", "wide.png"];
+		var items = {};
+		for (var i = 0; i < files.length; i++) {
+			doc.importFile(root + "/assets/" + files[i], true);
+			var it = lib.items[lib.findItemIndex(files[i])];
+			if (!it) throw new Error("import failed: " + files[i]);
+			items[files[i]] = it;
+		}
+		items["large.png"].compressionType = "photo";
+		items["large.png"].quality = 80;
+		items["pixels.png"].allowSmoothing = false;
+		var put = function (name, m) {
+			var e = place(name, 0, 0, 0);
+			e.matrix = m;
+			return e;
+		};
+		// 640 x 480 at a quarter
+		layer("large");
+		put("large.png", { a: 0.25, b: 0, c: 0, d: 0.25, tx: 10, ty: 10 });
+		// 400 x 300 at half size in a clip tweened from 0.2 to 0.5: at most 0.25 on stage
+		symbol("nestedClip", "movie clip", function () { put("nested.png", { a: 0.5, b: 0, c: 0, d: 0.5, tx: -100, ty: -75 }); });
+		var li = layer("nested");
+		classicTween("nestedClip", 330, 90, 23, function (e) { e.scaleX = e.scaleY = 0.5; });
+		var first = tl().layers[li].frames[0].elements[0];
+		first.scaleX = first.scaleY = 0.2;
+		// bitmap fills (matrix in twips: 5 = scale 0.25): 320 x 320 clipped, a 64 x 64 tile repeated
+		layer("fill");
+		doc.selectNone();
+		doc.setCustomFill({ style: "bitmap", bitmapPath: "fill.png", bitmapIsClipped: true, matrix: { a: 5, b: 0, c: 0, d: 5, tx: 20, ty: 200 } });
+		noStroke();
+		doc.addNewRectangle({ left: 20, top: 200, right: 110, bottom: 290 }, 0, false, true);
+		layer("tile");
+		doc.selectNone();
+		doc.setCustomFill({ style: "bitmap", bitmapPath: "tile.png", bitmapIsClipped: false, matrix: { a: 5, b: 0, c: 0, d: 5, tx: 130, ty: 200 } });
+		noStroke();
+		doc.addNewRectangle({ left: 130, top: 200, right: 230, bottom: 300 }, 0, false, true);
+		// pixel art without smoothing at a quarter
+		layer("pixels");
+		put("pixels.png", { a: 0.25, b: 0, c: 0, d: 0.25, tx: 250, ty: 200 });
+		// 400 x 200 rotated by 20 degrees, x at 0.2 and y at 0.8
+		layer("wide");
+		var r = (20 * Math.PI) / 180;
+		put("wide.png", { a: 0.2 * Math.cos(r), b: 0.2 * Math.sin(r), c: -0.8 * Math.sin(r), d: 0.8 * Math.cos(r), tx: 360, ty: 200 });
+		extendAll(24);
+		var info = [];
+		for (var k in items) info.push(k + ":" + items[k].compressionType + "/" + items[k].allowSmoothing);
+		log.push("f44 bitmaps: " + info.join(", "));
+	});
+
+	// ---------------------------------------------------------------- f43: sounds
+	// An event sound with an effect and loops, in and out points, a custom (panning) envelope, a
+	// stream sound, an imported MP3, compression settings (Raw at 11 kHz, MP3 32 kbps mono), a sound
+	// inside a movie clip and a stop sound.
+	build("f43-sounds", function () {
+		newDoc("timeline", 300, 200, 24);
+		var files = ["chord.wav", "melody.mp3", "beep.wav", "chord mono.wav"];
+		var items = {};
+		for (var i = 0; i < files.length; i++) {
+			doc.importFile(root + "/assets/" + files[i], true);
+			var it = lib.items[lib.findItemIndex(files[i])];
+			if (!it) throw new Error("import failed: " + files[i]);
+			items[files[i]] = it;
+		}
+		var copy = items["chord mono.wav"];
+		copy.compressionType = "MP3";
+		copy.bitRate = "32 kbps";
+		copy.convertStereoToMono = true;
+		items["beep.wav"].compressionType = "Raw";
+		items["beep.wav"].sampleRate = "11 kHz";
+		var t = tl();
+		var sound = function (li, f, item, sync, setup) {
+			if (f > 0) t.insertBlankKeyframe(f);
+			var fr = t.layers[li].frames[f];
+			fr.soundLibraryItem = item;
+			fr.soundSync = sync;
+			if (setup) setup(fr);
+		};
+		// something to look at: a box moving across
+		symbol("snd box", "graphic", function () { rect(-20, -20, 20, 20, "#3366cc"); });
+		layer("box");
+		classicTween("snd box", 40, 100, 47, function (e) { e.x = 260; });
+		var li = layer("event");
+		sound(li, 0, items["chord.wav"], "event", function (fr) { fr.soundEffect = "fade in"; fr.soundLoopMode = "repeat"; fr.soundLoop = 2; });
+		li = layer("trim");
+		sound(li, 6, items["beep.wav"], "event", function (fr) { fr.setSoundEnvelopeLimits({ start: 2205, end: 13230 }); });
+		sound(li, 30, items["beep.wav"], "event");
+		li = layer("stream");
+		sound(li, 0, items["melody.mp3"], "stream");
+		t.insertBlankKeyframe(24);
+		li = layer("pan");
+		sound(li, 12, copy, "event", function (fr) {
+			fr.setSoundEnvelope([{ mark: 0, leftChannel: 32768, rightChannel: 0 }, { mark: 44100, leftChannel: 0, rightChannel: 32768 }]);
+		});
+		li = layer("stop");
+		sound(li, 40, items["chord.wav"], "stop");
+		symbol("snd clip", "movie clip", function () {
+			rect(-10, -10, 10, 10, "#cc3366");
+			tl().layers[0].frames[0].soundLibraryItem = items["beep.wav"];
+			tl().layers[0].frames[0].soundSync = "start";
+		});
+		layer("clip");
+		tl().insertBlankKeyframe(36);
+		place("snd clip", 150, 40, 36);
+		// a button with a sound on its Down frame (plays when pressed)
+		symbol("snd button", "button", function () {
+			var bt = tl();
+			var colors = ["#999999", "#66aa66", "#aa6666", "#000000"];
+			for (var j = 0; j < 4; j++) {
+				if (j > 0) bt.insertBlankKeyframe(j);
+				bt.currentFrame = j;
+				rect(-30, -15, 30, 15, colors[j]);
+			}
+			bt.layers[0].frames[2].soundLibraryItem = items["chord mono.wav"];
+			bt.layers[0].frames[2].soundSync = "event";
+		});
+		layer("button");
+		place("snd button", 240, 170, 0);
+		extendAll(48);
+		var info = [];
+		for (var k in items) info.push(k + ":" + items[k].compressionType + "/" + items[k].originalCompressionType);
+		info.push(copy.name + ": " + copy.bitRate + "/" + copy.convertStereoToMono);
+		log.push("f43 sounds: " + info.join(", "));
+	});
+
+	// ---------------------------------------------------------------- f45: shape tweens as path morphs
+	build("f45-morph", function () {
+		newDoc("timeline", 640, 400, 24);
+		doc.importFile(root + "/assets/pattern.png", true);
+		function star(cx, cy, r1, r2, n) {
+			var p = fl.drawingLayer.newPath();
+			for (var i = 0; i < n * 2; i++) {
+				var a = (i * Math.PI) / n - Math.PI / 2, r = i % 2 ? r2 : r1;
+				p.addPoint(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+			}
+			p.close();
+			p.makeShape(false, false);
+		}
+		// a shape tween on its own layer from frame `a` to `b`; draw(0) and draw(1) make the two ends
+		function shapeTween(name, a, b, draw, frameFn) {
+			var li = layer(name);
+			var t = tl();
+			if (a > 0) t.insertBlankKeyframe(a);
+			t.currentFrame = a;
+			draw(0);
+			t.insertBlankKeyframe(b);
+			t.currentFrame = b;
+			draw(1);
+			t.setSelectedFrames(a, a + 1);
+			t.setFrameProperty("tweenType", "shape");
+			if (frameFn) frameFn(t.layers[li].frames[a]);
+		}
+		shapeTween("easeIn", 0, 20, function (e) {
+			if (!e) rect(20, 20, 100, 80, "#FF6600");
+			else oval(130, 10, 210, 90, "#0066FF");
+		}, function (f) { f.tweenEasing = -100; });
+		shapeTween("easeOut", 0, 20, function (e) {
+			doc.selectNone();
+			if (!e) { fill("#99CC00"); stroke("#000000", 2); doc.addNewRectangle({ left: 240, top: 20, right: 320, bottom: 80 }, 12, false, false); }
+			else { fill("#CC3399"); stroke("#CC0000", 8); star(370, 50, 40, 18, 5); }
+		}, function (f) { f.tweenEasing = 70; });
+		shapeTween("custom", 0, 24, function (e) {
+			if (!e) oval(440, 20, 500, 80, "#336699");
+			else rect(540, 30, 620, 70, "#993366");
+		}, function (f) {
+			f.hasCustomEase = true;
+			f.setCustomEase("all", [
+				{ x: 0, y: 0 }, { x: 0.2, y: 0.9 }, { x: 0.35, y: 1.25 }, { x: 0.5, y: 1.1 },
+				{ x: 0.65, y: 0.95 }, { x: 0.8, y: 1 }, { x: 1, y: 1 }
+			]);
+		});
+		shapeTween("alpha", 4, 28, function (e) {
+			doc.selectNone();
+			noStroke();
+			if (!e) { doc.setCustomFill({ style: "solid", color: "#FF000080" }); doc.addNewRectangle({ left: 20, top: 120, right: 100, bottom: 200 }, 0, false, true); }
+			else { doc.setCustomFill({ style: "solid", color: "#00AA00" }); doc.addNewOval({ left: 60, top: 110, right: 180, bottom: 190 }, false, true); }
+		});
+		shapeTween("holes", 0, 24, function (e) {
+			// a ring: the inner shape is cut out of the outer one
+			if (!e) { oval(220, 110, 320, 210, "#FFAA00"); oval(250, 140, 290, 180, "#000000"); doc.mouseClick({ x: 270, y: 160 }, false, false); }
+			else { rect(220, 120, 340, 200, "#AA00FF"); rect(260, 140, 300, 180, "#000000"); doc.mouseClick({ x: 280, y: 160 }, false, false); }
+			doc.deleteSelection();
+			doc.selectNone();
+		});
+		shapeTween("multi", 0, 24, function (e) {
+			if (!e) { oval(380, 120, 420, 160, "#00CCCC"); oval(440, 160, 480, 200, "#00CCCC"); }
+			else { rect(380, 160, 430, 210, "#0066CC"); rect(450, 110, 500, 160, "#0066CC"); }
+		});
+		shapeTween("split", 0, 24, function (e) {
+			if (!e) oval(530, 120, 610, 200, "#666666");
+			else { oval(520, 120, 560, 160, "#CC6600"); oval(580, 160, 620, 200, "#CC6600"); }
+		});
+		shapeTween("radial", 0, 24, function (e) {
+			doc.selectNone();
+			noStroke();
+			if (!e) { doc.setCustomFill({ style: "radialGradient", colorArray: ["#FFFFFF", "#0033CC"], posArray: [0, 255], matrix: { a: 0.05, b: 0, c: 0, d: 0.05, tx: 70, ty: 290 } }); doc.addNewOval({ left: 20, top: 240, right: 120, bottom: 340 }, false, true); }
+			else { doc.setCustomFill({ style: "radialGradient", colorArray: ["#FFFF00", "#CC0000"], posArray: [30, 255], matrix: { a: 0.08, b: 0, c: 0, d: 0.04, tx: 160, ty: 300 } }); doc.addNewOval({ left: 100, top: 260, right: 220, bottom: 340 }, false, true); }
+		});
+		shapeTween("bitmapFill", 0, 24, function (e) {
+			doc.selectNone();
+			noStroke();
+			if (!e) doc.setCustomFill({ style: "bitmap", bitmapPath: "pattern.png", bitmapIsClipped: false, matrix: { a: 60, b: 0, c: 0, d: 60, tx: 250, ty: 250 } });
+			else doc.setCustomFill({ style: "bitmap", bitmapPath: "pattern.png", bitmapIsClipped: false, matrix: { a: 40, b: 20, c: -20, d: 40, tx: 280, ty: 260 } });
+			doc.addNewRectangle(e ? { left: 270, top: 250, right: 350, bottom: 340 } : { left: 240, top: 240, right: 320, bottom: 330 }, 0, false, true);
+		});
+		// a looping movie clip morphing a gradient circle into a square and back, placed twice
+		symbol("blob", "movie clip", function () {
+			var t = tl();
+			function gradient(c) { doc.selectNone(); noStroke(); doc.setCustomFill({ style: "linearGradient", colorArray: c, posArray: [0, 255], matrix: { a: 0.03, b: 0.01, c: -0.01, d: 0.03, tx: 0, ty: 0 } }); }
+			gradient(["#FF0066", "#FFCC00"]);
+			doc.addNewOval({ left: -30, top: -30, right: 30, bottom: 30 }, false, true);
+			t.insertBlankKeyframe(12);
+			t.currentFrame = 12;
+			gradient(["#00CC66", "#0033FF"]);
+			doc.addNewRectangle({ left: -25, top: -25, right: 25, bottom: 25 }, 0, false, true);
+			t.insertBlankKeyframe(24);
+			t.currentFrame = 24;
+			gradient(["#FF0066", "#FFCC00"]);
+			doc.addNewOval({ left: -30, top: -30, right: 30, bottom: 30 }, false, true);
+			t.setSelectedFrames(0, 1);
+			t.setFrameProperty("tweenType", "shape");
+			t.setSelectedFrames(12, 13);
+			t.setFrameProperty("tweenType", "shape");
+			t.layers[0].frames[12].tweenEasing = 50;
+		});
+		layer("blobs");
+		place("blob", 450, 290, 0);
+		var b2 = place("blob", 560, 300, 0);
+		b2.scaleX = b2.scaleY = 0.6;
+		b2.rotation = 30;
+		extendAll(36);
+	});
+
 	// ---------------------------------------------------------------- f17: stress (performance)
 	build("f17-stress", function () {
 		newDoc("timeline", 640, 480, 30);

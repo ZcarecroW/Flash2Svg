@@ -265,7 +265,8 @@ export function importArtwork(svgText: string, id: string, opts: ArtworkOptions)
 	return { id, defs: keptDefs, body, empty };
 }
 
-const safeName = (s: string) => s.replace(/^.*\//, "").replace(/[^A-Za-z0-9]/g, "_");
+/** A library name as Animate writes it into the file names of its SVG export. */
+export const safeName = (s: string) => s.replace(/^.*\//, "").replace(/[^A-Za-z0-9]/g, "_");
 
 /**
  * Animate links bitmap fills as external files ("./images/name_png.png"): mark each <image> with
@@ -427,18 +428,24 @@ export function artworkPaints(a: Artwork): number {
 /** A copy of the artwork whose ids (and references to them) start with `prefix`. */
 export function prefixArtwork(a: Artwork, prefix: string): Artwork {
 	if (!prefix) return a;
+	return { ...copyArtwork(a, (id) => prefix + id), id: prefix + a.id };
+}
+
+/** A copy of the artwork with every id renamed by `rename` (references follow). */
+export function copyArtwork(a: Artwork, rename: (id: string) => string): Artwork {
 	const defs = a.defs.map(clone);
 	const body = clone(a.body);
 	const map = new Map<string, string>();
 	for (const root of [...defs, body])
 		walk(root, (n) => {
 			if (n.attrs.id) {
-				map.set(n.attrs.id, prefix + n.attrs.id);
-				n.attrs.id = prefix + n.attrs.id;
+				const id = rename(n.attrs.id);
+				map.set(n.attrs.id, id);
+				n.attrs.id = id;
 			}
 		});
 	if (map.size) for (const root of [...defs, body]) renameRefs(root, map);
-	return { ...a, id: prefix + a.id, defs, body };
+	return { ...a, defs, body };
 }
 
 /** Canonical text of an artwork with ids replaced, used to find duplicates. */

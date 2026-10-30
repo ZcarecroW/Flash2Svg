@@ -1,5 +1,116 @@
 # Changelog
 
+## Unreleased
+
+- **Lottie and dotLottie export.** Two new formats: *Lottie* (JSON) and *.lottie* (a dotLottie v2
+  archive with the bitmaps inside). Written from the same baked timeline as SMIL, so frame
+  scripts, movie clip playheads and graphic loop modes behave the same: symbols become
+  precompositions, transforms Lottie properties with the eases as keyframe curves, drawings shape
+  layers (quadratic curves as the same cubic curves), gradients exact (elliptical radials in their
+  own space, repeat / reflect as copied stops), bitmaps image assets (embedded, linked or in the
+  archive), repeating bitmap fills tiles under a matte, masks and *alpha* / *erase* track mattes,
+  shape tweens animated paths and gradients, frame labels markers. Colour effects and per-shape
+  alpha go into the colours of the shapes inside, as Flash applies them (exact keyframes; a tinted,
+  half-transparent symbol matches Animate better than our SVG does). Invert is exact, subtract and
+  add are close approximations; filters, sounds and button states are left out (warned).
+  Looping movie clips are drawn once and played again by a time remap instead of keying every
+  loop (test documents: 2.2 MB → 251 KB, 684 → 15 KB, 448 → 186 KB). Only features of the Lottie
+  spec 1.0 are used: every test document is valid against the official schema and checked frame
+  by frame in lottie-web 5.13, dotLottie 0.82 (ThorVG) and Skottie (CanvasKit 0.42) — all 45
+  within 0.15 % of the SVG frames, smooth and stepped, except the documented limits (filters,
+  approximated blends, three ThorVG image quirks). The 45 test documents: 1347 KB of Lottie JSON,
+  368 KB gzipped (SMIL: 1022 KB, 369 KB gzipped), 391 KB as .lottie; exporting all of them takes
+  0.2 s. `--format lottie|dotlottie`; in the panel the file name follows the format.
+- **Shape tweens as path morphs.** SMIL output and the JS player draw a shape tween as one
+  drawing whose path data, colours and gradients blend from the start to the end shape, instead
+  of a drawing per frame. Animate's in-betweens are such blends, but its SVG export writes each
+  frame anew; the frames are matched up again (contours started elsewhere or turned around,
+  lines for curves, holes in another order, edges that shrank to nothing put back), start and
+  end are fitted to all frames and every frame is checked against Animate's drawing (twip
+  rounding); frames that don't fit stay drawings. Classic and custom eases give the blend ratio,
+  frames that follow another ease get their own; radial gradients blend in a linear form
+  (radius 1, size in the matrix); gradient and pattern matrices are SMIL `animateTransform`s
+  where rotation and skew stay (the player blends any matrix). Test documents, SMIL: a simple
+  tween 13.3 → 2.3 KB, 119 frames 75.5 → 12.7 KB (gzip 17.0 → 2.4 KB), the morph test
+  document 334 → 104 KB; player 61.6 → 21.1 KB. One step per frame: 20–47 % smaller
+  (gzip about the same). The analysis takes 2–20 ms per tween (a 2000-edge shape over 120 frames:
+  0.2 s). Animations of looping movie clips that repeat are written once with their own
+  repeating timing. CSS output keeps a drawing per frame. `--no-morph` turns it off.
+- The player runtime with the morph code (1.3 KB) is only in programs with shape tweens.
+- **Image formats and compression per bitmap.** Lossy bitmaps (*Photo (JPEG)* in Animate) as
+  JPEG, WebP or AVIF; lossless ones (*Lossless (PNG/GIF)*) as optimised PNG or WebP lossless,
+  pixel for pixel. Animate's setting decides by default and can be overridden per bitmap in the
+  panel's new *Images* section (or `--image-mode` on the command line); quality from Animate or
+  one for all. Transparent photos become WebP instead of losing their transparency; pictures
+  that are smaller without loss stay lossless. The panel shows format and size of each bitmap.
+- Fixed: photo bitmaps were exported at JPEG quality 100, ignoring Animate's quality setting
+  (imported JPEGs grew to about three times their size). A test document with a JPEG, a
+  transparent icon, a pixel pattern (repeated and clipped) and transparent "photo" bitmaps:
+  about 150 KB before, 31 KB now with the default settings (WebP 22 KB, AVIF 14 KB).
+- The encoders (WebAssembly builds of the Squoosh codecs) load only when a document has bitmaps;
+  the panel starts as fast as before.
+- **Bitmaps shown smaller are written smaller.** The largest size each bitmap is shown at on stage
+  is worked out over every frame (nested symbols, tweens, layer parenting, the camera, bitmap
+  fills), and the bitmap is resampled (Lanczos 3, premultiplied alpha) down to twice that size by
+  default (*Resolution* in the panel's *Images* section, `--image-resolution`; *Full* per bitmap,
+  `--image-full`). It is still drawn at its full size. Pixel art and repeating fills keep every
+  pixel, and so does a bitmap whose smaller file wouldn't be smaller. A 12-megapixel photo shown
+  at 20 %: JPEG 1042 KB → 100 KB (1.6 s → 1.2 s), WebP 1645 KB → 36 KB, AVIF 133 KB → 13 KB
+  (6.8 s → 1.1 s), lossless PNG 15 MB → 2 MB. Bitmaps the export never draws (only on guide
+  layers) are no longer encoded at all.
+- **The JS player runs big scenes smoothly.** Tweened transforms and alpha are Web Animations
+  now: the browser plays them on the compositor, the artwork stays rastered, the player only sets
+  them when a timeline jumps (goto, loop, stop, speed). A scene of 150 tweened instances of a
+  detailed drawing: 1.2 fps before, about 110 fps now (Edge, measured). Symbols with hairlines
+  (non-scaling strokes) are moved by the player as before, as their outline changes with every
+  transform; the camera moves the stage as a Web Animation too. Unchanged transforms are no longer
+  written again every frame.
+- **The player rests out of view** (and in background tabs) and goes on where it was; one whose
+  sound is on keeps playing, like a video.
+- **Reduce motion:** with `prefers-reduced-motion` set, SMIL and CSS output show the poster frame,
+  the JS player shows it until a click (*Still poster for “reduce motion”*, on by default;
+  `--ignore-reduced-motion`). SMIL gets a still copy of the poster frame for it (+2–19 % for the
+  test documents, the bigger share for the tiny ones); CSS and the player need no extra data.
+- Fixed: `stop()` and `gotoAndStop()` left the player interpolating towards the next frame until
+  the next tick.
+- Fixed: a paused or stopped player drew tweened symbols up to half a pixel off their still frame
+  (browsers draw paused Web Animations on the compositor, snapped to whole pixels): held
+  animations become plain styles until they play again.
+- Fixed: with one step per frame, a movie clip the player holds (a stop, the end of a single
+  play) could show the frame before (the step lies right at the frame's time).
+- The player runtime is 14.3 KB (was 12.3 KB); programs with sounds get a build with the mixer
+  (17.8 KB). Its internal names are shortened in the bundle.
+- Not done: compressing the player's timeline data (measured: −24 % on disk, but transfer with the
+  usual gzip/Brotli of web servers gets a little bigger, and unpacking costs time).
+- **Size overview.** After an export the panel shows a bar of what the size is made of (drawing,
+  animation, images, sounds, the player's script, linked files) and the biggest drawings by symbol
+  and layer; the command line prints the same split. Measured while writing the file (each part of
+  `<defs>` is serialized once anyway), so it costs nothing extra.
+- Fixed: every place a bitmap was drawn embedded its own copy of the file (the JS player also
+  one more for its poster frame). Each bitmap is now in the file once: the image test document's
+  player export went from 432 KB to 224 KB.
+- **Sounds as MP3, Opus or WAV, cut to what plays.** Animate's sound properties decide (*Raw*
+  stays uncompressed, everything else is compressed at its MP3 bit rate, or 128/64 kbps scaled down for low sample rates; *Convert
+  stereo to mono* is followed), the panel's new *Sounds* section (or `--sound-format`,
+  `--sound-bitrate`, `--sound-mode`) overrides it. Imported MP3s at their own quality stay as
+  they are. Before, every sound was embedded as Animate's WAV, padded with silence: the sound test
+  document went from 886 KB of WAV to 64 KB (MP3) or 41 KB (Opus).
+- **The JS player plays sounds like Flash** (Web Audio): in and out points, loops without gaps,
+  the effects and custom envelopes (fade, panning), *Stream* sounds following the playhead (after
+  a goto they join at that frame; they stop with the timeline), sounds on button states. Before,
+  the effects, in/out points and the stream sync were ignored and a loop restarted the file.
+  Pause and hidden tabs hold the sounds; seeking plays no sounds of the frames passed. Blocked
+  autoplay: sounds run on silently and join at their position at the first click.
+- Warnings: sounds in SMIL/CSS/still output (they only play in the player), sounds inside graphic
+  symbols (they don't play, as in Flash).
+- Tests: a downscaling test document (f44: a photo at a quarter, a bitmap in a tweened clip,
+  clipped and repeated bitmap fills, pixel art, a rotated bitmap scaled per axis); the comparison
+  with Animate can re-encode the images first (`--images=webp|avif|lossless`; "lossless" never
+  took effect before);
+  resvg (for information) runs in a child process, so a resvg crash no longer ends the run.
+  The Animate watchdog leaves progress windows alone (it closed "Exporting Image Sequence"): only
+  windows of an idle Animate count as dialogs.
+
 ## 4.0.0 (2026-10-30)
 
 Complete rewrite.

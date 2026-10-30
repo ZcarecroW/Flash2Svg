@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { onMount } from "svelte";
 	import { hostSkin, inCep, node, onHostEvent, onThemeChange, openInBrowser, revealInExplorer } from "./lib/cep.ts";
-	import { defaultOutput, docInfo, loadDocSettings, runExport, saveDocSettings, type DocInfo, type ExportResult } from "./lib/exporter.ts";
+	import { defaultOutput, docInfo, formatExt, libraryBitmaps, librarySounds, loadDocSettings, runExport, saveDocSettings, type BitmapInfo, type DocInfo, type ExportResult, type SoundInfo } from "./lib/exporter.ts";
 	import { applyPartial, applyPreset, BUILTIN_PRESETS, deletePreset, panel, persist, resetSettings, savePreset, userPresets } from "./lib/state.svelte.ts";
 	import Section from "./Section.svelte";
+	import Budget from "./Budget.svelte";
 	import Preview from "./Preview.svelte";
 	import { runSelfTestIfRequested } from "./lib/selftest.ts";
 
@@ -15,6 +16,8 @@
 	let error = $state("");
 	let result = $state<ExportResult | null>(null);
 	let presets = $state(userPresets());
+	let bitmaps = $state<BitmapInfo[] | null>(null);
+	let sounds = $state<SoundInfo[] | null>(null);
 	let newPreset = $state("");
 
 	const formats = [
@@ -22,9 +25,12 @@
 		{ id: "css", name: "CSS", hint: "CSS @keyframes: easy to pause / restyle from a page." },
 		{ id: "player", name: "JS player", hint: "Exact Flash semantics, buttons, sounds, play/stop/goto API." },
 		{ id: "static", name: "Frames", hint: "One still SVG per frame (no animation)." },
+		{ id: "lottie", name: "Lottie", hint: "Lottie JSON for lottie-web, dotLottie, Skottie and the iOS / Android players." },
+		{ id: "dotlottie", name: ".lottie", hint: "dotLottie: the Lottie animation and its bitmaps in one compressed file." },
 	] as const;
 
-	const placeholder = $derived(info.open ? defaultOutput(info) || "Save the FLA first, or pick a file" : "");
+	const lottie = $derived(panel.export.format === "lottie" || panel.export.format === "dotlottie");
+	const placeholder = $derived(info.open ? defaultOutput(info, undefined, formatExt(panel.export.format)) || "Save the FLA first, or pick a file" : "");
 	const docLabel = $derived(
 		info.open ? `${info.name} · ${info.isSymbol ? "symbol " : ""}${info.timeline} · ${info.frameCount} fr @ ${info.frameRate} fps${info.type === "htmlcanvas" ? " · HTML5 Canvas" : ""}` : "No document open",
 	);
@@ -41,11 +47,69 @@
 					panel.rememberInDocument = true;
 				}
 				if (panel.rangeEnd < 1 || panel.rangeEnd > (info.frameCount ?? 1)) panel.rangeEnd = info.frameCount ?? 1;
+				bitmaps = null;
+				sounds = null;
+				if (panel.open.images) loadBitmaps();
+				if (panel.open.sounds) loadSounds();
 			}
 		} catch (e) {
 			error = (e as Error).message;
 		}
 	}
+
+	/** The document's bitmaps, read when the Images section is open (a library scan costs time). */
+	async function loadBitmaps() {
+		if (!inCep || !info.open) return;
+		try {
+			bitmaps = await libraryBitmaps();
+		} catch (e) {
+			error = (e as Error).message;
+		}
+	}
+
+	/** The document's sounds, read when the Sounds section is open. */
+	async function loadSounds() {
+		if (!inCep || !info.open) return;
+		try {
+			sounds = await librarySounds();
+		} catch (e) {
+			error = (e as Error).message;
+		}
+	}
+
+	$effect(() => {
+		if (panel.open.images && bitmaps === null && info.open) loadBitmaps();
+	});
+	$effect(() => {
+		if (panel.open.sounds && sounds === null && info.open) loadSounds();
+	});
+
+	function setMode(name: string, v: string) {
+		const modes = { ...panel.export.imageModes };
+		if (v === "lossy" || v === "lossless") modes[name] = v;
+		else delete modes[name];
+		panel.export.imageModes = modes;
+	}
+
+	function setFullSize(name: string, on: boolean) {
+		const full = { ...panel.export.imageFullSize };
+		if (on) full[name] = true;
+		else delete full[name];
+		panel.export.imageFullSize = full;
+	}
+
+	function setSoundMode(name: string, v: string) {
+		const modes = { ...panel.export.soundModes };
+		if (v === "lossy" || v === "lossless") modes[name] = v;
+		else delete modes[name];
+		panel.export.soundModes = modes;
+	}
+
+	const soundSetting = (s: SoundInfo) =>
+		s.compression === "mp3" ? (s.importedQuality ? "MP3, imported quality" : `MP3, ${s.bitRate} kbps`) : s.compression === "default" ? "Default" : s.compression === "raw" ? "Raw" : s.compression.toUpperCase();
+	const SOUND_FORMATS: Record<string, string> = { mp3: "MP3", opus: "Opus", wav: "WAV", original: "MP3 as imported" };
+
+	const animateSetting = (b: BitmapInfo) => (b.compression === "lossless" ? "Lossless" : b.quality < 0 ? "Photo (imported JPEG)" : `Photo, quality ${b.quality}`);
 
 	function applySkin() {
 		const s = hostSkin();
@@ -92,7 +156,8 @@
 				() => cancelled,
 			);
 			if (panel.rememberInDocument) await saveDocSettings(JSON.stringify(req));
-			if (panel.openAfterExport && result.files[0]) openInBrowser(result.files[0]);
+			// browsers show Lottie files as text or download them
+			if (panel.openAfterExport && result.files[0] && !/\.(json|lottie)$/i.test(result.files[0])) openInBrowser(result.files[0]);
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
@@ -101,9 +166,10 @@
 	}
 
 	function browse() {
+		const ext = formatExt(panel.export.format);
 		const start = panel.output || placeholder;
-		const r = window.cep?.fs.showSaveDialogEx("Export SVG", start ? node?.path.dirname(start) ?? "" : "", ["svg"], start ? node?.path.basename(start) ?? "animation.svg" : "animation.svg");
-		if (r && r.err === 0 && r.data) panel.output = r.data.toLowerCase().endsWith(".svg") ? r.data : r.data + ".svg";
+		const r = window.cep?.fs.showSaveDialogEx(lottie ? "Export Lottie" : "Export SVG", start ? node?.path.dirname(start) ?? "" : "", [ext.slice(1)], start ? node?.path.basename(start) ?? "animation" + ext : "animation" + ext);
+		if (r && r.err === 0 && r.data) panel.output = r.data.toLowerCase().endsWith(ext) ? r.data : r.data + ext;
 	}
 
 	function choosePreset(e: Event) {
@@ -199,6 +265,9 @@
 	{#if panel.export.format !== "static"}
 		<Section title="Animation" bind:open={panel.open.animation}>
 			<label class="check"><input type="checkbox" bind:checked={panel.export.smooth} /> Smooth tweens (interpolate between frames)</label>
+			{#if lottie}
+				<p class="hint">Looping, autoplay and the start are set in the Lottie player.</p>
+			{:else}
 			<label class="row">
 				<span>Loop</span>
 				<select bind:value={panel.export.loop}>
@@ -227,6 +296,8 @@
 					<option value="last">Last frame</option>
 				</select>
 			</label>
+			<label class="check" title="Visitors who turned animations off in their system settings see the poster frame (the JS player plays on a click)"><input type="checkbox" bind:checked={panel.export.reducedMotion} /> Still poster for “reduce motion”</label>
+			{/if}
 		</Section>
 	{/if}
 
@@ -236,6 +307,110 @@
 		<label class="check"><input type="checkbox" bind:checked={panel.export.textAsOutlines} /> Dynamic text as outlines</label>
 		<label class="check"><input type="checkbox" bind:checked={panel.export.includeHiddenLayers} /> Include hidden layers</label>
 		<label class="check"><input type="checkbox" bind:checked={panel.export.includeGuides} /> Include guide layers</label>
+	</Section>
+
+	<Section title="Images" bind:open={panel.open.images}>
+		<p class="hint">Animate's bitmap properties decide per bitmap: <i>Photo (JPEG)</i> is compressed with loss, <i>Lossless (PNG/GIF)</i> stays exactly as it is. Change it for single bitmaps below.</p>
+		<label class="row">
+			<span>Photos as</span>
+			<select bind:value={panel.export.imageLossy}>
+				<option value="jpeg">JPEG (plays everywhere)</option>
+				<option value="webp">WebP (smaller)</option>
+				<option value="avif">AVIF (smallest)</option>
+			</select>
+		</label>
+		<label class="row">
+			<span>Lossless as</span>
+			<select bind:value={panel.export.imageLossless}>
+				<option value="png">PNG (optimised)</option>
+				<option value="webp">WebP lossless (smaller)</option>
+			</select>
+		</label>
+		<label class="row">
+			<span>Quality</span>
+			<input type="number" min="0" max="100" bind:value={panel.export.imageQuality} title="0 = each bitmap's quality from Animate" />
+		</label>
+		<p class="hint">Quality 0 uses each bitmap's own setting from Animate (imported JPEGs stay unchanged when exported as JPEG). Transparent photos are written as WebP, as JPEG can't keep transparency.</p>
+		<label class="row">
+			<span>Resolution</span>
+			<select bind:value={panel.export.imageResolution}>
+				<option value={0}>Every pixel</option>
+				<option value={1}>1× the size shown</option>
+				<option value={1.5}>1.5× the size shown</option>
+				<option value={2}>2× (sharp on HiDPI screens)</option>
+				<option value={3}>3× the size shown</option>
+			</select>
+		</label>
+		<p class="hint">Bitmaps that are only ever shown smaller (scaled down, in symbols, tweens, under the camera) are made smaller, down to this multiple of their largest size on stage. Bitmaps without smoothing and repeating fills keep every pixel; tick <i>Full</i> for others that should.</p>
+		{#if !info.open}
+			<p class="hint">Open a document to list its bitmaps.</p>
+		{:else if bitmaps === null}
+			<p class="hint">Reading the library…</p>
+		{:else if !bitmaps.length}
+			<p class="hint">The document has no bitmaps.</p>
+		{:else}
+			<table class="bitmaps">
+				<tbody>
+					{#each bitmaps as b (b.name)}
+						<tr>
+							<td class="name" title="{b.name} · {b.width}×{b.height} · {animateSetting(b)}">{b.name}</td>
+							<td class="mode">
+								<select value={panel.export.imageModes[b.name] ?? ""} onchange={(e) => setMode(b.name, (e.target as HTMLSelectElement).value)} aria-label="Compression of {b.name}">
+									<option value="">{b.compression === "photo" ? "Lossy (Animate)" : "Lossless (Animate)"}</option>
+									<option value="lossy">Lossy</option>
+									<option value="lossless">Lossless</option>
+								</select>
+							</td>
+							<td class="full">
+								<label title="Full size: always every pixel of {b.name}"><input type="checkbox" checked={!!panel.export.imageFullSize[b.name]} onchange={(e) => setFullSize(b.name, (e.target as HTMLInputElement).checked)} />Full</label>
+							</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+			<button class="link" onclick={loadBitmaps}>Reload list</button>
+		{/if}
+	</Section>
+
+	<Section title="Sounds" bind:open={panel.open.sounds}>
+		<p class="hint">Sounds play in the <i>JS player</i> format. Animate's sound properties decide per sound: <i>Raw</i> stays uncompressed (WAV), every other setting is compressed.</p>
+		<label class="row">
+			<span>Compressed as</span>
+			<select bind:value={panel.export.soundFormat}>
+				<option value="mp3">MP3 (plays everywhere)</option>
+				<option value="opus">Opus (smaller; Safari 18.4+)</option>
+			</select>
+		</label>
+		<label class="row">
+			<span>Bit rate</span>
+			<input type="number" min="0" max="320" step="8" bind:value={panel.export.soundBitrate} title="kbit/s on MP3's scale; 0 = each sound's setting from Animate" />
+		</label>
+		<p class="hint">Bit rate 0 uses each sound's MP3 setting from Animate (otherwise 128 kbps stereo / 64 mono, less for low sample rates); imported MP3s at their own quality stay as they are. Opus sounds as good at half the bit rate. Every sound is cut to the part the frames play.</p>
+		{#if !info.open}
+			<p class="hint">Open a document to list its sounds.</p>
+		{:else if sounds === null}
+			<p class="hint">Reading the library…</p>
+		{:else if !sounds.length}
+			<p class="hint">The document has no sounds.</p>
+		{:else}
+			<table class="bitmaps">
+				<tbody>
+					{#each sounds as snd (snd.name)}
+						<tr>
+							<td class="name" title="{snd.name} · {soundSetting(snd)}">{snd.name}</td>
+							<td class="mode">
+								<select value={panel.export.soundModes[snd.name] ?? ""} onchange={(e) => setSoundMode(snd.name, (e.target as HTMLSelectElement).value)} aria-label="Compression of {snd.name}">
+									<option value="">{snd.compression === "raw" ? "Uncompressed (Animate)" : "Compressed (Animate)"}</option>
+									<option value="lossy">Compressed</option>
+									<option value="lossless">Uncompressed (WAV)</option>
+								</select>
+							</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+			<button class="link" onclick={loadSounds}>Reload list</button>
+		{/if}
 	</Section>
 
 	<Section title="Advanced" bind:open={panel.open.advanced}>
@@ -262,10 +437,31 @@
 				{result.files.length} file{result.files.length > 1 ? "s" : ""} · {kb(result.output.reduce((n, o) => n + o.stats.bytes, 0))} · {result.seconds.toFixed(1)} s
 			</div>
 			<div class="actions">
-				<button class="secondary" onclick={() => openInBrowser(result!.files[0]!)}>Open in browser</button>
+				{#if !/\.(json|lottie)$/i.test(result.files[0] ?? "")}<button class="secondary" onclick={() => openInBrowser(result!.files[0]!)}>Open in browser</button>{/if}
 				<button class="secondary" onclick={() => revealInExplorer(result!.files[0]!)}>Show file</button>
 			</div>
-			<Preview file={result.files[0]!} format={result.format} />
+			<Budget {result} />
+			{#if result.format !== "lottie" && result.format !== "dotlottie"}<Preview file={result.files[0]!} format={result.format} />{/if}
+			{#if result.images.length}
+				<details class="warnings">
+					<summary>{result.images.length} image{result.images.length > 1 ? "s" : ""}: {kb(result.images.reduce((n, i) => n + i.bytes, 0))}</summary>
+					<ul>
+						{#each result.images as i (i.name)}
+							<li>{i.name}: {i.format === "original" ? "JPEG from Animate" : i.format.toUpperCase()}{i.mode === "lossless" ? " (lossless)" : ""}{i.width < i.sourceWidth || i.height < i.sourceHeight ? `, ${i.width}×${i.height} of ${i.sourceWidth}×${i.sourceHeight}` : ""}, {kb(i.bytes)}</li>
+						{/each}
+					</ul>
+				</details>
+			{/if}
+			{#if result.sounds.length}
+				<details class="warnings">
+					<summary>{result.sounds.length} sound{result.sounds.length > 1 ? "s" : ""}: {kb(result.sounds.reduce((n, i) => n + i.bytes, 0))}</summary>
+					<ul>
+						{#each result.sounds as i (i.name)}
+							<li>{i.name}: {SOUND_FORMATS[i.format] ?? i.format}{i.kbps ? ` ${i.kbps} kbps` : ""}{i.channels === 1 ? " mono" : ""}, {i.seconds.toFixed(2)} s, {kb(i.bytes)}</li>
+						{/each}
+					</ul>
+				</details>
+			{/if}
 			{#if result.warnings.length}
 				<details class="warnings">
 					<summary>{result.warnings.length} warning{result.warnings.length > 1 ? "s" : ""}</summary>

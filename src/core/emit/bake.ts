@@ -10,6 +10,7 @@ import { subBezier } from "../easing.ts";
 import { COLOR_PROPS, TRANSFORM_PROPS, type ColorProp, type InstanceItem, type Item, type Program, type ProgramLayer, type TransformProp } from "../program.ts";
 import { valueAt, type Ease, type Track } from "../tracks.ts";
 import type { Context } from "../context.ts";
+import type { MorphPart } from "../morph.ts";
 import type { FilterData } from "../model.ts";
 import { graphicFrame, playhead, playheadFrame } from "./timing.ts";
 
@@ -41,6 +42,8 @@ export interface BakeOptions {
 	startFrame?: number;
 	endFrame?: number;
 	maxTicks?: number;
+	/** Shape tweens as path morphs where SMIL can animate them (see morph.ts); else frame by frame. */
+	morph?: boolean;
 }
 
 export interface BakedTimeline {
@@ -81,11 +84,22 @@ export interface BakedInstance extends NodeBase {
 	/** Buttons: Over and Down states (Up is `child`). */
 	states?: BakedTimeline[];
 }
-export type BakedNode = BakedArt | BakedStatic | BakedInstance;
+/** Frames of a shape tween drawn as one morphing drawing. */
+export interface BakedMorph extends NodeBase {
+	kind: "morph";
+	part: MorphPart;
+	/** The blend ratio. */
+	ratio: GTrack;
+	/** Position in the part's frames (0 = its first), for channels with values per frame. */
+	frame: GTrack;
+}
+export type BakedNode = BakedArt | BakedStatic | BakedInstance | BakedMorph;
 
 export interface BakeResult {
 	horizon: Horizon;
 	root: BakedTimeline;
+	/** The root timeline's frame at each tick of the horizon. */
+	frames: Int32Array;
 	/** All distinct baked timelines (for shared <defs>). */
 	timelines: BakedTimeline[];
 }
@@ -168,9 +182,9 @@ export function bake(ctx: Context, rootId: string, opts: BakeOptions): BakeResul
 	const rootFrames = new Int32Array(H);
 	for (let t = 0; t < H; t++) rootFrames[t] = t < frames.length ? frames[t]! : loop ? frames[t % frames.length]! : frames[frames.length - 1]!;
 
-	const baker = new Baker(ctx, opts.smooth, H);
+	const baker = new Baker(ctx, opts.smooth, H, opts.morph);
 	const root = baker.timeline(prog, rootFrames, 0);
-	return { horizon: { ticks: H, loop, fps, tail }, root, timelines: baker.all };
+	return { horizon: { ticks: H, loop, fps, tail }, root, frames: rootFrames, timelines: baker.all };
 }
 
 /** Ticks after which a running movie clip (and the clips running inside it) repeats; 1 = it stops. */
@@ -230,10 +244,12 @@ class Baker {
 	readonly ctx: Context;
 	readonly smooth: boolean;
 	readonly H: number;
-	constructor(ctx: Context, smooth: boolean, H: number) {
+	readonly morph: boolean;
+	constructor(ctx: Context, smooth: boolean, H: number, morph = false) {
 		this.ctx = ctx;
 		this.smooth = smooth;
 		this.H = H;
+		this.morph = morph;
 	}
 
 	timeline(prog: Program, frames: Int32Array, depth: number): BakedTimeline {
@@ -274,24 +290,42 @@ class Baker {
 				bl.nodes.push({ kind: item.kind, item, vis, uid: item.uid });
 				return;
 			case "artSeq": {
-				// one node per distinct drawing, shown on the ticks where it is the current frame
+				// shape tweens: frames blended by a morph drawing, see morph.ts
+				const morph = this.morph ? this.ctx.morph(item) : null;
+				const parts = morph ? morph.parts.filter((p) => p.smil) : [];
+				// one node per distinct drawing (or morph), shown on the ticks where it is the current frame
 				const byArt = new Map<string, number[]>();
+				const byPart = new Map<MorphPart, number[]>();
 				for (let t = 0; t < this.H; t++) {
 					const f = frames[t]!;
 					if (f < item.start || f >= item.end) continue;
-					const art = item.arts[Math.min(item.arts.length - 1, f - item.start)];
+					const k = Math.min(item.arts.length - 1, f - item.start);
+					const part = parts.find((p) => k >= p.from && k < p.to);
+					if (part) {
+						(byPart.get(part) ?? byPart.set(part, []).get(part)!).push(t);
+						continue;
+					}
+					const art = item.arts[k];
 					if (!art) continue;
 					(byArt.get(art) ?? byArt.set(art, []).get(art)!).push(t);
 				}
 				let i = 0;
-				for (const [art, ticks] of byArt) {
-					const v: Interval[] = [];
-					for (const t of ticks) {
-						const last = v[v.length - 1];
-						if (last && last[1] === t) last[1] = t + 1;
-						else v.push([t, t + 1]);
+				for (const [art, ticks] of byArt) bl.nodes.push({ kind: "art", art, vis: tickIntervals(ticks), uid: `${item.uid}#${i++}` });
+				for (const [part, ticks] of byPart) {
+					const at = item.start + part.from;
+					const frame: Track = [];
+					if (part.channels.some((c) => c.f)) {
+						for (let k = 0; k < part.to - part.from; k++) frame.push({ t: at + k, v: k, ease: "linear" });
+						frame[frame.length - 1]!.ease = "hold";
 					}
-					bl.nodes.push({ kind: "art", art, vis: v, uid: `${item.uid}#${i++}` });
+					bl.nodes.push({
+						kind: "morph",
+						part,
+						ratio: this.mapTrack(part.ratio ?? morph!.ratio, runs),
+						frame: frame.length ? this.mapTrack(frame, runs) : [],
+						vis: tickIntervals(ticks),
+						uid: `${item.uid}#m${part.from}`,
+					});
 				}
 				bt.animated = true;
 				return;
@@ -481,6 +515,17 @@ function push(out: GTrack, k: GKey) {
 }
 
 /** Drops redundant keys (repeated holds of the same value). */
+/** Sorted ticks as intervals [start, end). */
+function tickIntervals(ticks: number[]): Interval[] {
+	const v: Interval[] = [];
+	for (const t of ticks) {
+		const last = v[v.length - 1];
+		if (last && last[1] === t) last[1] = t + 1;
+		else v.push([t, t + 1]);
+	}
+	return v;
+}
+
 function compact(keys: GTrack): GTrack {
 	const out: GTrack = [];
 	for (const k of keys) {

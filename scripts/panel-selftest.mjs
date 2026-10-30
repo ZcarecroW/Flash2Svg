@@ -25,6 +25,25 @@ const jobs = [
 	{ fla: fla("f12-labels"), output: join(out, "range.svg"), settings: { format: "static" }, frames: "range", rangeStart: 4, rangeEnd: 6, expect: { files: 3 } },
 	{ fla: fla("f02-eases"), output: join(out, "empty fields.svg"), settings: { format: "css", digits: null, delay: null }, expect: { files: 1 } },
 	{ fla: fla("f18-bitmap"), output: join(out, "dir #1", "bitmap linked.svg"), settings: { format: "smil", embedImages: false }, expect: { files: 1, assets: true } },
+	// image codecs (loaded on demand inside the panel): per-bitmap modes, every format, linked files
+	{ fla: fla("f42-images"), output: join(out, "images-webp.svg"), settings: { format: "smil", imageLossy: "webp", imageLossless: "webp", imageModes: { "photo.jpg": "lossless" } }, expect: { files: 1, mimes: ["image/webp"], noMimes: ["image/jpeg", "image/png"], parts: ["drawing", "animation", "images"] } },
+	{ fla: fla("f42-images"), output: join(out, "images-avif.svg"), settings: { format: "css", imageLossy: "avif", imageQuality: 60 }, expect: { files: 1, mimes: ["image/avif", "image/png"] } },
+	{ fla: fla("f42-images"), output: join(out, "images linked", "images.svg"), settings: { format: "player", embedImages: false }, expect: { files: 1, assets: true, parts: ["runtime", "linked"] } },
+	// downscaling: bitmaps shown smaller are written at 2x (the default) or 1x their size on stage; tiles, pixel art and "Full" keep every pixel
+	{ fla: fla("f44-bitmap-sizes"), output: join(out, "sizes-2x.svg"), settings: { format: "smil" }, expect: { files: 1, pixels: { "large.png": [320, 240], "nested.png": [200, 150], "fill.png": [160, 160], "tile.png": [64, 64], "pixels.png": [64, 64] } } },
+	{ fla: fla("f44-bitmap-sizes"), output: join(out, "sizes-1x.svg"), settings: { format: "player", imageResolution: 1, imageFullSize: { "large.png": true } }, expect: { files: 1, pixels: { "large.png": [640, 480], "nested.png": [100, 75], "fill.png": [80, 80] } } },
+	// audio codecs (loaded on demand): Opus embedded (Raw stays WAV), MP3 linked, no sound outside the player
+	{ fla: fla("f43-sounds"), output: join(out, "sounds-opus.svg"), settings: { format: "player", soundFormat: "opus" }, expect: { files: 1, mimes: ["audio/ogg", "audio/wav"], noMimes: ["audio/mpeg"], parts: ["sounds", "runtime"] } },
+	{ fla: fla("f43-sounds"), output: join(out, "sounds linked", "sounds.svg"), settings: { format: "player", embedImages: false, soundModes: { "chord.wav": "lossless" } }, expect: { files: 1, soundFiles: [".mp3", ".wav"] } },
+	{ fla: fla("f43-sounds"), output: join(out, "sounds-smil.svg"), settings: { format: "smil" }, expect: { files: 1, warning: /Sounds play only in the JS player/ } },
+	// shape tweens as path morphs: SMIL animates path data and gradient matrices, the player gets morph parts
+	{ fla: fla("f45-morph"), output: join(out, "morph.svg"), settings: { format: "smil" }, expect: { files: 1, contains: [/<animate attributeName="d"/, /<animateTransform attributeName="gradientTransform"/] } },
+	{ fla: fla("f45-morph"), output: join(out, "morph-player.svg"), settings: { format: "player" }, expect: { files: 1, contains: [/"mp":\[/] } },
+	// Lottie: the file name follows the format (.svg chosen, .json / .lottie written); bitmaps embedded,
+	// linked next to the JSON, or inside the archive
+	{ fla: fla("f45-morph"), output: join(out, "morph-lottie.svg"), settings: { format: "lottie" }, expect: { files: 1, ext: ".json", lottie: true, parts: ["drawing", "animation"] } },
+	{ fla: fla("f42-images"), output: join(out, "images.lottie"), settings: { format: "dotlottie", imageLossy: "webp" }, expect: { files: 1, ext: ".lottie", dotlottie: true, parts: ["images"] } },
+	{ fla: fla("f42-images"), output: join(out, "images lottie linked", "images.json"), settings: { format: "lottie", embedImages: false }, expect: { files: 1, ext: ".json", lottie: true, linkedImages: true } },
 	// selected library symbols: one file per symbol, named after it
 	{ fla: fla("f04-nested"), output: join(out, "lib.svg"), settings: { format: "css" }, source: "library", select: ["spinner", "counter"], expect: { files: 2, names: ["lib_spinner.svg", "lib_counter.svg"] } },
 	// a second scene: only the current one is exported, with a warning
@@ -66,21 +85,68 @@ if (!existsSync(resultFile)) {
 const res = JSON.parse(readFileSync(resultFile, "utf8"));
 // check what the jobs promised
 res.results.forEach((r, i) => {
-	const exp = jobs[i]?.expect;
-	if (!r.ok || !exp) return;
+	const exp = jobs[i]?.expect ?? {};
+	if (!r.ok) return;
 	const problems = [];
+	// the size overview: the parts add up to the files' size; the expected ones are there
+	const parts = (r.parts ?? []).reduce((all, p) => {
+		for (const k in p) all[k] = (all[k] ?? 0) + p[k];
+		return all;
+	}, {});
+	const sum = Object.values(parts).reduce((a, b) => a + b, 0);
+	if (sum !== r.bytes) problems.push(`size parts add up to ${sum}, the files have ${r.bytes}`);
+	for (const k of exp.parts ?? []) if (!(k === "linked" ? r.linkedBytes > 0 : parts[k] > 0)) problems.push(`no ${k} in the size overview`);
 	if (exp.files !== undefined && r.files.length !== exp.files) problems.push(`${r.files.length} files, expected ${exp.files}`);
 	if (exp.names) for (const n of exp.names) if (!r.files.some((f) => f.endsWith(n))) problems.push(`no file ${n}`);
 	if (exp.warning && !r.warnings.some((w) => exp.warning.test(w))) problems.push(`missing warning ${exp.warning}`);
 	if (exp.format && r.format !== exp.format) problems.push(`format ${r.format}, expected ${exp.format}`);
 	for (const f of r.files) {
 		if (!existsSync(f)) problems.push(`missing ${f}`);
-		else if (/NaN|undefined/.test(readFileSync(f, "utf8"))) problems.push(`NaN/undefined in ${f}`);
+		else if (!f.endsWith(".lottie") && /NaN|undefined/.test(readFileSync(f, "utf8"))) problems.push(`NaN/undefined in ${f}`);
+		if (exp.ext && !f.endsWith(exp.ext)) problems.push(`${f} should end in ${exp.ext}`);
+	}
+	if (exp.lottie && r.files[0] && existsSync(r.files[0])) {
+		try {
+			const anim = JSON.parse(readFileSync(r.files[0], "utf8"));
+			if (!anim.layers?.length || !(anim.op > anim.ip)) problems.push("Lottie without layers or frames");
+			if (exp.linkedImages) {
+				const linked = (anim.assets ?? []).filter((a) => a.p && a.e === 0);
+				if (!linked.length) problems.push("no linked images in the Lottie");
+				for (const a of linked) if (!existsSync(join(dirname(r.files[0]), a.u + a.p))) problems.push(`linked image ${a.u + a.p} not written`);
+			}
+		} catch (e) {
+			problems.push(`not JSON: ${e.message}`);
+		}
+	}
+	if (exp.dotlottie && r.files[0] && existsSync(r.files[0])) {
+		// a ZIP: local file header signature, a manifest, the animation and its images inside
+		const zip = readFileSync(r.files[0]);
+		if (zip.readUInt32LE(0) !== 0x04034b50) problems.push("not a ZIP archive");
+		const text = zip.toString("latin1");
+		if (!text.includes("manifest.json") || !/a\/[^/]+\.json/.test(text) || !text.includes("i/")) problems.push("archive without manifest, animation or images");
+	}
+	if (exp.mimes || exp.noMimes) {
+		const svg = readFileSync(r.files[0], "utf8");
+		for (const m of exp.mimes ?? []) if (!svg.includes(`data:${m};base64,`)) problems.push(`no ${m} image`);
+		for (const m of exp.noMimes ?? []) if (svg.includes(`data:${m};base64,`)) problems.push(`unexpected ${m} image`);
 	}
 	if (exp.assets && r.files[0]) {
 		const svg = readFileSync(r.files[0], "utf8");
 		const href = /xlink:href="(bitmaps\/[^"]+)"/.exec(svg)?.[1];
 		if (!href || !existsSync(join(dirname(r.files[0]), href))) problems.push("linked bitmap not written next to the SVG");
+	}
+	for (const [name, wh] of Object.entries(exp.pixels ?? {})) {
+		const got = r.images?.find((i) => i[0] === name);
+		if (!got || got[1] !== wh[0] || got[2] !== wh[1]) problems.push(`${name} written ${got ? got[1] + "x" + got[2] : "not at all"}, expected ${wh.join("x")}`);
+	}
+	if (exp.contains && r.files[0]) {
+		const svg = readFileSync(r.files[0], "utf8");
+		for (const re of exp.contains) if (!re.test(svg)) problems.push(`no ${re} in the output`);
+	}
+	if (exp.soundFiles && r.files[0]) {
+		const dir = join(dirname(r.files[0]), "sounds");
+		const list = existsSync(dir) ? readdirSync(dir) : [];
+		for (const e of exp.soundFiles) if (!list.some((f) => f.endsWith(e))) problems.push(`no ${e} sound next to the SVG (${list.join(", ")})`);
 	}
 	if (problems.length) {
 		r.ok = false;

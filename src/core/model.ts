@@ -247,15 +247,53 @@ export interface AtlasItem {
 
 export interface BitmapData {
 	name: string;
+	/** The pixels without loss (PNG); older models: the bitmap as Animate compresses it (JPEG or PNG). */
 	file: string;
 	width: number;
 	height: number;
 	smoothing: boolean;
+	/** Animate's compression setting for the bitmap (absent in older models). */
+	compression?: "photo" | "lossless";
+	/** "Photo" bitmaps: Animate's JPEG quality, -1 = the imported JPEG's own. */
+	quality?: number;
+	/** "Photo" bitmaps: the JPEG Animate publishes (for imported JPEGs the original file). */
+	jpeg?: string;
+	/**
+	 * Set by encodeImages (images.ts) when it wrote fewer pixels than width x height (the bitmap is
+	 * shown smaller): the file's size. The bitmap is still drawn width x height big.
+	 */
+	pixels?: [number, number];
 }
 
 export interface SoundData {
 	name: string;
+	/** WAV (PCM) for sounds imported as WAV/AIFF, the original file for imported MP3s. */
 	file: string;
+	/** How the sound was imported (absent in older models). */
+	original?: "raw" | "mp3";
+	/**
+	 * Length in 44.1 kHz samples. Animate pads the WAV it exports with silence; this is where the
+	 * sound really ends (absent in older models).
+	 */
+	samples?: number;
+	/** Animate's compression setting for the sound (Library › Properties). */
+	compression?: "default" | "adpcm" | "mp3" | "raw" | "speech";
+	/** MP3 compression: kbit/s. */
+	bitRate?: number;
+	/** Imported MP3s: "Use imported MP3 quality". */
+	importedQuality?: boolean;
+	/** ADPCM, Raw, Speech: sample rate in Hz. */
+	sampleRate?: number;
+	/** ADPCM: bits per sample. */
+	bits?: number;
+	/** Convert stereo to mono (set with the compression). */
+	mono?: boolean;
+	/** Set by encodeSounds (audio.ts): where the file starts in the sound (44.1 kHz samples)... */
+	trim?: number;
+	/** ...how long it plays (seconds)... */
+	seconds?: number;
+	/** ...and the encoder delay at its start (seconds; decoders that read a gapless header skip it). */
+	lead?: number;
 }
 
 export interface FrameSound {
@@ -264,4 +302,11 @@ export interface FrameSound {
 	loopMode: "repeat" | "loop";
 	loops: number;
 	effect: string;
+	/**
+	 * Volume envelope ("Edit sound envelope"): [position in 44.1 kHz samples from the start of
+	 * playback (it runs on across loops), left, right (0..32768)]. Absent = full volume.
+	 */
+	envelope?: [number, number, number][];
+	/** In and out point in 44.1 kHz samples; every loop plays from start to end. */
+	limits?: { start: number; end: number };
 }

@@ -1,7 +1,8 @@
 # Watches a running Animate process for the test scripts (see animate.mjs) and prints one JSON
 # line every 2 s: CPU seconds used, dialog windows (title and texts), crash reporters started
 # since the watch began. A dialog that stays open is closed with WM_CLOSE (like Esc / Cancel,
-# never OK); one that survives that is reported as "stuck". Adobe's dialogs don't expose their
+# never OK); one that survives that is reported as "stuck". Windows shown while Animate works
+# (progress) are left alone. Adobe's dialogs don't expose their
 # message (neither as window text nor through UI Automation): a picture of each one is saved.
 param([int]$AnimatePid)
 $ErrorActionPreference = "SilentlyContinue"
@@ -53,10 +54,18 @@ $started = Get-Date
 $seen = @{}
 $texts = @{}
 $p = Get-Process -Id $AnimatePid
+$lastCpu = -1.0
 while ($p -and -not $p.HasExited) {
 	$p.Refresh()
+	$cpu = $p.TotalProcessorTime.TotalSeconds
+	# a dialog that waits for the user leaves Animate idle; progress windows ("Exporting Image
+	# Sequence") show while it works: only windows of an idle Animate count as dialogs
+	# (measured: about 2 s of CPU per 2 s while exporting, under 0.2 s with a dialog open)
+	$idle = $lastCpu -ge 0 -and ($cpu - $lastCpu) -lt 0.5
+	$lastCpu = $cpu
 	$dialogs = @()
 	foreach ($d in [F2sWin]::Dialogs([uint32]$AnimatePid, $p.MainWindowHandle)) {
+		if (-not $idle) { continue }
 		$h = [long]$d[0]
 		$seen[$h] = 1 + [int]$seen[$h]
 		$state = "open"
@@ -88,6 +97,6 @@ while ($p -and -not $p.HasExited) {
 		$dialogs += @{ title = $d[1]; text = $texts[$h]; state = $state }
 	}
 	$crash = @(Get-Process | Where-Object { $_.ProcessName -match "crash|WerFault" -and $_.StartTime -gt $started } | ForEach-Object { $_.ProcessName })
-	@{ cpu = $p.TotalProcessorTime.TotalSeconds; dialogs = $dialogs; crash = $crash } | ConvertTo-Json -Compress -Depth 4
+	@{ cpu = $cpu; dialogs = $dialogs; crash = $crash } | ConvertTo-Json -Compress -Depth 4
 	Start-Sleep -Seconds 2
 }

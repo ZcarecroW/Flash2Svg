@@ -3,7 +3,9 @@ import { fmt } from "./geom.ts";
 import { el } from "./xml.ts";
 import type { BitmapFill, SceneModel } from "./model.ts";
 import { applyNineSlice } from "./nineslice.ts";
-import { buildPrograms, markShapeAlpha, type CompileOptions, type Program } from "./program.ts";
+import { buildMorph, type Morph } from "./morph.ts";
+import { buildPrograms, markShapeAlpha, type ArtSeqItem, type CompileOptions, type Program } from "./program.ts";
+import { valueAt } from "./tracks.ts";
 
 /** Reads files that sit next to scene.json (atlas SVGs, bitmaps, sounds). */
 export interface FileSource {
@@ -19,6 +21,8 @@ export interface Context {
 	warnings: string[];
 	/** Artwork for an atlas id (deduplicated: identical drawings share one Artwork). */
 	art(atlasId: string): Artwork | null;
+	/** A shape tween as path morphs (null: frame by frame), see morph.ts. Computed once per item. */
+	morph(item: ArtSeqItem): Morph | null;
 	digits: number;
 }
 
@@ -78,6 +82,7 @@ export function createContext(model: SceneModel, files: FileSource, opts: Compil
 				if (!a.length && !b.length) return;
 				for (const id of frames) addLinear(id, a.length && (b.length || !l.keyframes[k + 1]) ? [...a, ...b, "*"] : [...a, ...b]);
 			});
+	const morphs = new WeakMap<ArtSeqItem, Morph | null>();
 	const ctx: Context = {
 		model,
 		programs,
@@ -122,6 +127,22 @@ export function createContext(model: SceneModel, files: FileSource, opts: Compil
 			}
 			cache.set(id, result);
 			return result;
+		},
+		morph(item) {
+			if (!item.ratio) return null;
+			let m = morphs.get(item);
+			if (m === undefined) {
+				const ratios = item.arts.map((_, k) => valueAt(item.ratio!, item.start + k));
+				m = buildMorph(
+					item.arts.map((id) => ctx.art(id)),
+					ratios,
+					item.ratio,
+					item.start,
+					digits,
+				);
+				morphs.set(item, m);
+			}
+			return m;
 		},
 	};
 	const warn = (m: string) => {

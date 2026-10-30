@@ -6,12 +6,30 @@
 import type { Context } from "../context.ts";
 import { fmt, fmtMatrix } from "../geom.ts";
 import type { Mat } from "../model.ts";
+import { channelNumbers, channelText, channelVaries, matrixScale, type MorphChannel } from "../morph.ts";
 import { fromProps, type ColorProp, type TransformProp } from "../program.ts";
-import { el, type XmlNode } from "../xml.ts";
-import { bake, holdFrom, isAlways, isConstantTrack, sliceTrack, trackValueAt, type BakedInstance, type BakedNode, type BakedTimeline, type BakeOptions, type GTrack, type Horizon, type Interval } from "./bake.ts";
+import { el, serialize, walk, type XmlNode } from "../xml.ts";
+import {
+	bake,
+	holdFrom,
+	isAlways,
+	isConstantTrack,
+	sliceTrack,
+	trackValueAt,
+	type BakedInstance,
+	type BakedMorph,
+	type BakedNode,
+	type BakedTimeline,
+	type BakeOptions,
+	type GTrack,
+	type Horizon,
+	type Interval,
+} from "./bake.ts";
 import { OutputDoc, svgRoot } from "./document.ts";
 import { blendHides, blendSubtract, blendWhite, colorMatrix, cssBlendMode, isAlphaOnly, matrixString, type ColorMatrixValues } from "./filters.ts";
+import { StaticRenderer } from "./static.ts";
 import { textNode } from "./text.ts";
+import { playheadFrame } from "./timing.ts";
 
 export type BeginMode = "auto" | "click" | "hover" | "manual";
 
@@ -27,11 +45,16 @@ export interface AnimateOptions extends BakeOptions {
 	delay?: number;
 	idPrefix?: string;
 	pretty?: boolean;
+	/** "Reduce motion" in the system settings shows the poster frame (default true). */
+	reducedMotion?: boolean;
+	/** SMIL: shape tweens as path morphs (default true; CSS can't animate paths in every browser). */
+	morph?: boolean;
 }
 
 export interface AnimateResult {
 	svg: string;
 	assets: OutputDoc["assets"];
+	drawingBytes: OutputDoc["drawingBytes"];
 	horizon: Horizon;
 	warnings: string[];
 }
@@ -39,7 +62,7 @@ export interface AnimateResult {
 const EPS_TICK = 0.01; // width of an instantaneous jump, in ticks
 
 export function renderAnimated(ctx: Context, rootId: string, opts: AnimateOptions): AnimateResult {
-	const { horizon, root } = bake(ctx, rootId, opts);
+	const { horizon, root } = bake(ctx, rootId, { ...opts, morph: opts.format === "smil" && opts.morph !== false });
 	const doc = new OutputDoc(ctx, { embedImages: opts.embedImages, idPrefix: opts.idPrefix ?? "" });
 	const svgId = doc.uid("anim");
 	const svg = svgRoot(ctx, { id: svgId });
@@ -48,9 +71,20 @@ export function renderAnimated(ctx: Context, rootId: string, opts: AnimateOption
 		const d = ctx.model.doc;
 		svg.children.push(el("rect", { width: fmt(d.width, 2), height: fmt(d.height, 2), fill: d.backgroundColor }));
 	}
-	svg.children.push(...w.timeline(root));
+	const content = w.timeline(root);
+	let moves = false;
+	for (const n of content) walk(n, (x) => void (/^(animate|animateTransform|set)$/.test(x.name) && (moves = true)));
+	if (!w.css && moves && opts.reducedMotion !== false) {
+		// "reduce motion" in the system settings: CSS can't stop SMIL, so a still copy of the poster
+		// frame (sharing the drawings in <defs>) stands in for the animation
+		const prog = ctx.programs[rootId]!;
+		const sr = new StaticRenderer(ctx, doc, { movieClips: "play", textAsOutlines: opts.textAsOutlines });
+		const still = el("g", { class: "f2s-still", display: "none" }, sr.timeline(prog, playheadFrame(prog, w.posterTick), w.posterTick, 0));
+		svg.children.push(el("g", { class: "f2s-anim" }, content), still);
+		doc.styles.push(`@media (prefers-reduced-motion:reduce){#${svgId}>.f2s-anim{display:none}#${svgId}>.f2s-still{display:inline}}`);
+	} else svg.children.push(...content);
 	w.finish(svg);
-	return { svg: doc.toString(svg, { pretty: opts.pretty }), assets: doc.assets, horizon, warnings: ctx.warnings };
+	return { svg: doc.toString(svg, { pretty: opts.pretty }), assets: doc.assets, drawingBytes: doc.drawingBytes, horizon, warnings: ctx.warnings };
 }
 
 class Writer {
@@ -221,9 +255,76 @@ class Writer {
 			case "instance":
 				content = this.instance(n);
 				break;
+			case "morph":
+				content = this.morph(n);
+				break;
 		}
 		if (!content) return null;
 		return this.visibility(content, n.vis);
+	}
+
+	/** A shape tween's frames as one drawing whose paths, colours and gradients are animated. */
+	private morph(n: BakedMorph): XmlNode {
+		const p = n.part;
+		const { defs, body, nodes } = this.doc.morphCopy(p.art);
+		// the still state: at the poster tick if shown then, else where it first shows
+		const at = n.vis.some(([a, b]) => this.posterTick >= a && this.posterTick < b) ? this.posterTick : n.vis[0]![0];
+		const digits = this.ctx.digits;
+		for (const ch of p.channels) {
+			const node = nodes[ch.node]!;
+			const track = ch.f ? n.frame : n.ratio;
+			const text = (v: number) => channelText(ch, channelNumbers(ch, v, v), digits);
+			node.attrs[ch.attr] = text(trackValueAt(track, at));
+			if (!channelVaries(ch) || isConstantTrack(track)) continue;
+			const a = new MorphAnim(this, track);
+			if (ch.kind === "matrix") {
+				// SMIL has no matrix animation: translate and scale animated, the rotation and skew
+				// (which both ends share, see morph.ts) added
+				const m = (v: number) => channelNumbers(ch, v, v);
+				const anim = (type: string, extra: Record<string, string> = {}) => (x: Record<string, string>) => el("animateTransform", { attributeName: ch.attr, type, ...extra, ...x });
+				node.children.push(...a.values((v) => `${fmt(m(v)[4]!, digits)} ${fmt(m(v)[5]!, digits)}`, anim("translate")));
+				const [rot, skw] = ch.rs!;
+				for (const [type, v] of [["rotate", rot], ["skewX", skw]] as const) if (Math.abs(v) > 1e-6) node.children.push(...a.fixed(anim(type, { values: fmt(v, 4), additive: "sum" })));
+				node.children.push(...a.values((v) => matrixScale(m(v)).map((x) => fmt(x, 5)).join(" "), anim("scale", { additive: "sum" })));
+			} else node.children.push(...a.values(text, (x) => el("animate", { attributeName: ch.attr, ...x })));
+		}
+		this.doc.defs.push(...defs);
+		this.doc.addDrawingBytes(p.art.id, serialize(body).length + defs.reduce((sum, d) => sum + serialize(d).length, 0));
+		return body;
+	}
+
+	/** Ticks after which `track` repeats all through the looping horizon (0: it doesn't). */
+	periodOf(track: GTrack): number {
+		if (!this.repeat || this.tail || track.length < 2) return 0;
+		const H = this.H;
+		const sig = (k: GTrack[number]) => `${k.v.toFixed(9)}|${k.ease}`;
+		const keys = new Map<string, string>();
+		for (const k of track) keys.set(k.t.toFixed(6), sig(k));
+		for (let P = 1; P <= H / 2; P++) {
+			if (H % P) continue;
+			if (track.every((k) => keys.get((k.t + P < H - 1e-9 ? k.t + P : k.t + P - H).toFixed(6)) === sig(k))) return P;
+		}
+		return 0;
+	}
+
+	/** Timing of an animation that repeats every `P` ticks, in step with the horizon. */
+	periodTiming(P: number): Record<string, string> {
+		const t: Record<string, string> = { dur: fmt(P / this.fps, 4) + "s", repeatCount: "indefinite" };
+		if (this.begin) t.begin = this.begin;
+		return t;
+	}
+
+	/** The SMIL animation(s) of a track, see MorphAnim. */
+	smilOf(track: GTrack, fmtV: (v: number[]) => string, make: (a: Record<string, string>) => XmlNode): XmlNode[] {
+		return this.smil([track], fmtV, make);
+	}
+
+	discreteOf(steps: { t: number; v: string }[], off: string, make: (a: Record<string, string>) => XmlNode): XmlNode[] {
+		return this.smilDiscrete("", steps, off, make);
+	}
+
+	windowTimings(): Record<string, string>[] {
+		return this.windows().map(([, , tail]) => this.timing(tail));
 	}
 
 	private instance(n: BakedInstance): XmlNode | null {
@@ -550,7 +651,7 @@ class Writer {
 	}
 
 	/** SMIL discrete switches, one animation per window. */
-	private smilDiscrete(attr: string, steps: { t: number; v: string }[], off: string): XmlNode[] {
+	private smilDiscrete(attr: string, steps: { t: number; v: string }[], off: string, make = (a: Record<string, string>) => el("animate", { attributeName: attr, ...a })): XmlNode[] {
 		const out: XmlNode[] = [];
 		for (const [from, len, tail] of this.windows()) {
 			const keys = this.sliceSteps(steps, from, from + len, off);
@@ -565,13 +666,13 @@ class Writer {
 				times.push(k.t / len);
 				values.push(k.v);
 			}
-			out.push(el("animate", { attributeName: attr, values: values.join(";"), keyTimes: times.map(floorTime).join(";"), calcMode: "discrete", ...this.timing(tail) }));
+			out.push(make({ values: values.join(";"), keyTimes: times.map(floorTime).join(";"), calcMode: "discrete", ...this.timing(tail) }));
 		}
 		return out;
 	}
 
 	/** values/keyTimes/keySplines for SMIL from tracks with identical key times. */
-	private smilValues(tracks: GTrack[], fmtV: (v: number[]) => string, H = this.H): Record<string, string> | null {
+	smilValues(tracks: GTrack[], fmtV: (v: number[]) => string, H = this.H): Record<string, string> | null {
 		const keys = mergeTracks(tracks, H);
 		if (!keys) return null;
 		const times: number[] = [],
@@ -716,7 +817,9 @@ class Writer {
 					: this.opts.begin === "hover"
 						? `#${this.svgId}:not(:hover) *{animation-play-state:paused}`
 						: `#${this.svgId}:not(.playing) *{animation-play-state:paused}`;
-			this.doc.styles.push([...this.keyframes, ...this.rules, play].filter(Boolean).join("\n"));
+			// "reduce motion" in the system settings: no animation, every element shows its poster state
+			const still = this.opts.reducedMotion !== false ? `@media (prefers-reduced-motion:reduce){#${this.svgId} *{animation:none!important}}` : "";
+			this.doc.styles.push([...this.keyframes, ...this.rules, play, still].filter(Boolean).join("\n"));
 			if (this.opts.begin === "click") this.doc.scripts.push(`document.getElementById(${JSON.stringify(this.svgId)}).addEventListener("click",function(){this.classList.add("playing")});`);
 		}
 		void svg;
@@ -724,6 +827,42 @@ class Writer {
 }
 
 // ---------------------------------------------------------------------- helpers
+
+/**
+ * Animations of one morph channel's track. A track that repeats (a movie clip looping a shape
+ * tween) is written once, with its own repeating timing: path data is long, and the horizon may
+ * hold many loops. One step per frame (no smoothing) is written as discrete values, each once.
+ */
+class MorphAnim {
+	private readonly w: Writer;
+	private readonly P: number;
+	private readonly track: GTrack;
+	private readonly steps: boolean;
+	constructor(w: Writer, track: GTrack) {
+		this.w = w;
+		this.P = w.periodOf(track);
+		this.track = this.P ? sliceTrack(track, 0, this.P) : track;
+		this.steps = track.every((k) => k.ease === "hold");
+	}
+
+	values(text: (v: number) => string, make: (a: Record<string, string>) => XmlNode): XmlNode[] {
+		const { P, track } = this;
+		if (this.steps) {
+			const steps = track.map((k) => ({ t: k.t, v: text(k.v) }));
+			if (!P) return this.w.discreteOf(steps, text(track[0]!.v), make);
+			const times = steps.map((x) => floorTime(x.t / P));
+			return [make({ values: steps.map((x) => x.v).join(";"), keyTimes: times.join(";"), calcMode: "discrete", ...this.w.periodTiming(P) })];
+		}
+		if (!P) return this.w.smilOf(this.track, (v) => text(v[0]!), make);
+		const a = this.w.smilValues([track], (v) => text(v[0]!), P);
+		return a ? [make({ ...a, ...this.w.periodTiming(P) })] : [];
+	}
+
+	/** A constant part (same timing as the values, so it joins their sandwich). */
+	fixed(make: (a: Record<string, string>) => XmlNode): XmlNode[] {
+		return this.P ? [make(this.w.periodTiming(this.P))] : this.w.windowTimings().map(make);
+	}
+}
 
 interface Comp {
 	type: "translate" | "rotate" | "skewX" | "scale" | "translateX" | "translateY" | "scaleX" | "scaleY";

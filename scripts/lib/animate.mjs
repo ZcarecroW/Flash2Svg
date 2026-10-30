@@ -67,7 +67,10 @@ export function runJsfl(jsflPath, { timeoutMs = 10 * 60 * 1000, quiet = false } 
 			done = true;
 			watcher?.kill();
 			const output = existsSync(outFile) ? readFileSync(outFile, "utf8").replace(/^﻿/, "").trim() : "";
-			rmSync(dir, { recursive: true, force: true });
+			// after a forced end Animate may still hold the folder for a moment
+			try {
+				rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+			} catch {}
 			if (output && !quiet) console.log(`Animate output panel:\n${output}`);
 			return output;
 		};

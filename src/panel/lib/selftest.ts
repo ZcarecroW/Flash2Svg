@@ -65,7 +65,7 @@ export async function runSelfTestIfRequested(): Promise<boolean> {
 				},
 				() => false,
 			);
-			log({ fla: job.fla, ok: true, format: res.format, files: res.files, bytes: res.output.reduce((n, o) => n + o.stats.bytes, 0), warnings: res.warnings, seconds: res.seconds, steps: progress.length, docType: info.type });
+			log({ fla: job.fla, ok: true, format: res.format, files: res.files, bytes: res.output.reduce((n, o) => n + o.stats.bytes, 0), warnings: res.warnings, seconds: res.seconds, steps: progress.length, docType: info.type, images: res.images.map((i) => [i.name, i.width, i.height]), parts: res.output.map((o) => o.stats.parts), drawings: res.output.flatMap((o) => o.stats.drawings), linkedBytes: res.linkedBytes });
 		} catch (e) {
 			log({ fla: job.fla, ok: false, error: (e as Error).message, seconds: (Date.now() - t0) / 1000 });
 		}

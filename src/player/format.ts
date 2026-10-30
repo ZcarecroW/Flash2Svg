@@ -19,8 +19,8 @@ export interface PProgram {
 	/** shared timing functions [x1, y1, x2, y2] */
 	bz: [number, number, number, number][];
 	tl: Record<string, PTimeline>;
-	/** sound id -> url */
-	snd: Record<string, string>;
+	/** sounds by id */
+	snd: Record<string, PSound>;
 	/** id of the filter used inside masks */
 	mf: string;
 	/** ids of the filters painting white / black with the alpha kept (alpha and erase masks) */
@@ -28,6 +28,8 @@ export interface PProgram {
 	bf?: string;
 	/** not looping: the root ends after this many ticks (frame scripts loop it; default: on its last frame) */
 	on?: number;
+	/** the poster frame (root, 0-based; default 0): shown still when the system asks for reduced motion */
+	pf?: number;
 }
 
 export interface PTimeline {
@@ -39,13 +41,33 @@ export interface PTimeline {
 	ac?: Record<number, (number | string)[][]>;
 	/** layers bottom to top */
 	ly: PLayer[];
-	/** frame sounds: [frame, soundId, sync(0 event,1 start,2 stop,3 stream), loops, durationFrames] */
-	sd?: [number, string, number, number, number][];
+	/** frame sounds */
+	sd?: PFrameSound[];
 	/** camera view transform tracks (x y rot skw sx sy), root scenes */
 	vw?: PTrack[];
 	/** 1 = placed inside an instance with `sa`: masks ignore the inherited alpha */
 	ia?: 1;
+	/**
+	 * 1 = draws hairlines (non-scaling strokes), here or in a symbol inside: their geometry follows
+	 * every transform, so the browser can't keep the artwork rastered; its instances are moved by
+	 * the player itself, not as Web Animations (see the runtime).
+	 */
+	hl?: 1;
 }
+
+/**
+ * [url, seconds, lead]: the length of the sound in the file and the encoder delay at its start
+ * (seconds; decoders that don't skip it on their own leave it in). Older programs: the url.
+ */
+export type PSound = string | [string, number, number];
+
+/**
+ * [frame, soundId, sync (0 event, 1 start, 2 stop, 3 stream), loops, durationFrames, in, out, envelope]
+ * in/out: seconds in the file, each loop plays from in to out (absent: the whole sound).
+ * envelope: flat [t, left, right, ...], t in seconds from the start of playback (it runs on
+ * across loops), volumes 0..1; absent = full volume.
+ */
+export type PFrameSound = [number, string, number, number, number, number?, number?, number[]?];
 
 export interface PLayer {
 	/** 1 = mask layer */
@@ -78,9 +100,34 @@ export interface PRef extends PBase {
 }
 export interface PSeq extends PBase {
 	k: "q";
-	/** def ids per frame */
+	/** def ids per frame ("" where a morph part draws the frame) */
 	rs: string[];
+	/** shape tweens: the blend ratio (local frames) */
+	rt?: PTrack;
+	/** shape tweens: frames drawn by blending a drawing (path morphs) */
+	mp?: PMorph[];
+	/** 1 = one step per frame (the morphs don't blend between frames) */
+	st?: 1;
 }
+
+/**
+ * Frames [a, b) of the span (0 = its first frame) drawn by a copy of the group `r` (its ids made
+ * unique) whose attributes are blended; `rt`: own blend ratio instead of the item's.
+ */
+export interface PMorph {
+	a: number;
+	b: number;
+	r: string;
+	rt?: PTrack;
+	c: PChannel[];
+}
+
+/**
+ * [element (index in the copy's querySelectorAll("*")), attribute, kind (0 path, 1 colour,
+ * 2 number, 3 matrix), path commands (M L Q Z, one letter per number group), values at ratio 0,
+ * values at ratio 1] or, for values that don't follow the ratio, [..., values per frame of the part].
+ */
+export type PChannel = [number, string, number, string, number[], number[]] | [number, string, number, string, number[][]];
 export interface PInst extends PBase {
 	k: "i";
 	/** symbol timeline id */

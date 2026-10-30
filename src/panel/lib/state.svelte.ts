@@ -20,7 +20,7 @@ export const BUILTIN_PRESETS: Record<string, Partial<ExportSettings>> = {
 	"CSS animation": { format: "css", smooth: true, loop: "auto", embedImages: true },
 	"Interactive (JS player)": { format: "player", smooth: true, loop: "auto", embedImages: true },
 	"Still frames": { format: "static", includeBackground: true },
-	"Smallest file": { format: "smil", digits: 1, embedImages: false, textAsOutlines: false },
+	"Smallest file": { format: "smil", digits: 1, embedImages: false, textAsOutlines: false, imageResolution: 1 },
 	"Inkscape / Illustrator (static)": { format: "static", textAsOutlines: true, embedImages: true, digits: 3 },
 };
 
@@ -34,7 +34,7 @@ function defaults(): PanelSettings {
 		output: "",
 		rememberInDocument: false,
 		openAfterExport: false,
-		open: { output: true, animation: true, graphics: false, advanced: false, preview: true },
+		open: { output: true, animation: true, graphics: false, images: false, sounds: false, advanced: false, preview: true },
 	};
 }
 
@@ -84,7 +84,9 @@ export function userPresets(): Record<string, Partial<ExportSettings>> {
 
 export function savePreset(name: string) {
 	const all = userPresets();
-	all[name] = $state.snapshot(panel.export);
+	// per-bitmap and per-sound choices belong to the document, not to a preset
+	const { imageModes: _, imageFullSize: ___, soundModes: __, ...settings } = $state.snapshot(panel.export);
+	all[name] = settings;
 	localStorage.setItem(PRESETS, JSON.stringify(all));
 }
 
@@ -95,7 +97,7 @@ export function deletePreset(name: string) {
 }
 
 export function applyPreset(p: Partial<ExportSettings>) {
-	Object.assign(panel.export, { ...DEFAULT_SETTINGS, ...p });
+	Object.assign(panel.export, { ...DEFAULT_SETTINGS, ...p, imageModes: panel.export.imageModes, imageFullSize: panel.export.imageFullSize, soundModes: panel.export.soundModes });
 }
 
 export function resetSettings() {

@@ -151,6 +151,8 @@ export function cdata(text: string): XmlNode {
 
 export function serialize(node: XmlChild, opts: SerializeOptions = {}, depth = 0): string {
 	if (typeof node === "string") return escapeText(node);
+	// already serialized markup (see OutputDoc.toString)
+	if (node.name === "#raw") return String(node.children[0] ?? "");
 	if (node.name === "#cdata") return "<![CDATA[" + String(node.children[0] ?? "").split("]]>").join("]]]]><![CDATA[>") + "]]>";
 	const ind = opts.pretty ? "\n" + "  ".repeat(depth) : "";
 	let s = ind + "<" + node.name;

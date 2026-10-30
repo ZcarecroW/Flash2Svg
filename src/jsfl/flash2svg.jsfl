@@ -476,16 +476,23 @@
 		if (script) kf.script = String(script).substr(0, 4000);
 		var soundItem = get(frame, "soundLibraryItem", null);
 		if (soundItem) {
-			var sid = readSound(soundItem);
-			if (sid) {
-				kf.sound = {
-					sound: sid,
-					sync: get(frame, "soundSync", "event"),
-					loopMode: get(frame, "soundLoopMode", "repeat"),
-					loops: get(frame, "soundLoop", 1),
-					effect: get(frame, "soundEffect", "none")
-				};
-			}
+			var snd = {
+				sound: "",
+				sync: get(frame, "soundSync", "event"),
+				loopMode: get(frame, "soundLoopMode", "repeat"),
+				loops: get(frame, "soundLoop", 1),
+				effect: get(frame, "soundEffect", "none")
+			};
+			// (read before readSound, which measures the length on this frame)
+			var env = soundEnvelope(frame);
+			// one point at full volume = no envelope (the effect isn't reliable: a custom envelope can report "none")
+			if (env && !(env.length == 1 && env[0][1] == 32768 && env[0][2] == 32768)) snd.envelope = env;
+			try {
+				var lim = frame.getSoundEnvelopeLimits();
+				if (lim && (lim.start > 0 || lim.end < 1073741823)) snd.limits = { start: lim.start, end: lim.end };
+			} catch (e) {}
+			snd.sound = readSound(soundItem, frame);
+			if (snd.sound) kf.sound = snd;
 		}
 		var elements = frame.elements;
 		// Group consecutive shape elements into one atlas item: z-order is preserved inside the export.
@@ -871,38 +878,109 @@
 	function readBitmap(item) {
 		var id = "bmp" + safeName(item.name);
 		if (job.model.bitmaps[id]) return id;
-		var ext = get(item, "originalCompressionType", "lossless") == "photo" ? "jpg" : "png";
-		var rel = "bitmaps/" + id + "." + ext;
+		// the pixels without loss (re-encoded by the compiler as the export settings say), and for
+		// "Photo (JPEG)" bitmaps Animate's own JPEG: without a quality argument exportToFile uses the
+		// bitmap's quality setting, and for imported JPEGs it writes the original file
+		var rel = "bitmaps/" + id + ".png";
 		FLfile.createFolder(job.outDir + "/bitmaps");
 		var ok = false;
-		try { ok = item.exportToFile(job.outDir + "/" + rel, 100); } catch (e) {}
+		try { ok = item.exportToFile(job.outDir + "/" + rel); } catch (e) {}
 		if (!ok) warn("Could not export bitmap " + item.name);
-		job.model.bitmaps[id] = {
+		var photo = get(item, "compressionType", "lossless") == "photo";
+		var data = {
 			name: item.name,
 			file: rel,
 			width: get(item, "hPixels", 0),
 			height: get(item, "vPixels", 0),
-			smoothing: get(item, "allowSmoothing", true) !== false
+			smoothing: get(item, "allowSmoothing", true) !== false,
+			compression: photo ? "photo" : "lossless"
 		};
+		if (photo) {
+			data.quality = get(item, "useImportedJPEGQuality", false) ? -1 : get(item, "quality", 80);
+			var jpg = "bitmaps/" + id + ".jpg";
+			try { if (item.exportToFile(job.outDir + "/" + jpg)) data.jpeg = jpg; } catch (e) {}
+		}
+		job.model.bitmaps[id] = data;
 		return id;
 	}
 
-	function readSound(item) {
+	/** The frame's volume envelope as [position (44.1 kHz samples), left, right (0..32768)]. */
+	function soundEnvelope(frame) {
+		try {
+			var e = frame.getSoundEnvelope(), out = [];
+			for (var i = 0; i < e.length; i++) out.push([e[i].mark !== undefined ? e[i].mark : e[i].mark44, e[i].leftChannel, e[i].rightChannel]);
+			return out;
+		} catch (x) {
+			return null;
+		}
+	}
+
+	var SOUND_COMPRESSION = { "Default": "default", "ADPCM": "adpcm", "MP3": "mp3", "Raw": "raw", "Speech": "speech" };
+
+	function readSound(item, frame) {
 		var id = "snd" + safeName(item.name);
 		if (job.model.sounds[id]) return id;
 		FLfile.createFolder(job.outDir + "/sounds");
-		var exts = get(item, "originalCompressionType", "") == "RAW" ? ["wav", "mp3"] : ["mp3"];
-		var rel = null;
-		for (var i = 0; i < exts.length && !rel; i++) {
-			var r = "sounds/" + id + "." + exts[i];
-			try { if (item.exportToFile(job.outDir + "/" + r)) rel = r; } catch (e) {}
-		}
-		if (!rel) {
+		// sounds imported as WAV/AIFF come out as WAV (PCM), MP3s as the original file
+		var mp3 = get(item, "originalCompressionType", "") == "MP3";
+		var rel = "sounds/" + id + (mp3 ? ".mp3" : ".wav");
+		var ok = false;
+		try { ok = item.exportToFile(job.outDir + "/" + rel) && FLfile.getSize(job.outDir + "/" + rel) > 0; } catch (e) {}
+		if (!ok) {
 			warn("Could not export sound " + item.name);
 			return null;
 		}
-		job.model.sounds[id] = { name: item.name, file: rel };
+		var data = { name: item.name, file: rel, original: mp3 ? "mp3" : "raw", compression: SOUND_COMPRESSION[get(item, "compressionType", "Default")] || "default" };
+		var samples = soundLength(frame);
+		if (samples > 0) data.samples = samples;
+		var c = data.compression;
+		if (c == "mp3") {
+			data.bitRate = parseInt(get(item, "bitRate", "0"), 10) || undefined;
+			if (mp3) data.importedQuality = !!get(item, "useImportedMP3Quality", false);
+		}
+		if (c == "adpcm" || c == "raw" || c == "speech") data.sampleRate = { "5 kHz": 5512, "11 kHz": 11025, "22 kHz": 22050, "44 kHz": 44100 }[get(item, "sampleRate", "")] || undefined;
+		if (c == "adpcm") data.bits = parseInt(get(item, "bits", "4"), 10) || 4;
+		if (c != "default" && !(c == "mp3" && data.importedQuality)) data.mono = c == "speech" || !!get(item, "convertStereoToMono", false);
+		job.model.sounds[id] = data;
 		return id;
+	}
+
+	/**
+	 * The sound's length in 44.1 kHz samples. The exported WAV is padded with silence (a 0.4 s sound
+	 * comes out as 3.7 s); the "fade out" effect's last point sits exactly at the end. Measured on
+	 * the frame (of the working copy), whose envelope is put back afterwards.
+	 */
+	function soundLength(frame) {
+		var saved = null, n = 0;
+		try {
+			saved = frame.getSoundEnvelope();
+			frame.soundEffect = "fade out";
+			var e = frame.getSoundEnvelope();
+			if (e.length) n = e[e.length - 1].mark !== undefined ? e[e.length - 1].mark : e[e.length - 1].mark44;
+			frame.setSoundEnvelope(saved);
+		} catch (x) {}
+		return n;
+	}
+
+	function sounds() {
+		var d = fl.getDocumentDOM();
+		var out = [];
+		if (!d) return stringify(out);
+		var items = d.library.items;
+		for (var i = 0; i < items.length; i++) {
+			var it = items[i];
+			if (it.itemType != "sound") continue;
+			var c = SOUND_COMPRESSION[get(it, "compressionType", "Default")] || "default";
+			var mp3 = get(it, "originalCompressionType", "") == "MP3";
+			out.push({
+				name: it.name,
+				original: mp3 ? "mp3" : "raw",
+				compression: c,
+				bitRate: c == "mp3" ? parseInt(get(it, "bitRate", "0"), 10) || 0 : 0,
+				importedQuality: c == "mp3" && mp3 && !!get(it, "useImportedMP3Quality", false)
+			});
+		}
+		return stringify(out);
 	}
 
 	// ------------------------------------------------------------------ atlas
@@ -1139,6 +1217,27 @@
 		});
 	}
 
+	/** The document's library bitmaps with their compression settings (for the panel's image list; not part of info(), which runs on every document event). */
+	function bitmaps() {
+		var d = fl.getDocumentDOM();
+		var out = [];
+		if (!d) return stringify(out);
+		var items = d.library.items;
+		for (var i = 0; i < items.length; i++) {
+			var it = items[i];
+			if (it.itemType != "bitmap") continue;
+			var photo = get(it, "compressionType", "lossless") == "photo";
+			out.push({
+				name: it.name,
+				width: get(it, "hPixels", 0),
+				height: get(it, "vPixels", 0),
+				compression: photo ? "photo" : "lossless",
+				quality: photo ? (get(it, "useImportedJPEGQuality", false) ? -1 : get(it, "quality", 80)) : 100
+			});
+		}
+		return stringify(out);
+	}
+
 	global.Flash2Svg = {
 		version: VERSION,
 		start: function (o) { return start(o); },
@@ -1146,6 +1245,8 @@
 		run: function (o) { return run(o); },
 		cancel: cancel,
 		info: info,
+		bitmaps: bitmaps,
+		sounds: sounds,
 		status: status,
 		stringify: stringify
 	};

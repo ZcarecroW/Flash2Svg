@@ -5,6 +5,7 @@
 //   4. checks SMIL / CSS / JS player output frame by frame in the browser (smooth and --steps)
 //   5. checks the JS player's API and interaction (labels, goto, loop, start modes, buttons, sounds)
 //   6. inlines several exports into one HTML page (ids must not clash)
+//   7. checks the Lottie output (schema; lottie-web, dotLottie, Skottie frame by frame; smooth and --steps)
 // Usage: node scripts/e2e.mjs [names] [--rebuild] [--skip-animate]
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
@@ -32,5 +33,7 @@ failed += run("e2e-browser.ts", [...(names ? [names] : []), "--formats=smil,css,
 failed += run("e2e-browser.ts", [...(names ? [names] : []), "--formats=smil,css,player", "--steps"]);
 if (!names) failed += run("e2e-player.ts");
 if (!names) failed += run("e2e-inline.ts");
+failed += run("e2e-lottie.ts", names ? [names] : []);
+failed += run("e2e-lottie.ts", [...(names ? [names] : []), "--steps"]);
 console.log(failed ? `\nE2E: ${failed} step(s) reported failures` : "\nE2E: all good");
 process.exitCode = failed ? 1 : 0;

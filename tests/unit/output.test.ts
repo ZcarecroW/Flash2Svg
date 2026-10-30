@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { compileScene, type ExportSettings } from "../../src/core/compile.ts";
+import { compileScene, sizeParts, type ExportSettings } from "../../src/core/compile.ts";
 import type { SceneModel } from "../../src/core/model.ts";
 
 function compile(name: string, settings: Partial<ExportSettings>) {
@@ -108,5 +108,36 @@ describe("horizon limits", () => {
 		const ok = createContext(m, files, { smooth: true, includeHiddenLayers: true, includeGuides: false, digits: 2 });
 		bake(ok, m.roots[0]!, { smooth: true, loop: "auto" } as Parameters<typeof bake>[2]);
 		expect(ok.warnings.some((w) => w.includes("loops of very different lengths"))).toBe(false);
+	});
+});
+
+describe("size overview", () => {
+	it("splits every format's size into its parts, which add up to the whole", () => {
+		for (const format of ["smil", "css", "player", "static"] as const) {
+			const out = compile("f12-labels", { format });
+			const p = out.stats.parts;
+			expect(p.drawing + p.animation + p.images + p.sounds + p.runtime, format).toBe(out.stats.bytes);
+			expect(p.drawing, format).toBeGreaterThan(0);
+			if (format !== "static") expect(p.animation, format).toBeGreaterThan(0);
+			expect(p.runtime > 0, format).toBe(format === "player");
+		}
+	});
+
+	it("counts embedded files and the player apart from the drawing", () => {
+		const svg = `<svg><defs><image xlink:href="data:image/png;base64,AAAA"/></defs><path d="M0 0"/><animate attributeName="x"/><script type="application/json"><![CDATA[{"snd":{"a":"data:audio/mpeg;base64,BBBB"}}]]></script><script><![CDATA[run()]]></script></svg>`;
+		const p = sizeParts(svg);
+		expect(p.images).toBe("data:image/png;base64,AAAA".length);
+		expect(p.sounds).toBe("data:audio/mpeg;base64,BBBB".length);
+		expect(p.runtime).toBe("<script><![CDATA[run()]]></script>".length);
+		expect(p.animation).toBe('<animate attributeName="x"/>'.length + '<script type="application/json"><![CDATA[{"snd":{"a":""}}]]></script>'.length);
+		expect(p.drawing + p.animation + p.images + p.sounds + p.runtime).toBe(svg.length);
+	});
+
+	it("names the drawings by symbol and layer, biggest first", () => {
+		const out = compile("f12-labels", { format: "smil" });
+		const d = out.stats.drawings;
+		expect(d.length).toBeGreaterThan(0);
+		for (let i = 1; i < d.length; i++) expect(d[i - 1]!.bytes).toBeGreaterThanOrEqual(d[i]!.bytes);
+		expect(d.every((x) => / › /.test(x.name) && x.count > 0)).toBe(true);
 	});
 });

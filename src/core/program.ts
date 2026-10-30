@@ -89,6 +89,8 @@ export interface ArtItem extends ItemBase {
 export interface ArtSeqItem extends ItemBase {
 	kind: "artSeq";
 	arts: string[];
+	/** Shape tweens: the blend ratio (0 = start shape, 1 = end shape) over local frame time. */
+	ratio?: Track;
 }
 
 export interface BitmapItem extends ItemBase {
@@ -479,7 +481,7 @@ function wrapLayerEffects(programs: Record<string, Program>, prog: Program, tl: 
 	}
 }
 
-function layerIncluded(layers: LayerData[], i: number, opts: CompileOptions): boolean {
+export function layerIncluded(layers: LayerData[], i: number, opts: Pick<CompileOptions, "includeGuides" | "includeHiddenLayers">): boolean {
 	const l = layers[i]!;
 	if (l.type === "folder" || l.type === "camera") return false;
 	if (l.type === "guide") {
@@ -767,6 +769,7 @@ function buildLayerItems(tl: TimelineData, layer: LayerData, li: number, opts: C
 				end: kEnd,
 				slot: 0,
 				arts: kf.tween.shapeFrames.slice(0, kEnd - kf.index),
+				ratio: shapeRatio(kf.tween, kf.index, kf.duration),
 			});
 			continue;
 		}
@@ -1051,6 +1054,18 @@ function rotationEnd(r0: number, r1: number, tw: TweenData): number {
 		end -= 360 * times;
 	}
 	return end;
+}
+
+/** A shape tween's blend ratio from its ease: 0 at its keyframe, 1 at the next one. */
+function shapeRatio(tw: TweenData, start: number, dur: number): Track {
+	const ce = tw.customEase;
+	const custom = ce ? ((ce.all ?? Object.values(ce)[0]) as EaseCurve | undefined) : undefined;
+	const curve = custom && custom.length >= 4 ? custom : classicEase(tw.easing);
+	const end = start + dur;
+	if (isLinear(curve)) return [{ t: start, v: 0, ease: "linear" }, { t: end, v: 1, ease: "hold" }];
+	const keys: Track = easePieces(curve, { clampY: true }).map((p) => ({ t: start + p.x0 * dur, v: p.y0, ease: p.bezier }));
+	keys.push({ t: end, v: 1, ease: "hold" });
+	return keys;
 }
 
 function easeFor(tw: TweenData, group: "position" | "rotation" | "scale" | "color"): EaseCurve | null {

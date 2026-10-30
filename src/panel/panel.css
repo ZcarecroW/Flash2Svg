@@ -197,7 +197,7 @@ section h2 button {
 }
 .formats {
 	display: grid;
-	grid-template-columns: repeat(4, 1fr);
+	grid-template-columns: repeat(3, 1fr);
 	gap: 4px;
 }
 .formats button {
@@ -232,6 +232,54 @@ section h2 button {
 	gap: 6px;
 	flex-wrap: wrap;
 }
+/* size overview: one bar, a segment per kind of content */
+.budget {
+	display: flex;
+	height: 8px;
+	border-radius: 4px;
+	overflow: hidden;
+	background: var(--line);
+}
+.budget span {
+	min-width: 2px;
+}
+.legend {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 2px 10px;
+	margin: 4px 0 0;
+	padding: 0;
+	list-style: none;
+	font-size: 11px;
+	color: var(--muted);
+}
+.legend i {
+	display: inline-block;
+	width: 8px;
+	height: 8px;
+	margin-right: 4px;
+	border-radius: 2px;
+}
+.part-drawing {
+	background: #4f8fdc;
+}
+.part-animation {
+	background: #d9a13b;
+}
+.part-images {
+	background: #4fae64;
+}
+.part-sounds {
+	background: #a86ad0;
+}
+.part-runtime {
+	background: #8a8f98;
+}
+.part-linked {
+	background: transparent;
+	outline: 1px dashed var(--muted);
+	outline-offset: -1px;
+}
 .preview iframe {
 	width: 100%;
 	aspect-ratio: 4 / 3;
@@ -261,4 +309,34 @@ section h2 button {
 	margin: 4px 0 0;
 	padding-left: 16px;
 	font-size: 11px;
+}
+.bitmaps {
+	width: 100%;
+	border-collapse: collapse;
+	table-layout: fixed;
+}
+.bitmaps td {
+	padding: 2px 0;
+}
+.bitmaps td.name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	padding-right: 6px;
+}
+.bitmaps td.mode {
+	width: 52%;
+}
+.bitmaps td.full {
+	width: 52px;
+	padding-left: 4px;
+	text-align: right;
+	white-space: nowrap;
+}
+.bitmaps td.full input {
+	margin: 0 3px 0 0;
+	vertical-align: middle;
+}
+.bitmaps select {
+	width: 100%;
 }

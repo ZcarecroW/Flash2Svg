@@ -7,7 +7,12 @@
  * This file is bundled (esbuild, minified) into an IIFE string by scripts/build.mjs.
  */
 import { evalBezier } from "../core/easing.ts";
-import type { PInst, PItem, PProgram, PTimeline, PTrack } from "./format.ts";
+import type { PChannel, PFrameSound, PInst, PItem, PMorph, PProgram, PTimeline, PTrack } from "./format.ts";
+
+/** Build flags: the sound code (Mixer) is only in the runtime of programs with sounds, the
+ * morph code (shape tweens) only in that of programs with path morphs. */
+declare const __SOUND__: boolean;
+declare const __MORPH__: boolean;
 
 const NS = "http://www.w3.org/2000/svg";
 const XL = "http://www.w3.org/1999/xlink";
@@ -49,6 +54,46 @@ function use(id: string): SVGElement {
 
 // runtime ids start with the (prefixed, page-unique) id of the player svg: inline players don't clash
 let uidCounter = 0;
+
+/** A copy of a morph's drawing (group `id`), its ids (gradients...) made unique. */
+function copyArt(svg: SVGSVGElement, id: string): Element {
+	const c = (svg.ownerDocument.getElementById(id) as Element).cloneNode(true) as Element;
+	c.removeAttribute("id");
+	const map: Record<string, string> = {};
+	for (const e of c.querySelectorAll("[id]")) e.id = map[e.id] = `${svg.id}_c${uidCounter++}`;
+	for (const e of c.querySelectorAll("*"))
+		for (const a of e.attributes) if (a.value.indexOf("#") >= 0) a.value = a.value.replace(/#([^)\s]+)/g, (m, x: string) => (map[x] ? "#" + map[x] : m));
+	return c;
+}
+
+/** A morph channel's attribute text at blend ratio r (or frame position fi in the part). */
+function morphValue(ch: PChannel, r: number, fi: number): string {
+	let v: number[];
+	if (ch.length > 5) {
+		const e = ch[5] as number[];
+		v = (ch[4] as number[]).map((x, i) => x + (e[i]! - x) * r);
+	} else {
+		const f = ch[4] as number[][];
+		const k = Math.max(0, Math.min(f.length - 1, fi)),
+			k0 = Math.floor(k),
+			k1 = Math.min(f.length - 1, k0 + 1);
+		v = f[k0]!.map((x, i) => x + (f[k1]![i]! - x) * (k - k0));
+	}
+	const kind = ch[2];
+	if (kind === 1) {
+		const c = (x: number) => Math.max(0, Math.min(255, Math.round(x)));
+		return `rgba(${c(v[0]!)},${c(v[1]!)},${c(v[2]!)},${c(v[3]!) / 255})`;
+	}
+	if (kind === 2) return "" + v[0];
+	if (kind === 3) return `matrix(${v.join(",")})`;
+	let d = "",
+		i = 0;
+	for (const c of ch[3]) {
+		d += c;
+		for (let n = c === "Q" ? 4 : c === "Z" ? 0 : 2; n > 0; n--) d += Math.round(v[i++]! * 100) / 100 + (n > 1 ? "," : "");
+	}
+	return d;
+}
 
 /** A running timeline (root, movie clip, graphic or button instance). */
 class Clip {
@@ -139,9 +184,43 @@ class Clip {
 		}
 	}
 
-	private playSounds() {
-		if (this.player.muted || !this.tl.sd) return;
-		for (const s of this.tl.sd) if (s[0] === this.frame) this.player.sound(s[1], s[2], s[3], s[4]);
+	/** Event, start and stop sounds of the frame just entered (buttons: of the state just entered). */
+	playSounds() {
+		const m = this.player.mixer;
+		if (!__SOUND__ || !m || !this.tl.sd) return;
+		for (const e of this.tl.sd) if (e[0] === this.frame && e[2] !== 3) m.trigger(e);
+	}
+
+	private streams?: Map<PFrameSound, Voice>;
+	/** Removed from the stage: its stream sounds (and those of clips inside) end. */
+	stopStreams() {
+		if (!__SOUND__) return;
+		this.streams?.forEach((v) => v.stop());
+		this.streams?.clear();
+		for (const inst of this.items.values()) inst.clip?.stopStreams();
+	}
+	/**
+	 * Stream sounds follow the playhead (Flash): they play while it moves through their frames and
+	 * from the position of the frame it is on (also after a goto), and stop when it stops or leaves.
+	 */
+	streamSync() {
+		const m = this.player.mixer;
+		const sd = this.tl.sd;
+		if (!__SOUND__ || !m || !sd) return;
+		for (const e of sd) {
+			if (e[2] !== 3) continue;
+			const map = (this.streams ??= new Map());
+			let v = map.get(e);
+			const pos = (this.frame - e[0]) / this.P.fps;
+			const on = this.playing && pos >= 0 && this.frame < e[0] + e[4] && this.node.isConnected && !this.player.muted;
+			// (between ticks the clock runs up to a frame ahead of the playhead; more means a jump)
+			if (v && (v.done || !on || Math.abs(v.pos() - pos) > 2 / this.P.fps)) {
+				v.stop();
+				map.delete(e);
+				v = undefined;
+			}
+			if (on && !v) map.set(e, m.voice(e, pos));
+		}
 	}
 
 	labelAt(f: number): string | undefined {
@@ -168,6 +247,7 @@ class Clip {
 				this.frame = this.frame + 1 >= this.tl.n ? 0 : this.frame + 1;
 			}
 			this.runActions();
+			this.streamSync();
 			// not looping: the root ends on arriving at its last frame, or after the first pass when
 			// frame scripts loop it
 			if (this.kind === -1 && !this.player.loop && this.playing && (this.P.on ? ++this.age >= this.P.on - 1 : this.frame === this.tl.n - 1)) {
@@ -189,8 +269,18 @@ class Clip {
 
 	/** Whether the next tick moves this clip exactly one frame forward (drives interpolation). */
 	adv = false;
-	private updateAdvance() {
-		if (this.kind === 0 || this.kind === -1) this.adv = this.playing && this.frame + 1 < this.tl.n;
+	/**
+	 * Whether its time runs on into the next tick: advancing, or wrapping from the last frame to the
+	 * first. (Web Animations then play through the last frame and are set back once, at the wrap.)
+	 */
+	flows = false;
+	/** The time its Web Animations follow (as `t` in render, but running on through the last frame). */
+	tw = 0;
+	updateAdvance() {
+		if (this.kind === 0 || this.kind === -1) {
+			this.adv = this.playing && this.frame + 1 < this.tl.n;
+			this.flows = this.playing && (this.adv || this.kind === 0 || this.player.loop);
+		}
 	}
 
 	/** Creates/removes item nodes for the current frame. */
@@ -211,6 +301,8 @@ class Clip {
 					if (c && c.kind === 1) c.setFrame(graphicFrame(it as PInst, this.frame, c.tl.n));
 				} else if (!active && inst) {
 					for (const e of inst.els.length ? inst.els : [inst.node]) e.remove();
+					inst.clip?.stopStreams();
+					inst.dispose();
 					this.items.delete(it);
 					inst = undefined;
 				}
@@ -222,9 +314,26 @@ class Clip {
 	/** Updates attributes; `frac` = progress (0..1) towards the next frame. */
 	render(frac: number) {
 		const t = this.frame + (this.adv ? frac : 0);
+		this.tw = this.frame + (this.flows ? frac : 0);
 		const vw = this.tl.vw;
-		if (vw) this.node.setAttribute("transform", matrixOf(this.P, vw, t, 0, 0));
+		if (vw) {
+			// the camera moves the whole stage: a Web Animation too (no repaint of the scene)
+			if (WAAPI && !this.tl.hl) {
+				this.vanim ??= animate(this.player, this.node, vw, vw, null, 0, this.tl.n);
+				sync(this.player, this.vanim, (this.tw / this.P.fps) * 1000, this.player.running && this.flows);
+			} else this.node.setAttribute("transform", matrixOf(this.P, vw, t, 0, 0));
+		}
 		for (const inst of this.items.values()) inst.render(t, frac, this);
+	}
+
+	private vanim: Animation | null = null;
+	/** Taken off the stage: its animations (and those of everything inside) end. */
+	dispose() {
+		if (this.vanim) {
+			this.vanim.cancel();
+			this.player.anims.delete(this.vanim);
+		}
+		for (const inst of this.items.values()) inst.dispose();
 	}
 
 	/** Graphic symbols/buttons: frame chosen by the parent. */
@@ -251,7 +360,9 @@ class Clip {
 		this.playing = play;
 		this.enteredFrame = -1;
 		this.runActions();
+		this.streamSync();
 		this.sync();
+		this.updateAdvance();
 	}
 }
 
@@ -268,6 +379,18 @@ class Inst {
 	clip: Clip | null = null;
 	private cm: SVGElement | null = null;
 	private seqIndex = -1;
+	/** shape tweens: the morph part drawn, copies of each part's drawing (and their elements) */
+	private mpart?: PMorph | null;
+	private mels?: Element[];
+	private mcopies?: Map<PMorph, [Element, Element[]]>;
+	private mrat?: number;
+	private mfra?: number;
+	/** the transform last written (unchanged values aren't written again) */
+	private lastM = "";
+	/** Web Animations playing the transform and/or the alpha (see animate()) */
+	private anims: Animation[] | null = null;
+	private animTransform = false;
+	private animAlpha = false;
 	private filterRef = "";
 
 	constructor(owner: Clip, it: PItem) {
@@ -321,6 +444,20 @@ class Inst {
 						return w;
 					};
 					this.els = [white(), node, white()];
+				} else if (WAAPI && !sym?.hl) {
+					// tweened transforms and alpha are Web Animations: the browser plays them (on the
+					// compositor, without repainting the artwork); the player only sets them right when
+					// the timeline jumps, stops or changes speed. (Not with the subtract blend: <use>
+					// copies of the node don't get its animations.)
+					this.animTransform = it.tr.some((x) => typeof x === "object");
+					this.animAlpha = !!it.c && !it.cm && !it.sa && typeof it.c[3] === "object";
+					const alpha = this.animAlpha ? it.c![3]! : null;
+					if (this.animTransform && node === g) this.anims = [animate(owner.player, g, it, it.tr, alpha, it.s, it.e)];
+					else if (this.animTransform || alpha) {
+						this.anims = [];
+						if (this.animTransform) this.anims.push(animate(owner.player, g, it.tr, it.tr, null, it.s, it.e));
+						if (alpha) this.anims.push(animate(owner.player, node, it.c!, null, alpha, it.s, it.e));
+					}
 				}
 				break;
 			}
@@ -329,10 +466,14 @@ class Inst {
 
 	private button(g: SVGElement) {
 		const set = (s: number) => {
-			if (this.clip) {
-				this.clip.buttonState = s;
-				this.clip.setFrame(Math.min(s, this.clip.tl.n - 1));
-				this.clip.render(0);
+			const c = this.clip;
+			if (c) {
+				c.buttonState = s;
+				const f = Math.min(s, c.tl.n - 1);
+				const entered = f !== c.frame;
+				c.setFrame(f);
+				if (entered) c.playSounds();
+				c.render(0);
 			}
 		};
 		g.style.cursor = "pointer";
@@ -347,17 +488,60 @@ class Inst {
 		const P = this.owner.P;
 		if (it.k === "q") {
 			const i = Math.min(it.rs.length - 1, Math.floor(t) - it.s);
+			if (__MORPH__) {
+				// shape tweens: frames drawn by blending a copy of the part's drawing
+				const mp = it.mp?.find((p) => i >= p.a && i < p.b);
+				if (mp) {
+					if (mp !== this.mpart) {
+						this.mpart = mp;
+						this.seqIndex = -1;
+						this.mrat = this.mfra = undefined;
+						const copies = (this.mcopies ??= new Map());
+						let c = copies.get(mp);
+						if (!c) {
+							const g = copyArt(this.owner.player.svg, mp.r);
+							copies.set(mp, (c = [g, [...g.querySelectorAll("*")]]));
+						}
+						this.mels = c[1];
+						this.node.replaceChildren(c[0]);
+					}
+					const tt = it.st ? Math.floor(t) : t,
+						r = trackAt(P, mp.rt ?? it.rt, tt, 0),
+						fi = mp.c.some((ch) => ch.length < 6) ? tt - it.s - mp.a : 0;
+					// (unchanged values aren't written again: a write makes the browser repaint)
+					if (r !== this.mrat || fi !== this.mfra) {
+						this.mrat = r;
+						this.mfra = fi;
+						for (const ch of mp.c) this.mels![ch[0]]!.setAttribute(ch[1], morphValue(ch, r, fi));
+					}
+					return;
+				}
+				this.mpart = null;
+			}
 			if (i !== this.seqIndex) {
 				this.seqIndex = i;
-				this.node.replaceChildren(use(it.rs[i]!));
+				this.node.replaceChildren(...(it.rs[i] ? [use(it.rs[i]!)] : []));
 			}
 			return;
 		}
 		if (it.k !== "i") return;
 		const tr = it.tr;
-		(this.tnode ?? this.node).setAttribute("transform", matrixOf(P, tr, t, trackAt(P, tr[6], t, 0), trackAt(P, tr[7], t, 0)));
+		if (this.anims) {
+			const player = this.owner.player;
+			const ms = ((this.owner.tw - it.s) / P.fps) * 1000;
+			const run = player.running && this.owner.flows;
+			for (const a of this.anims) sync(player, a, ms, run);
+		}
+		if (!this.animTransform) {
+			const m = matrixOf(P, tr, t, trackAt(P, tr[6], t, 0), trackAt(P, tr[7], t, 0));
+			// (unchanged values aren't written again: a write makes the browser repaint)
+			if (m !== this.lastM) {
+				this.lastM = m;
+				(this.tnode ?? this.node).setAttribute("transform", m);
+			}
+		}
 
-		if (it.c) {
+		if (it.c && !this.animAlpha) {
 			const cv = it.c.map((tk, i) => trackAt(P, tk, t, i < 4 ? 100 : 0));
 			if (!it.cm) {
 				const a = String(Math.max(0, cv[3]!) / 100);
@@ -395,8 +579,17 @@ class Inst {
 			// a graphic interpolates when its parent does and it advances in step
 			const parent = this.owner;
 			clip.adv = parent.adv && graphicFrame(it, parent.frame + 1, clip.tl.n) === clip.frame + 1;
+			clip.flows = clip.adv;
 		}
 		clip.render(frac);
+	}
+
+	dispose() {
+		for (const a of this.anims ?? []) {
+			a.cancel();
+			this.owner.player.anims.delete(a);
+		}
+		this.clip?.dispose();
 	}
 
 	private colorWrap(id: string) {
@@ -421,11 +614,142 @@ function matrixOf(P: PProgram, tr: PTrack[], t: number, tpx: number, tpy: number
 		b = sin * sx,
 		c = (cos * skw - sin) * sy,
 		d = (sin * skw + cos) * sy;
-	return `matrix(${r4(a)} ${r4(b)} ${r4(c)} ${r4(d)} ${r4(x - (a * tpx + c * tpy))} ${r4(y - (b * tpx + d * tpy))})`;
+	// (commas: valid as an attribute and as CSS)
+	return `matrix(${r4(a)},${r4(b)},${r4(c)},${r4(d)},${r4(x - (a * tpx + c * tpy))},${r4(y - (b * tpx + d * tpy))})`;
 }
 
 function r4(v: number): string {
 	return String(Math.round(v * 10000) / 10000);
+}
+
+// ------------------------------------------------------------------ Web Animations
+
+const WAAPI = typeof Element !== "undefined" && typeof Element.prototype.animate === "function";
+
+/**
+ * The CSS timing function that takes every changing track from t0 to t1 (keys of the tracks lie at
+ * most at the ends), or null when they differ (or an eased segment is cut): then the span is sampled.
+ */
+function easeBetween(P: PProgram, tracks: (PTrack | undefined)[], t0: number, t1: number): string | null {
+	let need: string | null = null;
+	for (const tr of tracks) {
+		if (typeof tr !== "object") continue;
+		let j = -1;
+		for (let i = 0; i + 3 < tr.length; i += 3)
+			if (tr[i]! <= t0 && t0 < tr[i + 3]!) {
+				j = i;
+				break;
+			}
+		// before the first key, after the last one, or no change: it holds
+		if (j < 0 || tr[j + 1] === tr[j + 4]) continue;
+		const e = tr[j + 2]!;
+		const end = tr[j + 3]!;
+		let ease: string;
+		if (e === 0) {
+			// a hold jumps at the end of its segment
+			if (end > t1 + 1e-9) continue;
+			ease = "step-end";
+		} else if (e === 1) ease = "linear";
+		else if (Math.abs(tr[j]! - t0) < 1e-9 && Math.abs(end - t1) < 1e-9) ease = `cubic-bezier(${P.bz[e - 2]!.join(",")})`;
+		else return null;
+		if (need && need !== ease) return null;
+		need = ease;
+	}
+	return need ?? "linear";
+}
+
+/**
+ * Keyframes for the tracks over their timeline's frames [s, e]: the transform as the same function
+ * list in every keyframe (CSS then interpolates each value on its own, like the tracks) and/or the
+ * alpha. Cached per `key` (programs are shared by every instance of a symbol).
+ */
+const kfCache = new WeakMap<object, Keyframe[]>();
+function keyframes(P: PProgram, key: object, tr: PTrack[] | null, alpha: PTrack | null, s: number, e: number): Keyframe[] {
+	let out = kfCache.get(key);
+	if (out) return out;
+	const tracks: (PTrack | undefined)[] = [...(tr ?? []), ...(alpha === null ? [] : [alpha])];
+	const at = (t: number, offset: number, easing: string): Keyframe => {
+		const k: Keyframe = { offset, easing };
+		if (tr) {
+			const v = (i: number, d: number) => r4(trackAt(P, tr[i], t, d));
+			k.transform = `translate(${v(0, 0)}px,${v(1, 0)}px) rotate(${v(2, 0)}deg) skewX(${v(3, 0)}deg) scale(${v(4, 1)},${v(5, 1)}) translate(${r4(-trackAt(P, tr[6], t, 0))}px,${r4(-trackAt(P, tr[7], t, 0))}px)`;
+		}
+		if (alpha !== null) k.opacity = Math.max(0, Math.min(1, trackAt(P, alpha, t, 100) / 100));
+		return k;
+	};
+	const set = new Set([s, e]);
+	for (const x of tracks) if (typeof x === "object") for (let i = 0; i < x.length; i += 3) if (x[i]! > s && x[i]! < e) set.add(x[i]!);
+	const times = [...set].sort((a, b) => a - b);
+	out = [];
+	const span = e - s;
+	for (let i = 0; i + 1 < times.length; i++) {
+		const t0 = times[i]!,
+			t1 = times[i + 1]!;
+		const ease = easeBetween(P, tracks, t0, t1);
+		if (ease) out.push(at(t0, (t0 - s) / span, ease));
+		else {
+			// four samples a frame, and one just before the end (a hold that jumps there)
+			const n = Math.max(2, Math.ceil((t1 - t0) * 4));
+			for (let k = 0; k < n; k++) {
+				const t = t0 + ((t1 - t0) * k) / n;
+				out.push(at(t, (t - s) / span, "linear"));
+			}
+			out.push(at(t1 - 1e-4, (t1 - 1e-4 - s) / span, "linear"));
+		}
+	}
+	out.push(at(e, 1, "linear"));
+	kfCache.set(key, out);
+	return out;
+}
+
+/** A paused Web Animation of the tracks on `target` (sync() plays and seeks it). */
+function animate(player: Player, target: Element, key: object, tr: PTrack[] | null, alpha: PTrack | null, s: number, e: number): Animation {
+	const a = target.animate(keyframes(player.P, key, tr, alpha, s, e), { duration: ((e - s) / player.P.fps) * 1000, fill: "both" });
+	a.pause();
+	player.anims.add(a);
+	return a;
+}
+
+/**
+ * Puts an animation where the timeline is: at `ms`, playing while its timeline moves on at the
+ * player's speed. While it plays it is left alone (the browser keeps it in step); it is only set
+ * again when it is off by more than a quarter frame (a goto, a loop, a stall of the page). It is
+ * started by its start time, which takes effect at once (play() would start it a frame late, which
+ * would look like a drift).
+ */
+function sync(player: Player, a: Animation, ms: number, run: boolean) {
+	const rate = player.speed;
+	if (a.playbackRate !== rate) a.playbackRate = rate;
+	const now = document.timeline.currentTime as number | null;
+	if (run && rate && now !== null) {
+		const start = now - ms / rate;
+		if (a.startTime === null || Math.abs((a.startTime as number) - start) > 250 / player.P.fps) a.startTime = start;
+	} else if (a.playState !== "idle" || held.get(a) !== ms) {
+		// (a hair past the frame: one step per frame jumps right at the frame's time, and rounding
+		// could land just before it, on the frame before)
+		a.currentTime = ms + 1e-6;
+		hold(a);
+		held.set(a, ms);
+	}
+}
+
+/** Where each held animation was held (see hold()). */
+const held = new WeakMap<Animation, number>();
+
+/**
+ * Holds an animation where it is, as plain styles: the browser draws paused animations on the
+ * compositor, snapped to whole pixels, so a held frame would look a little off from a still one
+ * (edges half a pixel apart). Not rendered (display: none), it stays paused.
+ */
+function hold(a: Animation) {
+	if (a.playState === "idle") return;
+	a.pause();
+	try {
+		a.commitStyles();
+		a.cancel();
+	} catch {
+		// not rendered
+	}
 }
 
 function graphicFrame(it: PInst, frame: number, count: number): number {
@@ -459,25 +783,44 @@ class Player {
 	root!: Clip;
 	loop = true;
 	private mute = false;
-	speed = 1;
+	private rate = 1;
+	get speed() {
+		return this.rate;
+	}
+	set speed(v: number) {
+		this.rate = v;
+		// playing sounds take the new rate (and their stop times) from their positions
+		this.mixer?.voices.forEach((x) => x.hold());
+		this.mixer?.startAll();
+	}
 	named = new Map<string, Clip>();
 	inTick = false;
 	private listeners: Record<string, Listener[]> = {};
 	private time = 0; // seconds since last tick
 	private raf = 0;
 	private last = 0;
-	private running = false;
-	private audio = new Map<string, HTMLAudioElement[]>();
+	running = false;
+	/** seconds played (with speed), the time base of sounds */
+	clock = 0;
+	/** set while seeking: frames passed on the way don't start sounds */
+	quiet = false;
+	mixer: Mixer | null = null;
+	/** the Web Animations of the instances on stage */
+	anims = new Set<Animation>();
 
 	constructor(svg: SVGSVGElement, P: PProgram, loop: boolean) {
 		this.svg = svg;
 		this.P = P;
 		this.loop = loop;
 		this.defs = (svg.querySelector("defs") as SVGDefsElement) ?? (svg.insertBefore(el("defs"), svg.firstChild) as SVGDefsElement);
+		if (__SOUND__ && Object.keys(P.snd).length) this.mixer = new Mixer(this);
 		this.reset();
 	}
 
 	reset() {
+		this.mixer?.stopAll();
+		this.clock = 0;
+		this.root?.dispose();
 		this.root?.node.remove();
 		this.named.clear();
 		this.root = new Clip(this, this.P.tl[this.P.root]!, -1);
@@ -493,8 +836,9 @@ class Player {
 	}
 	set muted(v: boolean) {
 		this.mute = v;
-		// silence what is already playing, too
-		if (v) for (const list of this.audio.values()) list.forEach((a) => a.pause());
+		// silences what is already playing, too
+		if (this.mixer) this.mixer.muted = v;
+		this.rest();
 	}
 
 	emit(e: { type: string; frame: number; label?: string }) {
@@ -505,32 +849,13 @@ class Player {
 		(this.listeners[type] ??= []).push(fn);
 	}
 
-	sound(id: string, sync: number, loops: number, frames: number) {
-		const url = this.P.snd[id];
-		if (!url) return;
-		const list = this.audio.get(id) ?? [];
-		this.audio.set(id, list);
-		if (sync === 2) {
-			list.forEach((a) => a.pause());
-			return;
-		}
-		if (sync === 1 && list.some((a) => !a.paused)) return; // "start": only if not playing
-		const a = new Audio(url);
-		let left = Math.max(1, loops);
-		a.addEventListener("ended", () => {
-			if (--left > 0) a.play().catch(() => {});
-			else list.splice(list.indexOf(a) >>> 0, 1);
-		});
-		if (sync === 3) setTimeout(() => a.pause(), (frames / this.P.fps) * 1000);
-		a.play().catch(() => {});
-		list.push(a);
-	}
-
 	private frameLoop = (now: number) => {
 		if (!this.running) return;
-		const dt = Math.min(0.25, (now - this.last) / 1000) * this.speed;
+		// (the frame's time stamp can lie before the play() call that requested it)
+		const dt = Math.max(0, Math.min(0.25, (now - this.last) / 1000)) * this.speed;
 		this.last = now;
 		this.time += dt;
+		this.clock += dt;
 		const fd = 1 / this.P.fps;
 		while (this.time >= fd) {
 			this.time -= fd;
@@ -546,6 +871,7 @@ class Player {
 			// "once": everything holds when the root timeline stops; otherwise a stopped root leaves
 			// its movie clips running (Flash)
 			if (this.loop || this.root.playing) this.root.tick();
+			else this.root.stopStreams();
 		} finally {
 			this.inTick = false;
 		}
@@ -556,19 +882,50 @@ class Player {
 		// a non-looping animation that ran to its end plays again from the start
 		if (!this.loop && !r.playing && r.ended) r.gotoFrame(0, true);
 		r.playing = true;
+		r.updateAdvance();
 		if (this.running) return;
 		this.running = true;
 		this.last = performance.now();
-		this.raf = requestAnimationFrame(this.frameLoop);
+		if (!this.resting) this.raf = requestAnimationFrame(this.frameLoop);
+		this.mixer?.startAll();
+	}
+
+	/** Out of view (IntersectionObserver), or in a background tab. */
+	offView = false;
+	hiddenTab = false;
+	private resting = false;
+	/**
+	 * Rests while out of view or in a background tab: no frames, its time stands still, and it goes
+	 * on where it was when it is back (saves the CPU and battery a hidden animation would use). A
+	 * player whose sound is on keeps playing out of view, like a video with sound.
+	 */
+	rest() {
+		const r = this.hiddenTab || (this.offView && !(this.mixer && !this.mute));
+		if (r === this.resting) return;
+		this.resting = r;
+		if (!this.running) return;
+		if (r) {
+			cancelAnimationFrame(this.raf);
+			for (const a of this.anims) hold(a);
+		} else {
+			this.last = performance.now();
+			this.raf = requestAnimationFrame(this.frameLoop);
+		}
 	}
 
 	pause() {
 		this.running = false;
 		cancelAnimationFrame(this.raf);
+		for (const a of this.anims) hold(a);
+		// sounds hold with the timeline and go on from there
+		this.mixer?.voices.forEach((v) => v.hold());
 	}
 
 	stop() {
 		this.root.playing = false;
+		// (its animations hold now, not on the next frame)
+		this.root.updateAdvance();
+		this.root.render(this.time * this.P.fps);
 	}
 
 	gotoAndPlay(target: number | string) {
@@ -586,11 +943,20 @@ class Player {
 	seek(seconds: number) {
 		const wasRunning = this.running;
 		this.pause();
-		this.reset();
 		const fd = 1 / this.P.fps;
 		const ticks = Math.floor(seconds / fd + 1e-6);
-		for (let i = 0; i < ticks; i++) this.step();
+		this.quiet = true;
+		try {
+			this.reset();
+			for (let i = 0; i < ticks; i++) {
+				this.clock += fd;
+				this.step();
+			}
+		} finally {
+			this.quiet = false;
+		}
 		this.time = Math.max(0, seconds - ticks * fd);
+		this.clock = seconds;
 		this.root.render(this.time / fd);
 		if (wasRunning) this.play();
 	}
@@ -605,13 +971,242 @@ class Player {
 		const c = this.named.get(name);
 		return c
 			? {
-					play: () => (c.playing = true),
-					stop: () => (c.playing = false),
+					play: () => {
+						c.playing = true;
+						c.updateAdvance();
+					},
+					stop: () => {
+						c.playing = false;
+						c.updateAdvance();
+						this.root.render(this.time * this.P.fps);
+					},
 					gotoAndPlay: (t: number | string) => c.gotoFrame(c.resolve(typeof t === "number" ? t - 1 : t), true),
 					gotoAndStop: (t: number | string) => c.gotoFrame(c.resolve(typeof t === "number" ? t - 1 : t), false),
 				}
 			: null;
 	}
+}
+
+// ------------------------------------------------------------------ sound
+
+/** One playing (or waiting) sound. Its position runs on the player's clock, so it can start late. */
+class Voice {
+	src: AudioBufferSourceNode | null = null;
+	el: HTMLAudioElement | null = null;
+	done = false;
+	readonly m: Mixer;
+	readonly e: PFrameSound;
+	/** player clock at position 0 */
+	readonly born: number;
+	constructor(m: Mixer, e: PFrameSound, born: number) {
+		this.m = m;
+		this.e = e;
+		this.born = born;
+	}
+	pos() {
+		return this.m.player.clock - this.born;
+	}
+	/** Detaches the playing node; the voice starts again (at its position) on the next start(). */
+	hold() {
+		if (this.src) {
+			this.src.onended = null;
+			try {
+				this.src.stop();
+			} catch {}
+			this.src = null;
+		}
+		this.el?.pause();
+		this.el = null;
+	}
+	stop() {
+		this.done = true;
+		this.hold();
+		this.m.voices.delete(this);
+	}
+}
+
+/**
+ * Web Audio playback of frame sounds: in and out points and loops sample exact, volume envelopes,
+ * stream sounds on the timeline's clock. Sounds that can't play yet (still decoding, or blocked
+ * until the visitor interacts with the page) keep their position and join when they can: a long
+ * event sound starts in the middle, a short one that is over by then stays silent.
+ * Without Web Audio, or for a file it can't decode, an <audio> element plays instead.
+ */
+class Mixer {
+	readonly player: Player;
+	private ac: AudioContext | null = null;
+	private out: GainNode | null = null;
+	private bufs = new Map<string, AudioBuffer | null>();
+	voices = new Set<Voice>();
+	held = false;
+
+	constructor(player: Player) {
+		this.player = player;
+		const w = window as unknown as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext; __f2sAudio?: AudioContext };
+		const AC = w.AudioContext ?? w.webkitAudioContext;
+		try {
+			// one context for all players on the page
+			this.ac = w.__f2sAudio ??= new AC!();
+		} catch {
+			this.ac = null;
+		}
+		const ac = this.ac;
+		if (ac) {
+			this.out = ac.createGain();
+			this.out.connect(ac.destination);
+			ac.addEventListener("statechange", () => this.startAll());
+			if (ac.state !== "running") {
+				const unlock = () => void ac.resume().catch(() => {});
+				unlock();
+				for (const t of ["pointerdown", "keydown", "touchend"]) document.addEventListener(t, unlock, { capture: true, passive: true });
+			}
+		}
+		for (const id in player.P.snd) this.load(id);
+		// hidden tabs don't animate: hold the sounds there too
+		document.addEventListener("visibilitychange", () => this.hold(document.hidden));
+	}
+
+	private info(id: string): [string, number, number] {
+		const s = this.player.P.snd[id]!;
+		return typeof s === "string" ? [s, 0, 0] : s;
+	}
+
+	private load(id: string) {
+		const ac = this.ac;
+		if (!ac) return void this.bufs.set(id, null);
+		fetch(this.info(id)[0])
+			.then((r) => r.arrayBuffer())
+			.then((b) => ac.decodeAudioData(b))
+			.then(
+				(b) => this.bufs.set(id, b),
+				() => this.bufs.set(id, null),
+			)
+			.then(() => this.startAll());
+	}
+
+	/** Event, start and stop sounds of a frame just entered. */
+	trigger(e: PFrameSound) {
+		const p = this.player;
+		if (p.quiet) return;
+		const mine = [...this.voices].filter((v) => v.e[1] === e[1]);
+		if (e[2] === 2) return mine.forEach((v) => v.stop());
+		// "start": only when that sound isn't playing yet
+		if (e[2] === 1 && mine.some((v) => !v.done)) return;
+		if (!p.muted) this.voice(e, 0);
+	}
+
+	/** A new voice at `pos` seconds into its playback. */
+	voice(e: PFrameSound, pos: number): Voice {
+		const v = new Voice(this, e, this.player.clock - pos);
+		this.voices.add(v);
+		this.start(v);
+		return v;
+	}
+
+	hold(on: boolean) {
+		this.held = on;
+		if (on) this.voices.forEach((v) => v.hold());
+		else this.startAll();
+	}
+
+	startAll() {
+		this.voices.forEach((v) => this.start(v));
+	}
+
+	stopAll() {
+		this.voices.forEach((v) => v.stop());
+		this.voices.clear();
+	}
+
+	private start(v: Voice) {
+		if (v.done) return;
+		if (v.src || v.el || this.held || !this.player.running) return;
+		const e = v.e;
+		const id = e[1];
+		const buf = this.bufs.get(id);
+		if (buf === undefined) return; // still decoding
+		const [url, len, lead] = this.info(id);
+		const ac = this.ac;
+		const speed = this.player.speed;
+		const loops = e[3];
+		const endless = loops >= 9999;
+		const L = len || buf?.duration || 0;
+		const a = e[5] ?? 0;
+		const b = Math.min(e[6] ?? L, L || Infinity);
+		const seg = b - a;
+		const off = Math.max(0, v.pos());
+		if (!(seg > 0) || (!endless && off >= seg * loops)) return v.stop();
+		const at = a + (off % seg);
+		const left = endless ? 0 : (seg * loops - off) / speed;
+		if (buf && ac && this.out) {
+			if (ac.state !== "running") return;
+			// decoders that read no gapless header keep the encoder delay at the start
+			const skip = buf.duration >= L + lead * 0.9 ? lead : 0;
+			const src = ac.createBufferSource();
+			src.buffer = buf;
+			src.playbackRate.value = speed;
+			if (loops > 1) {
+				src.loop = true;
+				src.loopStart = skip + a;
+				src.loopEnd = skip + b;
+			}
+			const env = e[7];
+			(env ? this.envelope(ac, src, env, off, speed) : src).connect(this.out);
+			src.onended = () => v.stop();
+			src.start(0, skip + at);
+			if (left) src.stop(ac.currentTime + left);
+			v.src = src;
+		} else if (!ac || buf === null) {
+			const el = new Audio(url);
+			let n = Math.floor(off / seg);
+			el.currentTime = at;
+			el.playbackRate = speed;
+			el.ontimeupdate = () => {
+				if (el.currentTime < b && !el.ended) return;
+				if (++n < loops) el.currentTime = a;
+				else v.stop();
+			};
+			el.onended = el.ontimeupdate;
+			el.play().catch(() => {});
+			v.el = el;
+		}
+	}
+
+	/** Left and right volume over time ([t, left, right, ...] from the start of playback). */
+	private envelope(ac: AudioContext, src: AudioNode, env: number[], off: number, speed: number): AudioNode {
+		// mono sounds go to both sides first
+		const up = ac.createGain();
+		up.channelCount = 2;
+		up.channelCountMode = "explicit";
+		up.channelInterpretation = "speakers";
+		const split = ac.createChannelSplitter(2);
+		const merge = ac.createChannelMerger(2);
+		src.connect(up).connect(split);
+		const now = ac.currentTime;
+		for (const k of [1, 2]) {
+			const g = ac.createGain();
+			g.gain.setValueAtTime(envelopeAt(env, k, off), now);
+			for (let i = 0; i < env.length; i += 3) if (env[i]! > off) g.gain.linearRampToValueAtTime(env[i + k]!, now + (env[i]! - off) / speed);
+			split.connect(g, k - 1).connect(merge, 0, k - 1);
+		}
+		return merge;
+	}
+
+	set muted(v: boolean) {
+		if (this.out) this.out.gain.value = v ? 0 : 1;
+		if (v) this.stopAll();
+	}
+}
+
+/** Envelope volume of channel k (1 left, 2 right) at t seconds: linear between points, held outside. */
+function envelopeAt(env: number[], k: number, t: number): number {
+	if (t <= env[0]!) return env[k]!;
+	for (let i = 3; i < env.length; i += 3)
+		if (t < env[i]!) {
+			const t0 = env[i - 3]!;
+			return env[i - 3 + k]! + ((env[i + k]! - env[i - 3 + k]!) * (t - t0)) / (env[i]! - t0);
+		}
+	return env[env.length - 3 + k]!;
 }
 
 // ------------------------------------------------------------------ boot
@@ -657,10 +1252,28 @@ class Player {
 		},
 	};
 	(svg as unknown as { flash2svg: typeof api }).flash2svg = api;
+	// rest out of view and in background tabs (see Player.rest)
+	if (typeof IntersectionObserver === "function")
+		new IntersectionObserver((es) => {
+			player.offView = !es[es.length - 1]!.isIntersecting;
+			player.rest();
+		}).observe(svg);
+	document.addEventListener("visibilitychange", () => {
+		player.hiddenTab = document.hidden;
+		player.rest();
+	});
 	const delay = parseFloat(svg.getAttribute("data-delay") || "0") * 1000;
 	const start = () => setTimeout(() => player.play(), delay);
-	if (begin === "auto") start();
-	else if (begin === "click") svg.addEventListener("click", start, { once: true });
+	// "reduce motion" in the system settings: the poster frame, still, until a click plays it
+	const still = svg.getAttribute("data-reduce") !== "0" && typeof matchMedia === "function" ? matchMedia("(prefers-reduced-motion: reduce)") : null;
+	if (begin === "auto") {
+		if (still?.matches) {
+			player.root.gotoFrame(P.pf ?? 0, false);
+			player.root.render(0);
+			svg.addEventListener("click", start, { once: true });
+		} else start();
+		still?.addEventListener("change", () => (still.matches ? player.pause() : player.play()));
+	} else if (begin === "click") svg.addEventListener("click", start, { once: true });
 	else if (begin === "hover") {
 		svg.addEventListener("pointerenter", () => player.play());
 		svg.addEventListener("pointerleave", () => player.pause());
