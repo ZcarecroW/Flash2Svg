@@ -191,6 +191,11 @@
   SVG compressed by the server is smaller: the 46 test documents as SMIL 1070 KB, .svgz 372 KB,
   Brotli 341 KB. Node's zlib packs it (the CLI and the panel; 3–8 % smaller and faster than the
   JavaScript fallback).
+- **Lottie: repeating bitmap fills share their tiles.** A fill's tiles are laid out once in the
+  pattern's own space and placed by the pattern's transform, so the frames of a shape tween share
+  one grid even while the fill turns (each frame used to carry its own tiles; keyed by content,
+  not by each drawing's copies of the definitions). The morph test document 250 → 141 KB
+  (.lottie 35 → 28 KB), the image documents a little smaller too; unchanged in all three players.
 - **Labels as dotLottie states.** A .lottie of a document whose code snippets make buttons jump
   holds the whole root timeline and a state machine: frame 1, the frame scripts' and the buttons'
   jump targets are states playing up to the next stop() or jump (gotoAndStop targets: stills),

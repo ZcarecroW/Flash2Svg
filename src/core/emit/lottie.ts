@@ -25,7 +25,7 @@ import { channelNumbers, channelText, templateNodes, type MorphChannel } from ".
 import { fromProps, toProps, type ColorProp, type TransformProp } from "../program.ts";
 import { valueAt, type Ease, type Track } from "../tracks.ts";
 import { copyArtwork, type Artwork } from "../artwork.ts";
-import { isNode, walk, type XmlNode } from "../xml.ts";
+import { isNode, serialize, walk, type XmlNode } from "../xml.ts";
 import { bake, sliceTrack, type BakedInstance, type BakedMorph, type BakedNode, type BakedTimeline, type GTrack, type Interval } from "./bake.ts";
 import { adjustColorMatrix, blendHides, blurSigma, gradientSampler, splitColor } from "./filters.ts";
 import { Periods } from "./periods.ts";
@@ -578,9 +578,12 @@ class DrawingBuilder {
 		const P = parseTransform(pat.attrs.patternTransform);
 		const pw = num(pat.attrs.width),
 			ph = num(pat.attrs.height);
-		const tiles = new DrawingBuilder(this.w, this.defs, this.o);
+		let content: LayerOut[] = [];
 		if (pw > 0 && ph > 0) {
 			const pb = transformBox(local, invert(P));
+			// the tiles in the pattern's own space: a grid shared by every drawing with the same pattern
+			// and range (a shape tween's frames, also when the fill turns; measured, snapping the
+			// ranges to share more grids made the single ones bigger than it saved)
 			let i0 = Math.floor(pb.x0 / pw),
 				i1 = Math.ceil(pb.x1 / pw),
 				j0 = Math.floor(pb.y0 / ph),
@@ -590,20 +593,30 @@ class DrawingBuilder {
 				i1 = Math.min(i1, i0 + 20);
 				j1 = Math.min(j1, j0 + 20);
 			}
-			// (dotLottie smooths image edges: thin seams between the tiles; growing them shifts
-			// pixel-art patterns visibly in the other players, measured)
-			for (let j = j0; j < j1; j++)
-				for (let i = i0; i < i1; i++) {
-					const tm = concat(concat([1, 0, 0, 1, i * pw, j * ph], P), m);
-					for (const c of pat.children) if (isNode(c)) tiles.node(c, tm, 1);
-				}
+			const tiles = pat.children.filter(isNode);
+			// (by content: each drawing has its own copies of the definitions a pattern uses)
+			const ident = (n: XmlNode): string => {
+				const href = n.name === "use" ? (n.attrs["xlink:href"] ?? n.attrs.href ?? "").slice(1) : "";
+				const d = href ? this.defs.get(href) : undefined;
+				return d ? `${JSON.stringify({ ...n.attrs, "xlink:href": "", href: "" })}{${ident(d)}}` : serialize({ ...n, attrs: { ...n.attrs, id: "" }, children: [] }) + n.children.map((c) => (isNode(c) ? ident(c) : String(c))).join("");
+			};
+			const key = `tiles|${tiles.map(ident).join("")}|${pw},${ph}|${JSON.stringify(this.o)}|${i0},${i1},${j0},${j1}`;
+			const ref = this.w.precomp(key, "", () => {
+				// (dotLottie smooths image edges: thin seams between the tiles; growing them shifts
+				// pixel-art patterns visibly in the other players, measured)
+				const b = new DrawingBuilder(this.w, this.defs, this.o);
+				for (let j = j0; j < j1; j++) for (let i = i0; i < i1; i++) for (const c of tiles) b.node(c, [1, 0, 0, 1, i * pw, j * ph], 1);
+				b.flush();
+				return [...b.layers].reverse();
+			});
+			const M = concat(P, m);
+			content = [{ json: { ty: 0, refId: ref.id, w: ref.w, h: ref.h, ks: { ...matrixProps(M, Math.max(this.digits, 3)), a: st([ref.ox, ref.oy]) } }, box: transformBox(ref.box, M) }];
 		}
-		tiles.flush();
 		const matte = {
 			ty: "gr",
 			it: [...shapes.map((b) => ({ ty: "sh", ks: st(b) })), { ty: "fl", c: st([1, 1, 1]), o: st(100), r: 1 }, groupTransform(m, this.digits)],
 		};
-		this.matted(tiles.layers, [matte], transformBox(local, m), opacity);
+		this.matted(content, [matte], transformBox(local, m), opacity);
 	}
 
 	/** Content under a clip path (the clip as a track matte). */

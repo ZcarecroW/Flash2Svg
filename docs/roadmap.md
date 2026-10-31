@@ -45,7 +45,7 @@ support (sources below) before starting a package.
 | 3 | Shape tweens as path morphing (SMIL and player) | very high for shape tweens | medium–high | ✅ |
 | 4 | CSS: `linear()` easing, individual transform properties | medium | small–medium | ✅ (also decimals from the displayed size, .svgz) |
 | 5 | Interactivity: triggers, scroll, label state machine | high | medium | ✅ |
-| 6 | Lottie / dotLottie export | very high (reach) | high | ✅ (effects ✅, built filters ✅, state machine ✅, panel preview ✅) |
+| 6 | Lottie / dotLottie export | very high (reach) | high | ✅ (effects, built filters, state machine, panel preview, tinted bitmaps, loop seam, labels as states, shared tiles) |
 | 7 | WOFF2 fonts, video, library export | medium | medium | ✅ accessibility, scale modes, automatic format, library symbols, scenes, web component, GIF/WebP fallbacks |
 
 ### 1. Media encoding settings
@@ -113,7 +113,7 @@ support (sources below) before starting a package.
   - The 46 test documents: CSS 1737 → 1295 KB (gzip 459 → 427), stepped 2042 → 1375 KB (490 → 444); playback costs Edge the same or less (style recalculation −2 to −19 %).
 - ✅ `.svgz` (`ExportSettings.svgz`, `--svgz`) and a server compression note (Brotli) in the README. Tested: Edge, Firefox and WebKit show .svgz only with `Content-Encoding: gzip` from a server (not from disk, not with only the type); Brotli of plain SVG is 8 % smaller than .svgz (341 vs 372 KB for the test documents as SMIL).
 - ✅ Decimal places from the displayed size (`src/core/precision.ts`): coordinates get as many as they span on screen (rounded on the log scale), angles and scale factors too but never fewer than 3 and 4; drawings those of the largest scale they are shown at.
-- ⬜ SMIL could merge an instance's animated parts the same way (one element, `additive="sum"` animations); mind the sandwich order of first pass and tail.
+- ❌ SMIL merging an instance's animated parts (`additive="sum"`): measured, the nested transform wrappers it would remove are 2 KB of 1100 KB (0.2 %, gzip ~1 KB) — not worth the sandwich-order risk with tails.
 
 ### 5. Interactivity without code
 - ✅ Start triggers: hover and click (before), *when visible* (half on screen): SMIL and CSS hold the animation with a few lines of script (IntersectionObserver), so it still plays where scripts don't run; the player starts on its first sight (`src/core/emit/triggers.ts`).
@@ -143,7 +143,7 @@ support (sources below) before starting a package.
 - ✅ Colour effects on bitmaps: tint and brightness as Lottie's Fill effect (colour, opacity = amount, keyed), exact in all three players (f50); other colour effects alpha only (warned).
 - ✅ A seamless loop seam in dotLottie: one more frame holding the last (op + 1, layers that run to the end extended), markers over their full length; loop periods measured exact.
 - ✅ Labels as states, buttons as state machine interactions (`src/core/interactive.ts`): the whole root timeline in the .lottie (a frame range bakes it in order), states from frame 1 and every jump target, Click interactions on the buttons' layers, OpenUrl; one-frame states are stills (dotLottie plays everything for a zero-length segment).
-- ⬜ Shared tile grids for frame-by-frame bitmap fills (each frame repeats its tiles today).
+- ✅ Shared tile grids for frame-by-frame bitmap fills: tiles in the pattern's space, one precomp per pattern content and range, placed by the pattern transform (f45: 250 → 141 KB, 901 → 258 image layers). Measured: snapping ranges to share more grids made single fills bigger than it saved.
 
 ### 7. More
 - ✅ Responsive scale modes like Flash (show all, no border, exact fit; `scale`, `--scale`), letterbox in the stage colour; a transparent background was there already (*Background* off).
