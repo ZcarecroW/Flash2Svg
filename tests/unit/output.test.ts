@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { gunzipSync, strFromU8 } from "fflate";
 import { describe, expect, it } from "vitest";
 import { compileScene, sizeParts, type ExportSettings } from "../../src/core/compile.ts";
-import type { SceneModel } from "../../src/core/model.ts";
+import { blurSigma, buildFilters } from "../../src/core/emit/filters.ts";
+import type { FilterData, SceneModel } from "../../src/core/model.ts";
 
 function compile(name: string, settings: Partial<ExportSettings>) {
 	const model: SceneModel = JSON.parse(readFileSync(new URL(`../fixtures/models/${name}.json`, import.meta.url), "utf8"));
@@ -208,5 +209,39 @@ describe("shared gradient stops", () => {
 			);
 			expect(svg, format).not.toMatch(/<linearGradient[^>]*xlink:href/);
 		}
+	});
+});
+
+describe("filter regions", () => {
+	const shadow = (distance: number, angle: number, blur = 2): FilterData => ({
+		name: "dropShadowFilter",
+		enabled: true,
+		blurX: blur,
+		blurY: blur,
+		distance,
+		angle,
+		quality: "low",
+		strength: 100,
+	});
+	const margin = (...fs: FilterData[]) => buildFilters(fs, { x: 1, y: 1 }, () => {}).margin;
+
+	it("a long sideways shadow needs little room above and below", () => {
+		const m = margin(shadow(300, 0));
+		expect(m.x).toBeGreaterThanOrEqual(300);
+		expect(m.y).toBeLessThan(10);
+	});
+
+	it("stacked filters add up their reach (a shadow of the shadow)", () => {
+		expect(margin(shadow(60, 0), shadow(60, 0)).x).toBeGreaterThanOrEqual(120);
+	});
+
+	it("a diagonal shadow keeps its room on both axes (text boxes are larger than their glyphs)", () => {
+		const m = margin(shadow(4, 45, 4));
+		expect(m.x).toBeCloseTo(3 * blurSigma(4, "low") + 6, 9);
+		expect(m.y).toBe(m.x);
+	});
+
+	it("colour adjustments need no room", () => {
+		expect(margin({ name: "adjustColorFilter", enabled: true, brightness: 20 })).toEqual({ x: 0, y: 0 });
 	});
 });

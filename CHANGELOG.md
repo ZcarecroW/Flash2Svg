@@ -15,6 +15,13 @@
   the content's width and height. Browsers filter that whole area on every frame, and the command
   line's GIF/WebP took seconds a frame (a fuzzed case: 145 s → 6 s). Now everything on the layer
   counts, in its smallest keyframe (so a blur is never cut off).
+- **Filter regions per axis, and stacked filters no longer cut off.** A filter's room around its
+  content was one number for both axes: a long sideways shadow got the same room above and below
+  (a 300 px shadow on a 30 px tall panel: a region 11 times its height; the command line's WebP of
+  that case 16.4 → 3.0 s). Each axis now gets at most twice its own reach, never more than before,
+  so ordinary shadows and glows keep exactly their regions (all filter test documents render pixel
+  for pixel the same). And filters on the same object now add up their reach: a second drop shadow
+  (the shadow of the shadow) was cut off at the first one's distance.
 - **Exports that hung on a dialog.** Animate's first *save a copy* of a document returns before
   the copy is written; opening it that early showed "An error occurred opening file" and the
   export waited for someone to close it. The copy is now opened once it is complete (and gets a

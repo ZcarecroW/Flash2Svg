@@ -258,7 +258,7 @@ export class OutputDoc {
 		size: { w: number; h: number } = { w: 100, h: 100 },
 	): string | null {
 		const prims: XmlNode[] = [];
-		let margin = 0;
+		let margin = { x: 0, y: 0 };
 		if (filters.length) {
 			const b = buildFilters(filters, scale, warn);
 			prims.push(...b.primitives);
@@ -270,10 +270,10 @@ export class OutputDoc {
 		}
 		if (!prims.length) return null;
 		const node = el("filter", { "color-interpolation-filters": "sRGB" }, prims);
-		if (margin > 0) {
+		if (margin.x > 0 || margin.y > 0) {
 			// region relative to the element's bounding box, grown by the effect's reach
-			const mx = Math.min(5, margin / Math.max(1, size.w) + 0.05);
-			const my = Math.min(5, margin / Math.max(1, size.h) + 0.05);
+			const mx = Math.min(5, margin.x / Math.max(1, size.w) + 0.05);
+			const my = Math.min(5, margin.y / Math.max(1, size.h) + 0.05);
 			Object.assign(node.attrs, { x: fmt(-mx, 3), y: fmt(-my, 3), width: fmt(1 + 2 * mx, 3), height: fmt(1 + 2 * my, 3) });
 		}
 		const key = serialize(node);

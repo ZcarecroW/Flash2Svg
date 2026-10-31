@@ -14,13 +14,13 @@
 //     seek, speed, clips) and clicked, hovered and tabbed at random
 // Failures are grouped by message; each group's first case is saved to tests/out/fuzz/ so that
 // `node scripts/fuzz.ts --replay tests/out/fuzz/<case>.json` runs it again.
-// Usage: node scripts/fuzz.ts [--runs 300] [--seed 1] [--formats smil,css,...] [--browser] [--replay file]
+// Usage: node scripts/fuzz.ts [--runs 300] [--seed 1] [--formats smil,css,...] [--browser [--verbose]] [--replay file]
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { createServer } from "node:http";
 import { strFromU8, unzipSync } from "fflate";
-import { chromium, type Page } from "playwright-core";
+import { chromium, type Browser, type Page } from "playwright-core";
 import { compileScene, type CompileOutput, type ExportSettings } from "../src/core/compile.ts";
 import { encodeImages } from "../src/core/images.ts";
 import { encodeSounds } from "../src/core/audio.ts";
@@ -46,6 +46,7 @@ const FORMATS = opt("formats", "smil,css,player,static,lottie,dotlottie,auto,gif
 const REPLAY = opt("replay", "");
 const MUTATE = !args.includes("--no-mutate");
 const BROWSER = args.includes("--browser");
+const VERBOSE = args.includes("--verbose");
 
 // ------------------------------------------------------------------ random
 let state = SEED >>> 0;
@@ -646,6 +647,7 @@ mkdirSync(join(outDir, "fuzz"), { recursive: true });
 
 // ------------------------------------------------------------------ browser
 let page: Page | null = null;
+let browser: Browser | null = null;
 let newPage: () => Promise<Page>;
 let served = "";
 const errors: string[] = [];
@@ -655,11 +657,11 @@ if (BROWSER) {
 	await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
 	server.unref();
 	base = `http://127.0.0.1:${(server.address() as { port: number }).port}/`;
-	const browser = await chromium.launch({ channel: "msedge", headless: true });
-	process.on("exit", () => void browser.close());
+	browser = await chromium.launch({ channel: "msedge", headless: true });
+	process.on("exit", () => void browser?.close());
 	// a page of its own context: one that hangs is left behind with it
 	newPage = async () => {
-		const p = await (await browser.newContext({ viewport: { width: 640, height: 480 } })).newPage();
+		const p = await (await browser!.newContext({ viewport: { width: 640, height: 480 } })).newPage();
 		p.on("pageerror", (e) => errors.push(`page error: ${e.message}`));
 		p.on("console", (m) => {
 			if (m.type() === "error" && !/Failed to load resource/.test(m.text())) errors.push(`console: ${m.text()}`);
@@ -677,13 +679,28 @@ async function browserCheckTimed(svg: string, ops: Op[]): Promise<string> {
 	clearTimeout(timer);
 	if (result.startsWith("browser:")) {
 		const old = page!;
-		page = await newPage();
-		void old
-			.context()
-			.close()
-			.catch(() => {});
+		page = await within(newPage(), 10000);
+		if (page)
+			void old
+				.context()
+				.close()
+				.catch(() => {});
+		else {
+			// the whole browser stopped answering (a wedged GPU process takes every page with it): start a
+			// new one (Playwright kills one that won't close when this process exits)
+			void within(browser!.close(), 5000);
+			browser = await chromium.launch({ channel: "msedge", headless: true });
+			page = await newPage();
+			if (VERBOSE) console.log("  (browser restarted)");
+		}
 	}
 	return result;
+}
+
+/** The promise's value, or null once `ms` pass without one. */
+function within<T>(p: Promise<T>, ms: number): Promise<T | null> {
+	let timer: NodeJS.Timeout | undefined;
+	return Promise.race([p.catch(() => null), new Promise<null>((r) => (timer = setTimeout(() => r(null), ms)))]).finally(() => clearTimeout(timer));
 }
 
 type Op = ["api", string, unknown, string] | ["click" | "move", number, number] | ["key", string] | ["wait", number];
@@ -752,6 +769,7 @@ async function oneCase(
 ) {
 	const t0 = performance.now();
 	let problem = "";
+	let browserMs = -1;
 	try {
 		const out = await run(c.base, structuredClone(c.model), c.settings, c.encode);
 		problem = checkOutput(out, c.settings);
@@ -767,7 +785,9 @@ async function oneCase(
 			// saved first: a hang can take the process with it
 			c.ops ??= browserOps(c.model, c.settings);
 			writeFileSync(join(outDir, "fuzz", "current.json"), JSON.stringify(c));
+			const t = performance.now();
 			problem = await browserCheckTimed(f.svg, c.ops);
+			browserMs = performance.now() - t;
 		}
 	} catch (e) {
 		const err = e as Error;
@@ -780,6 +800,14 @@ async function oneCase(
 	}
 	const ms = performance.now() - t0;
 	if (!problem && ms > 20000) problem = `slow: ${(ms / 1000).toFixed(1)} s`;
+	if (VERBOSE) {
+		// slow but not a problem yet: kept for profiling
+		const keep = !problem && ms > 5000 ? join(outDir, "fuzz", `slow-${SEED}-${n}.json`) : "";
+		if (keep) writeFileSync(keep, JSON.stringify(c));
+		console.log(
+			`  #${n} ${c.base} ${c.settings.format}: ${ms.toFixed(0)} ms${browserMs >= 0 ? ` (browser ${browserMs.toFixed(0)})` : ""}${problem ? " - " + problem : ""}${keep ? " -> " + keep : ""}`,
+		);
+	}
 	if (problem) {
 		const key = problem.replace(/\d+(\.\d+)?/g, "#").slice(0, 160);
 		const f = failures.get(key);
@@ -829,3 +857,5 @@ console.log(`\nseed ${SEED}: ${RUNS} cases in ${((performance.now() - t0) / 1000
 for (const [, f] of [...failures].sort((a, b) => b[1].count - a[1].count)) console.log(`\n[${f.count}×] ${f.first}`);
 console.log(failures.size ? `\nFUZZ: ${failures.size} kind(s) of problems` : "\nFUZZ: no problems");
 process.exitCode = failures.size ? 1 : 0;
+// an open browser keeps the process alive (Playwright kills one that won't close on exit)
+if (browser && (await within(browser.close(), 10000)) === null) process.exit();

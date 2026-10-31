@@ -156,8 +156,8 @@ export function adjustColorMatrix(f: FilterData): number[] {
 
 export interface FilterBuild {
 	primitives: XmlNode[];
-	/** Extra room the effect needs around the element, in its local units. */
-	margin: number;
+	/** Extra room the effect needs around the element on each axis, in its local units. */
+	margin: { x: number; y: number };
 }
 
 /**
@@ -181,7 +181,8 @@ export function blurSigma(amount: number, quality: unknown): number {
  */
 export function buildFilters(filters: FilterData[], scale: { x: number; y: number }, warn: (m: string) => void): FilterBuild {
 	const prims: XmlNode[] = [];
-	let margin = 0;
+	const reach = { x: 0, y: 0 };
+	let both = 0;
 	let src = "SourceGraphic";
 	let k = 0;
 	const id = () => `r${k++}`;
@@ -199,7 +200,13 @@ export function buildFilters(filters: FilterData[], scale: { x: number; y: numbe
 		const dx = Math.round(Math.cos(ang) * dist) / sx,
 			dy = Math.round(Math.sin(ang) * dist) / sy;
 		const strength = n(f.strength, 100) / 100;
-		margin = Math.max(margin, 3 * Math.max(sdx, sdy) + Math.abs(dx) + Math.abs(dy));
+		// each filter works on the result of the ones before it, so their reach adds up
+		if (f.name !== "adjustColorFilter") {
+			const moves = f.name !== "blurFilter" && f.name !== "glowFilter";
+			reach.x += 3 * sdx + (moves ? Math.abs(dx) : 0);
+			reach.y += 3 * sdy + (moves ? Math.abs(dy) : 0);
+			both += 3 * Math.max(sdx, sdy) + Math.abs(dx) + Math.abs(dy);
+		}
 
 		switch (f.name) {
 			case "blurFilter": {
@@ -381,7 +388,12 @@ export function buildFilters(filters: FilterData[], scale: { x: number; y: numbe
 				warn(`Filter ${f.name} is not supported`);
 		}
 	}
-	return { primitives: prims, margin };
+	// The region is a fraction of the content's bounding box, sized from Animate's bounds, which
+	// can be larger (text boxes, strokes): room for twice the reach on each axis covers that.
+	// Never more than the same room on both axes, though: a long sideways shadow would otherwise
+	// need it above and below too, and renderers like resvg filter the whole region, on the stage
+	// or not (a 300 px shadow on a 30 px tall panel: 11 times its height, 7 times the time)
+	return { primitives: prims, margin: { x: Math.min(both, 2 * reach.x), y: Math.min(both, 2 * reach.y) } };
 }
 
 function alphaOf(prims: XmlNode[], src: string, id: () => string): string {
