@@ -46,7 +46,7 @@ support (sources below) before starting a package.
 | 4 | CSS: `linear()` easing, individual transform properties | medium | small–medium | ✅ (also decimals from the displayed size, .svgz) |
 | 5 | Interactivity: triggers, scroll, label state machine | high | medium | ✅ (labels as dotLottie states ⬜, see 6) |
 | 6 | Lottie / dotLottie export | very high (reach) | high | ✅ (effects ✅, built filters ✅, state machine ✅, panel preview ✅) |
-| 7 | WOFF2 fonts, video, library export | medium | medium | 🚧 accessibility ✅, scale modes ✅, automatic format ✅, library symbols ✅, scenes ✅ |
+| 7 | WOFF2 fonts, video, library export | medium | medium | ✅ accessibility, scale modes, automatic format, library symbols, scenes, web component, GIF/WebP fallbacks |
 
 ### 1. Media encoding settings
 - ✅ **Images:**
@@ -151,7 +151,7 @@ support (sources below) before starting a package.
 - ✅ Export library symbols as separate SVGs (icon workflows): *Source: Selected library symbols* (one file each) was there already.
 - ✅ Export several scenes: *All scenes in a row* joins them into one timeline (`src/core/scenes.ts`; frame numbers, scene jumps, next/previous scene, labels per scene).
 - ✅ A web component (`<flash2svg-player>`, `src/web/flash2svg-player.ts`, 1.7 KB) with lazy loading: inline SVG (no shadow root: the player finds its svg through `document.currentScript`), scripts recreated so they run.
-- ⬜ Raster fallbacks (animated WebP/AVIF, MP4, GIF), e.g. for e-mail.
+- ✅ Raster fallbacks: animated GIF (gifenc) and animated WebP (own muxer, changed rectangles), `src/core/raster.ts`; resvg-wasm in the CLI, the browser in the panel; `scripts/e2e-raster.ts`. (MP4 / AVIF sequences: not done — no small encoder without FFmpeg; WebCodecs could do H.264 in the panel.)
 - ✅ Pick the format automatically (`auto`): the player for sounds / mouse handlers, else CSS unless SMIL is more than 15 % smaller (test documents: CSS 40, SMIL 5, player 3).
 
 ## Sources

@@ -10,6 +10,7 @@ kind of animation in the file:
 | **CSS** | `@keyframes` on the individual transform properties, `cubic-bezier()` or `linear()` easing, class based | ✓ | button states, web links, pause from your page CSS, scroll-driven (inline) |
 | **JS player** | artwork + compact timeline + a 14.6 KB runtime with real Flash semantics (15.9 KB with shape-tween morphs, 17.4 KB with mouse handlers) | poster frame only | ✓ `play()`, `stop()`, `gotoAndPlay("label")`, buttons, Animate's code snippets, scroll, sounds |
 | **Frames** | one still SVG per frame | ✓ | – |
+| **GIF** / **WebP** | animated raster fallbacks of the first pass (GIF: 256 colours a frame; WebP: full colour with alpha, only the changed rectangle per frame), for e-mail and apps without SVG animation | ✓ | – |
 | **Automatic** | the JS player when sounds or mouse handlers need it, else CSS — or SMIL when that is clearly smaller (shape tweens) | ✓ (CSS/SMIL) | as the chosen format |
 | **Lottie** / **.lottie** | Lottie JSON, or a dotLottie archive with its bitmaps, for lottie-web, dotLottie, Skottie and the app players (iOS, Android, Flutter, React Native) | – | through the player's API |
 

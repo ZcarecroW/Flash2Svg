@@ -14,6 +14,8 @@ import { createCodecs } from "../core/codecs.ts";
 import { encodeImages } from "../core/images.ts";
 import { createFontCodecs, encodeFonts } from "../core/fonts.ts";
 import { nodeFontFiles } from "./fonts-node.ts";
+import { exportRaster } from "../core/raster.ts";
+import { nodeRasterizer } from "./raster-node.ts";
 import type { SceneModel } from "../core/model.ts";
 import { nodeWasmLoader } from "./wasm.ts";
 
@@ -21,7 +23,8 @@ const HELP = `flash2svg <scene.json> [options]
 
   -o, --out <file>        output file (default: <document>.svg, .json or .lottie next to scene.json)
   --format <f>            smil (default) | css | player | static | lottie (JSON) | dotlottie (.lottie) |
-                          auto (the player for sounds / mouse handlers, else CSS or SMIL)
+                          auto (the player for sounds / mouse handlers, else CSS or SMIL) |
+                          gif | webp (animated raster fallbacks, e.g. for e-mail)
   --frames <a-b>          frame range, 1-based inclusive (e.g. 1-24)
   --loop <m>              auto (follow stop() scripts) | always | never
   --begin <m>             auto | click | hover | manual | visible (when half on screen) |
@@ -98,7 +101,7 @@ async function main(argv: string[]) {
 				out = val();
 				break;
 			case "--format":
-				s.format = oneOf("smil", "css", "player", "static", "lottie", "dotlottie", "auto");
+				s.format = oneOf("smil", "css", "player", "static", "lottie", "dotlottie", "auto", "gif", "webp");
 				break;
 			case "--frames": {
 				const m = /^(\d+)(?:-(\d+))?$/.exec(val());
@@ -225,13 +228,14 @@ async function main(argv: string[]) {
 		warnings = [...warnings, ...r.warnings];
 	}
 	// fonts of dynamic and input text (SVG formats)
-	if (s.embedFonts !== false && !s.textAsOutlines && s.format !== "lottie" && s.format !== "dotlottie") {
+	if (s.embedFonts !== false && !s.textAsOutlines && s.format !== "lottie" && s.format !== "dotlottie" && s.format !== "gif" && s.format !== "webp") {
 		const { compress } = await import("woff2-encoder");
 		const r = await encodeFonts(model, nodeFontFiles(), createFontCodecs(loader, compress));
 		model = r.model;
 		warnings = [...warnings, ...r.warnings];
 	}
-	const result = compileScene(model, files, s, 0, { gzip: (d) => gzipSync(d, { level: 9 }) });
+	const raster = s.format === "gif" || s.format === "webp";
+	const result = raster ? await exportRaster(model, files, s, nodeRasterizer(loader), createCodecs(loader)) : compileScene(model, files, s, 0, { gzip: (d) => gzipSync(d, { level: 9 }) });
 	result.warnings.unshift(...warnings);
 	const defaultExt = result.files[0]?.ext ?? ".svg";
 	const target = resolve(out || join(base, "..", basename(model.doc.name, extname(model.doc.name)) + defaultExt));

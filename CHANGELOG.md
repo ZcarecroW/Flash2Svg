@@ -191,6 +191,14 @@
   SVG compressed by the server is smaller: the 46 test documents as SMIL 1070 KB, .svgz 372 KB,
   Brotli 341 KB. Node's zlib packs it (the CLI and the panel; 3–8 % smaller and faster than the
   JavaScript fallback).
+- **GIF and WebP fallbacks** (`--format gif|webp`): the timeline's first pass as an animated
+  GIF (a palette per frame, 1-bit transparency, delays rounded on the running total so the length
+  stays) or an animated WebP (lossy at the image quality with alpha; each frame only the rectangle
+  that changed, written by our own RIFF muxer). Identical neighbouring frames merge. Frames come
+  from the still renderer tick by tick (nested clips at their own playheads), rasterised by resvg
+  (WebAssembly) in the CLI and by the browser in the panel. Checked frame by frame with
+  ImageDecoder in Edge: GIF exact at pixelmatch's colour threshold, WebP within 0.12 %; e.g. the
+  nested-clips test document 48 KB GIF / 28 KB WebP, exported in 0.2 s.
 - **Web component** `<flash2svg-player src="hero.svg">` (1.7 KB, `dist/web`): loads an export
   when it comes near the screen, puts it inline (scripts run: the JS player, code snippets, start
   triggers; scroll-driven CSS works) and shows its children until then; `element.player` is the

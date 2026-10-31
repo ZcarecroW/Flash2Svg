@@ -18,9 +18,10 @@ import type { SceneModel } from "./model.ts";
 
 /**
  * "lottie": Lottie JSON; "dotlottie": the same in a .lottie archive with its bitmaps; "auto": the
- * JS player when sounds or mouse handlers need its script, else CSS or SMIL (see chooseFormat).
+ * JS player when sounds or mouse handlers need its script, else CSS or SMIL (see chooseFormat);
+ * "gif" / "webp": animated raster fallbacks (raster.ts: exportRaster, async, instead of compileScene).
  */
-export type OutputFormat = "smil" | "css" | "player" | "static" | "lottie" | "dotlottie" | "auto";
+export type OutputFormat = "smil" | "css" | "player" | "static" | "lottie" | "dotlottie" | "auto" | "gif" | "webp";
 
 /** CSS plays transforms on the compositor (smoother, also in Safari): chosen up to this much larger than SMIL. */
 const CSS_SIZE_FACTOR = 1.15;

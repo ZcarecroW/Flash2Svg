@@ -137,6 +137,7 @@ function copyStatic() {
 		for (const src of WASM) copyFileSync(join(repo, "node_modules", src), join(dir, src.slice(src.lastIndexOf("/") + 1)));
 		copyFileSync(join(repo, "node_modules/wasm-media-encoders/wasm/mp3.wasm"), join(dir, "mp3.wasm"));
 		copyFileSync(join(repo, "node_modules/harfbuzzjs/dist/harfbuzz-subset.wasm"), join(dir, "harfbuzz-subset.wasm"));
+		if (dir.endsWith(join("cli", "wasm"))) copyFileSync(join(repo, "node_modules/@resvg/resvg-wasm/index_bg.wasm"), join(dir, "resvg.wasm"));
 	}
 	// the panel's dotLottie preview
 	copyFileSync(join(repo, "node_modules/@lottiefiles/dotlottie-web/dist/dotlottie-player.wasm"), join(ext, "wasm", "dotlottie-player.wasm"));

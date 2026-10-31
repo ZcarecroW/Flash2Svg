@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { MP3_WASM, MP3_WASM_SOURCE } from "../core/audio-codecs.ts";
 import { SUBSET_WASM, SUBSET_WASM_SOURCE } from "../core/fonts.ts";
+import { RESVG_WASM, RESVG_WASM_SOURCE } from "./raster-node.ts";
 import { WASM_FILES, WASM_SOURCES, type Codec, type WasmLoader } from "../core/images.ts";
 
 /**
@@ -19,6 +20,7 @@ export function nodeWasmLoader(): WasmLoader {
 		if (existsSync(built)) return readFileSync(built);
 		if (file === MP3_WASM) return readFileSync(require.resolve(MP3_WASM_SOURCE));
 		if (file === SUBSET_WASM) return readFileSync(require.resolve(SUBSET_WASM_SOURCE));
+		if (file === RESVG_WASM) return readFileSync(require.resolve(RESVG_WASM_SOURCE));
 		const codec = byFile.get(file);
 		if (!codec) throw new Error(`Unknown codec file ${file}`);
 		return readFileSync(require.resolve(WASM_SOURCES[codec]));

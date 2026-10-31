@@ -29,6 +29,8 @@
 		{ id: "static", name: "Frames", hint: "One still SVG per frame (no animation)." },
 		{ id: "lottie", name: "Lottie", hint: "Lottie JSON for lottie-web, dotLottie, Skottie and the iOS / Android players." },
 		{ id: "dotlottie", name: ".lottie", hint: "dotLottie: the Lottie animation and its bitmaps in one compressed file." },
+		{ id: "gif", name: "GIF", hint: "Animated GIF (256 colours a frame): a fallback where SVG doesn't play, e.g. e-mail." },
+		{ id: "webp", name: "WebP", hint: "Animated WebP: smaller than GIF, full colour with alpha; a fallback for apps and mails that show WebP." },
 	] as const;
 
 	const lottie = $derived(panel.export.format === "lottie" || panel.export.format === "dotlottie");

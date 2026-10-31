@@ -9,6 +9,7 @@ import { encodeImages, type Codecs, type ImageReport, type WasmLoader } from "..
 import type { createCodecs } from "../../core/codecs.ts";
 import type { SceneModel } from "../../core/model.ts";
 import { encodeFonts, fontFiles, fontFolders, type FontCodecs, type FontFs } from "../../core/fonts.ts";
+import { exportRaster, type Rasterize } from "../../core/raster.ts";
 import { evalJson, evalScript, extensionPath, fromFileUri, node, toFileUri } from "./cep.ts";
 
 export interface DocInfo {
@@ -109,6 +110,25 @@ function lazyBundle<T>(file: string, global: string, what: string): () => Promis
 	};
 }
 
+/** SVG frames to pixels by the panel's browser (raster.ts). */
+const canvasRasterizer: Rasterize = async (svg, width, height) => {
+	const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+	try {
+		const img = new Image(width, height);
+		img.src = url;
+		await img.decode();
+		const c = document.createElement("canvas");
+		c.width = width;
+		c.height = height;
+		const g = c.getContext("2d", { willReadFrequently: true })!;
+		g.drawImage(img, 0, 0, width, height);
+		const d = g.getImageData(0, 0, width, height);
+		return { data: d.data, width, height };
+	} finally {
+		URL.revokeObjectURL(url);
+	}
+};
+
 /** The image codecs (panel/codecs.js) and the audio codecs (panel/audio.js). */
 const panelCodecs = lazyBundle<Codecs>("codecs.js", "Flash2SvgCodecs", "image codecs");
 const panelAudio = lazyBundle<AudioCodecs>("audio.js", "Flash2SvgAudio", "audio codecs");
@@ -145,7 +165,7 @@ export async function docInfo(): Promise<DocInfo> {
 
 /** The file extension a format writes. */
 export function formatExt(format: string | undefined): string {
-	return format === "lottie" ? ".json" : format === "dotlottie" ? ".lottie" : ".svg";
+	return format === "lottie" ? ".json" : format === "dotlottie" ? ".lottie" : format === "gif" ? ".gif" : format === "webp" ? ".webp" : ".svg";
 }
 
 export function defaultOutput(info: DocInfo, symbol?: string, ext = ".svg"): string {
@@ -244,7 +264,7 @@ async function exportInto(
 
 	// fonts of dynamic and input text (SVG formats)
 	const lottieOut = settings.format === "lottie" || settings.format === "dotlottie";
-	if (settings.embedFonts !== false && !settings.textAsOutlines && !lottieOut) {
+	if (settings.embedFonts !== false && !settings.textAsOutlines && !lottieOut && settings.format !== "gif" && settings.format !== "webp") {
 		const nd = nodeOrThrow();
 		const files = fontFiles(nd.fs as unknown as FontFs, nd.path.join, fontFolders(nd.os.platform(), (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env ?? {}, nd.os.homedir(), nd.path.join));
 		const enc = await encodeFonts(model, files, await panelFonts());
@@ -259,7 +279,8 @@ async function exportInto(
 	// Node's zlib packs .svgz smaller than the fallback
 	const hooks = { gzip: (d: Uint8Array) => node.zlib.gzipSync(d, { level: 9 }) };
 	for (let r = 0; r < model.roots.length; r++) {
-		const out = compileScene(model, files, settings, r, hooks);
+		const raster = settings.format === "gif" || settings.format === "webp";
+		const out = raster ? await exportRaster(model, files, settings, canvasRasterizer, settings.format === "webp" ? await panelCodecs() : null) : compileScene(model, files, settings, r, hooks);
 		outputs.push(out);
 		out.warnings.forEach((w) => warnings.add(w));
 		const rootName = model.timelines[model.roots[r]!]?.name ?? "";
