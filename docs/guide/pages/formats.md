@@ -49,7 +49,7 @@ One still SVG per frame (`hero_1.svg`, `hero_2.svg`, …), or one for *Current f
 
 ## GIF and WebP
 
-Animated pictures for places where SVG doesn't animate: e-mail clients, chat apps, old CMSes. **GIF** has 256 colours per frame and plays everywhere. **WebP** keeps full colour and transparency and is usually much smaller; current mail clients and browsers show it. Both hold the first pass of the animation (at most 1500 frames) and repeat it.
+Animated pictures for places where SVG doesn't animate: e-mail clients, chat apps, old CMSes. **GIF** has 256 colours per frame and plays everywhere. **WebP** keeps full colour and transparency and is usually much smaller; current mail clients and browsers show it — lossless for flat drawings (exact, and smaller than lossy there), lossy at the image quality for gradients and photos, chosen by the export. Both hold the first pass of the animation as the SVG formats play it — movie clips that keep running on a one-frame timeline or after a `stop()` included — at most 1500 frames, and repeat it from the start (a part that plays once before a loop comes again; warned). Above 50 frames a second a GIF leaves out a picture now and then (browsers would show very short frames for a tenth of a second), keeping its length.
 
 ## Lottie and .lottie
 

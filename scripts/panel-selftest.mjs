@@ -242,7 +242,8 @@ const jobs = [
 		select: ["spinner", "counter"],
 		expect: { files: 2, names: ["lib_spinner.gif", "lib_counter.gif"], differ: true },
 	},
-	// a range in a GIF, typed backwards: the frames between, in order
+	// a range in a GIF, typed backwards: frames 2-3 in order, extended as in the SVG formats until
+	// the movie clips running in them come round (12 frames)
 	{
 		fla: fla("f04-nested"),
 		output: join(out, "range.gif"),
@@ -250,8 +251,11 @@ const jobs = [
 		frames: "range",
 		rangeStart: 3,
 		rangeEnd: 2,
-		expect: { files: 1, gifFrames: 2 },
+		expect: { files: 1, gifFrames: 12 },
 	},
+	// a one-frame main timeline whose movie clips keep running: GIF and WebP play them (they were one still picture)
+	{ fla: fla("f28-onestop"), output: join(out, "onestop.gif"), settings: { format: "gif" }, expect: { files: 1, minGifFrames: 20 } },
+	{ fla: fla("f28-onestop"), output: join(out, "onestop.webp"), settings: { format: "webp" }, expect: { files: 1, minWebpFrames: 20 } },
 	// kept scene data never replaces a folder of the user's
 	{ fla: fla("f02-eases"), output: join(out, "foreign", "mine.svg"), settings: { format: "smil" }, keepScene: true, expect: { error: /holds something else/ } },
 	// a second scene: only the current one is exported, with a warning
@@ -323,6 +327,9 @@ res.results.forEach((r, i) => {
 	const problems = [];
 	for (const f of exp.at ?? []) if (!r.files.includes(f)) problems.push(`not written to ${f} (but ${r.files.join(", ")})`);
 	if (exp.differ && r.files.length > 1 && readFileSync(r.files[0]).equals(readFileSync(r.files[1]))) problems.push("the files are the same");
+	if (exp.minGifFrames && r.files[0] && gifFrames(r.files[0]) < exp.minGifFrames) problems.push(`only ${gifFrames(r.files[0])} GIF frames`);
+	const webpFrames = (f) => readFileSync(f).toString("latin1").split("ANMF").length - 1;
+	if (exp.minWebpFrames && r.files[0] && webpFrames(r.files[0]) < exp.minWebpFrames) problems.push(`only ${webpFrames(r.files[0])} WebP frames`);
 	if (exp.gifFrames !== undefined && r.files[0] && gifFrames(r.files[0]) !== exp.gifFrames)
 		problems.push(`${gifFrames(r.files[0])} GIF frames, expected ${exp.gifFrames}`);
 	// the size overview: the parts add up to the files' size; the expected ones are there

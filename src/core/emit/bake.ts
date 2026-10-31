@@ -111,7 +111,21 @@ export interface BakeResult {
 
 const EMPTY = -1;
 
-export function bake(ctx: Context, rootId: string, opts: BakeOptions): BakeResult {
+/** The root timeline over the horizon: its frame at each tick, and how the horizon repeats. */
+export interface RootTicks {
+	/** The root timeline's frame at each tick. */
+	frames: Int32Array;
+	horizon: Horizon;
+}
+
+/**
+ * How long one pass of the root timeline lasts and which root frame each tick shows: the frames
+ * the playhead visits (frame scripts, a range, "always"), extended so movie clips that keep
+ * running come round exactly (a loop: their common period; a root that stops: until their
+ * intros have played, then their period as a tail). Every format uses it — the SVG formats
+ * through bake(), the GIF/WebP fallbacks (raster.ts) to know how many pictures to draw.
+ */
+export function rootTicks(ctx: Context, rootId: string, opts: Pick<BakeOptions, "loop" | "startFrame" | "endFrame" | "maxTicks">): RootTicks {
 	const prog = ctx.programs[rootId];
 	if (!prog) throw new Error(`Unknown timeline ${rootId}`);
 	const fps = ctx.model.doc.frameRate || 24;
@@ -201,9 +215,18 @@ export function bake(ctx: Context, rootId: string, opts: BakeOptions): BakeResul
 		rootFrames[t] =
 			t < frames.length ? frames[t]! : intro ? frames[intro + ((t - intro) % cycle)]! : loop ? frames[t % frames.length]! : frames[frames.length - 1]!;
 
+	return { frames: rootFrames, horizon: { ticks: H, loop, fps, tail, ...(intro ? { intro: true } : {}) } };
+}
+
+export function bake(ctx: Context, rootId: string, opts: BakeOptions): BakeResult {
+	const prog = ctx.programs[rootId];
+	if (!prog) throw new Error(`Unknown timeline ${rootId}`);
+	const { frames: rootFrames, horizon } = rootTicks(ctx, rootId, opts);
+	const H = horizon.ticks;
+
 	const baker = new Baker(ctx, opts.smooth, H, opts.morph, opts.turning);
 	const root = baker.timeline(prog, rootFrames, 0);
-	return { horizon: { ticks: H, loop, fps, tail, ...(intro ? { intro: true } : {}) }, root, frames: rootFrames, timelines: baker.all };
+	return { horizon, root, frames: rootFrames, timelines: baker.all };
 }
 
 /** Ticks after which a running movie clip (and the clips running inside it) repeats; 1 = it stops. */

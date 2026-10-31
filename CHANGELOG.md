@@ -1,5 +1,28 @@
 # Changelog
 
+## 4.2.1 (2026-10-31)
+
+- **GIF and WebP of movie clips.** The raster export followed only the main timeline's frames: a
+  one-frame main timeline with running movie clips (the guide's gears demo) came out as one still
+  picture, and clips that keep running after a `stop()` stopped with it. GIF and WebP now last as
+  long as the SVG formats' first pass (the same calculation, moved out of `bake()` as
+  `rootTicks()`; all SVG and Lottie output byte for byte the same): the gears demo 1 → 120
+  pictures, the stop() test documents 12 → 105 and 1 → 98. A part that plays once before the loop
+  comes again each time (GIF and WebP repeat from the start; warned).
+- **GIF and WebP above 50 frames a second.** Browsers show frames of 10 ms or less for 100 ms; a
+  60 fps GIF had every third frame at 10 ms (a 4 s animation played in about 11 s), 120 fps GIFs
+  and WebPs all of them. Frames that would start too soon after the one before are left out, the
+  length stays exact.
+- **Animated WebP lossless where that is smaller**: flat drawings come out exact and smaller
+  (gears demo 496 → 304 KB, now smaller than its GIF; test documents 27.5 → 12.8 KB, 105 → 45 KB),
+  gradients and photos stay lossy. Three sample frames, drawn at most 640 px wide, decide.
+- **GIF and WebP use a few pictures of memory, not all of them**: they are encoded while they are
+  drawn. A 4 s full-HD animation needed 2.1 GB, now 176 MB (GIF) / 219 MB (WebP), as fast as
+  before and byte for byte the same files.
+- Tests: the raster check covers the whole pass (also clips after `stop()`, a one-frame main
+  timeline, a 60 fps document), every frame's delay as a browser reads it, the length and the
+  repetition; unit tests for the frame pacing and the streaming.
+
 ## 4.2.0 (2026-10-31)
 
 - **Smaller files: shortest path data.** Every path is now written in its shortest form when the

@@ -7,6 +7,10 @@ description: The main changes in each Flash2SVG version since the version 4 rewr
 
 The full list is in the [changelog](https://github.com/ZcarecroW/Flash2Svg/blob/main/CHANGELOG.md); downloads are on the [releases page](https://github.com/ZcarecroW/Flash2Svg/releases).
 
+## 4.2.1
+
+**GIF and WebP fixed.** Movie clips that keep running — on a one-frame main timeline, or after a `stop()` — now play in GIF and WebP as they do in the SVG formats (the gears demo on [Formats](formats.md) was a still picture). Above 50 frames a second they keep their speed (browsers slowed very short frames down to a tenth of a second). Animated WebP is lossless where that is smaller: flat drawings come out exact and smaller than the GIF. Long full-HD exports need a few pictures of memory instead of all of them (2.1 GB → 0.2 GB).
+
 ## 4.2
 
 Smaller, safer, easier.
