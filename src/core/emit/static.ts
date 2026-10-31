@@ -145,6 +145,8 @@ export class StaticRenderer {
 			case "bitmap": {
 				return this.doc.image(item.bitmap, item.matrix, this.ctx.precision.space(prog.id));
 			}
+			case "video":
+				return this.doc.video(item.element, false);
 			case "text":
 				if (this.opts.textAsOutlines || item.element.textType === "static") return item.art ? outlineText(item.element, this.doc.useArt(item.art)) : null;
 				return textNode(item.element, this.ctx.precision.space(prog.id), this.doc.fonts);

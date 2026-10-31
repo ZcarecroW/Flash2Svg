@@ -8,7 +8,7 @@ import type { Context } from "../context.ts";
 import { fmt, fmtMatrix } from "../geom.ts";
 import { imageMime } from "../mime.ts";
 import { fontKey, type EmbeddedFont } from "../fonts.ts";
-import type { AccInfo, FilterData, Mat } from "../model.ts";
+import type { AccInfo, FilterData, Mat, VideoElement } from "../model.ts";
 import type { FontSet } from "./text.ts";
 import { cdata, clone, el, serialize, walk, type XmlNode } from "../xml.ts";
 import { buildFilters, colorMatrix, matrixString, type ColorMatrixValues } from "./filters.ts";
@@ -56,6 +56,34 @@ export class OutputDoc {
 			return f;
 		},
 	};
+
+	/**
+	 * A video component as an HTML <video> in a <foreignObject> over its bounds, its file copied
+	 * next to the output. Autoplay needs `muted` in browsers, so a playing video is muted; `play`
+	 * false (still frames): no autoplay.
+	 */
+	video(e: VideoElement, play: boolean): XmlNode {
+		if (e.file && !this.assets.some((a) => a.path === e.file)) this.assets.push({ path: e.file, source: e.file });
+		const b = e.bounds;
+		const autoplay = play && e.autoplay;
+		// (XHTML: a boolean attribute has its own name as its value)
+		const flag = (on: boolean, name: string) => (on ? name : undefined);
+		return el("foreignObject", { x: fmt(b.left, 2), y: fmt(b.top, 2), width: fmt(b.width, 2), height: fmt(b.height, 2) }, [
+			el("video", {
+				xmlns: "http://www.w3.org/1999/xhtml",
+				src: e.file ?? e.src,
+				poster: e.poster,
+				autoplay: flag(autoplay, "autoplay"),
+				muted: flag(autoplay || e.muted, "muted"),
+				loop: flag(e.loop, "loop"),
+				controls: flag(e.controls, "controls"),
+				playsinline: "playsinline",
+				preload: autoplay ? "auto" : "metadata",
+				style: "display:block;width:100%;height:100%;object-fit:contain",
+				// an end tag, not "/>": inlined in an HTML page the parser would leave <video/> open
+			}, [""]),
+		]);
+	}
 
 	/** A new document-unique id; every id starts with `opts.idPrefix` (never added twice). */
 	uid(base: string): string {

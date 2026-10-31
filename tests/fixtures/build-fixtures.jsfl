@@ -2214,6 +2214,56 @@
 		extendAll(24);
 	});
 
+	// ---------------------------------------------------------------- f51/f52: video components (linked video files)
+	function videoComponent(names, x, y, params) {
+		var el = null;
+		for (var n = 0; n < names.length && !el; n++) {
+			try {
+				doc.selectNone();
+				fl.componentsPanel.addItemToDocument({ x: x, y: y }, "Video", names[n]);
+				el = doc.selection[0] || null;
+				if (el) log.push("component " + names[n] + " added");
+			} catch (e) {
+				log.push("component " + names[n] + ": " + e);
+			}
+		}
+		if (!el) throw new Error("no video component");
+		var ps = el.parameters || [];
+		var seen = [];
+		for (var i = 0; i < ps.length; i++) {
+			seen.push(ps[i].name + "=" + ps[i].value);
+			for (var k in params) if (ps[i].name.toLowerCase() == k.toLowerCase()) ps[i].value = params[k];
+		}
+		log.push("parameters: " + seen.join(", "));
+		return el;
+	}
+	build("f51-video", function () {
+		newDoc("timeline", 400, 300, 24);
+		FLfile.copy(root + "/assets/clip.webm", outDir + "/clip.webm");
+		layer("bg");
+		rect(0, 0, 400, 300, "#DDDDDD");
+		layer("video");
+		var v = videoComponent(["FLVPlayback 2.5", "FLVPlayback"], 40, 40, { source: "clip.webm", autoPlay: true });
+		v.width = 240;
+		v.height = 180;
+		v.x = 40;
+		v.y = 40;
+		extendAll(24);
+	});
+	build("f52-video-canvas", function () {
+		newDoc("htmlcanvas", 400, 300, 24);
+		FLfile.copy(root + "/assets/clip.webm", outDir + "/clip.webm");
+		layer("bg");
+		rect(0, 0, 400, 300, "#DDDDDD");
+		layer("video");
+		var v = videoComponent(["Video"], 40, 40, { src: "clip.webm", autoplay: true, loop: true, muted: true, controls: false });
+		v.width = 240;
+		v.height = 180;
+		v.x = 40;
+		v.y = 40;
+		extendAll(24);
+	});
+
 	FLfile.write(outDir + "/build-log.txt", log.join("\n"));
 	fl.closeAll(false);
 	fl.quit(false);

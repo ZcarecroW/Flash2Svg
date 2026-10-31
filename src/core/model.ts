@@ -110,7 +110,22 @@ export interface Keyframe {
 	elements: ElementData[];
 }
 
-export type ElementData = InstanceElement | ShapeElement | BitmapElement | TextElement | UnsupportedElement;
+export type ElementData = InstanceElement | ShapeElement | BitmapElement | TextElement | VideoElement | UnsupportedElement;
+
+/** A video component (AS3 FLVPlayback, HTML5 Canvas Video): a linked video file, placed by its bounds. */
+export interface VideoElement extends ElementBase {
+	kind: "video";
+	/** as set in the component */
+	src: string;
+	/** the file copied next to scene.json (videos/…), when it was found */
+	file?: string;
+	autoplay: boolean;
+	loop: boolean;
+	muted: boolean;
+	controls: boolean;
+	poster?: string;
+	matrix: Mat;
+}
 
 interface ElementBase {
 	/** Bounds in the parent timeline's space (as reported by Animate). */

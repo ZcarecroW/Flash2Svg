@@ -433,6 +433,8 @@ export function applyNineSlice(
 				return { ...it, arts: it.arts.map((a) => artFor(a, m, true)) };
 			case "bitmap":
 				return { ...it, matrix: concat(it.matrix, L) };
+			case "video":
+				return it;
 			case "text":
 				return { ...it, art: it.art ? artFor(it.art, m, false) : it.art, element: { ...it.element, matrix: concat(it.element.matrix, L) } };
 			case "instance": {

@@ -10,6 +10,7 @@ import { classicEase, easePieces, evalBezier as evalEaseBezier, evalEase, isLine
 import { compose, decompose, nearestAngle } from "./geom.ts";
 import type {
 	AccInfo,
+	VideoElement,
 	BitmapElement,
 	ColorTransform,
 	ElementData,
@@ -109,7 +110,12 @@ export interface TextItem extends ItemBase {
 	art: string;
 }
 
-export type Item = InstanceItem | ArtItem | ArtSeqItem | BitmapItem | TextItem;
+export interface VideoItem extends ItemBase {
+	kind: "video";
+	element: VideoElement;
+}
+
+export type Item = InstanceItem | ArtItem | ArtSeqItem | BitmapItem | TextItem | VideoItem;
 
 export interface ProgramLayer {
 	index: number;
@@ -256,7 +262,7 @@ export function markShapeAlpha(programs: Record<string, Program>, roots: string[
 		if (p)
 			for (const l of p.layers)
 				for (const it of l.items)
-					r |= it.kind === "bitmap" ? 4 : it.kind === "text" ? 1 : it.kind === "art" ? paint(it.art) : it.kind === "artSeq" ? it.arts.reduce((a, x) => a | paint(x), 0) : paintsOf(it.symbol);
+					r |= it.kind === "bitmap" || it.kind === "video" ? 4 : it.kind === "text" ? 1 : it.kind === "art" ? paint(it.art) : it.kind === "artSeq" ? it.arts.reduce((a, x) => a | paint(x), 0) : paintsOf(it.symbol);
 		known.set(id, r);
 		return r;
 	};
@@ -802,6 +808,9 @@ function buildLayerItems(tl: TimelineData, layer: LayerData, li: number, opts: C
 					break;
 				case "text":
 					items.push({ kind: "text", uid: uid(`t${kf.index}.${slot}`), start: kf.index, end: kEnd, slot, element: e as TextElement, art: (e as TextElement).atlas });
+					break;
+				case "video":
+					items.push({ kind: "video", uid: uid(`v${kf.index}.${slot}`), start: kf.index, end: kEnd, slot, element: e as VideoElement });
 					break;
 			}
 		});

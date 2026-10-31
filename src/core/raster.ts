@@ -197,6 +197,8 @@ export async function exportRaster(model: SceneModel, files: FileSource, partial
 	const s: ExportSettings = { ...DEFAULT_SETTINGS, ...partial };
 	const warnings: string[] = [];
 	if (Object.keys(model.sounds).length) warnings.push("Sounds aren't part of a GIF or WebP animation");
+	if (Object.values(model.timelines).some((t) => t.layers.some((l) => l.keyframes.some((k) => k.elements.some((e) => e.kind === "video")))))
+		warnings.push("Videos aren't part of a GIF or WebP animation (their place stays empty)");
 	const { frames, loop } = await rasterFrames(model, files, s, rasterize, (m) => warnings.push(m));
 	const gif = s.format === "gif";
 	if (!gif && !codecs) throw new Error("Animated WebP needs the image codecs");

@@ -121,6 +121,8 @@ export function renderPlayer(ctx: Context, rootId: string, s: ExportSettings): {
 				doc.defs.push(el("g", { id }, [node]));
 				return { k: "a", s: it.start, e: it.end, r: id };
 			}
+			case "video":
+				return { k: "r", s: it.start, e: it.end, x: serialize(doc.video(it.element, true)) };
 			case "text": {
 				if (s.textAsOutlines || it.element.textType === "static") {
 					const a = it.art ? ctx.art(it.art) : null;

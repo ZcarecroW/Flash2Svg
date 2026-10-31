@@ -266,6 +266,9 @@ class Writer {
 				content = this.opts.textAsOutlines || it.element.textType === "static" ? (it.art ? outlineText(it.element, this.doc.useArt(it.art)) : null) : textNode(it.element, this.ctx.precision.space(this.space), this.doc.fonts);
 				break;
 			}
+			case "video":
+				content = this.doc.video((n.item as Extract<typeof n.item, { kind: "video" }>).element, true);
+				break;
 			case "instance": {
 				content = this.instance(n);
 				const link = content && clickLink(this.ctx.programs[this.space]?.interactions, n.item.name);

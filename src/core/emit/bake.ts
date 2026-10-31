@@ -71,7 +71,7 @@ export interface BakedArt extends NodeBase {
 	art: string;
 }
 export interface BakedStatic extends NodeBase {
-	kind: "bitmap" | "text";
+	kind: "bitmap" | "text" | "video";
 	item: Item;
 }
 export interface BakedInstance extends NodeBase {
@@ -287,6 +287,7 @@ class Baker {
 				return;
 			case "bitmap":
 			case "text":
+			case "video":
 				bl.nodes.push({ kind: item.kind, item, vis, uid: item.uid });
 				return;
 			case "artSeq": {

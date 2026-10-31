@@ -39,3 +39,16 @@ describe("accessibility (Animate's Accessibility panel)", () => {
 		expect(silent).not.toMatch(/<title>/);
 	});
 });
+
+describe("video components", () => {
+	it("an HTML <video> in a <foreignObject> with an end tag, the file as an asset; autoplay muted", () => {
+		const model: SceneModel = JSON.parse(readFileSync(new URL("../fixtures/models/f52-video-canvas.json", import.meta.url), "utf8"));
+		const files = { readText: () => `<svg xmlns="http://www.w3.org/2000/svg"><rect width="5" height="5"/></svg>`, readBinary: () => new Uint8Array() };
+		const out = compileScene(model, files, { format: "smil" });
+		expect(out.files[0]!.svg).toMatch(/<foreignObject x="40" y="40\.05" width="239\.4" height="179\.4"><video xmlns="http:\/\/www\.w3\.org\/1999\/xhtml" src="videos\/clip\.webm" autoplay="autoplay" muted="muted" loop="loop" playsinline="playsinline"[^>]*><\/video><\/foreignObject>/);
+		expect(out.assets).toEqual([{ path: "videos/clip.webm", source: "videos/clip.webm" }]);
+		// still frames don't play it
+		expect(compileScene(model, files, { format: "static" }).files[0]!.svg).not.toMatch(/autoplay/);
+		expect(compileScene(model, files, { format: "lottie" }).warnings.some((w) => /Videos aren't exported to Lottie/.test(w))).toBe(true);
+	});
+});

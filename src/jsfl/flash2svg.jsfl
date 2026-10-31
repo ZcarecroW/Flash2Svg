@@ -595,10 +595,53 @@
 		return { left: round(el.left), top: round(el.top), width: round(el.width), height: round(el.height) };
 	}
 
+	/**
+	 * Video components (AS3 FLVPlayback, HTML5 Canvas Video) as a video element: the linked file is
+	 * copied next to the scene (videos/), a URL is kept as it is.
+	 */
+	function videoOf(el) {
+		var ps = get(el, "parameters", null);
+		if (!ps || !ps.length) return null;
+		var p = {};
+		for (var i = 0; i < ps.length; i++) {
+			try {
+				p[String(ps[i].name).toLowerCase()] = ps[i].value;
+			} catch (e) {}
+		}
+		var src = p.source !== undefined ? p.source : p.src;
+		if (src === undefined || p.autoplay === undefined) return null;
+		src = String(src);
+		var on = function (v) { return v === true || v === "true"; };
+		var d = {
+			kind: "video",
+			src: src,
+			autoplay: on(p.autoplay),
+			// FLVPlayback has no loop; its skin (controls) shows unless set to none
+			loop: on(p.loop),
+			muted: on(p.muted) || p.volume === 0 || p.volume === "0",
+			controls: p.controls !== undefined ? on(p.controls) : true,
+			matrix: mat(el.matrix),
+			bounds: boundsOf(el)
+		};
+		if (p.poster) d.poster = String(p.poster);
+		if (src && !/^[a-z]+:/i.test(src)) {
+			var dir = (job.srcDoc.pathURI || "").replace(/\/[^\/]*$/, "");
+			var from = dir + "/" + src.replace(/\\/g, "/");
+			var name = src.replace(/^.*[\/\\]/, "");
+			if (dir && FLfile.exists(from)) {
+				FLfile.createFolder(job.outDir + "/videos");
+				if (FLfile.copy(from, job.outDir + "/videos/" + name) || FLfile.exists(job.outDir + "/videos/" + name)) d.file = "videos/" + name;
+			} else warn("The video " + src + " was not found next to the document: it stays linked as it is");
+		}
+		return d;
+	}
+
 	function readElement(tlId, el) {
 		var type = el.elementType;
 		if (type == "instance") {
 			var it = el.instanceType;
+			var video = videoOf(el);
+			if (video) return video;
 			if (it == "symbol" && el.libraryItem) {
 				var symId = "sym:" + el.libraryItem.name;
 				// the camera's own frame graphic is never drawn

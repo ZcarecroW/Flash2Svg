@@ -1147,6 +1147,9 @@ class LottieWriter {
 				const art = (n.item as { art?: string }).art;
 				return art ? this.art(art, vis, mode) : [];
 			}
+			case "video":
+				this.warn("Videos aren't exported to Lottie (Lottie has no video layer)");
+				return [];
 			case "bitmap": {
 				const it = n.item as Extract<typeof n.item, { kind: "bitmap" }>;
 				const img = this.image(it.bitmap);

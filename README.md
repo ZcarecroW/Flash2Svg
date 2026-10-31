@@ -383,8 +383,11 @@ write it to `tests/out/<name>/model/`.)
   timer handlers aren't run (warned).
 - Animate adds the temporary copy each export works on to its *Recent files* list (JSFL can't
   open a document without doing so).
-- 3D transforms export as their 2D projection. IK armatures, video and components are not
-  exported. Layer parenting follows Animate's per-frame rig matrices (between frames they are
+- 3D transforms export as their 2D projection. IK armatures and components other than video
+  are not exported. Video components (AS3 *FLVPlayback*, HTML5 Canvas *Video*) become an HTML
+  `<video>` over their place (`<foreignObject>`), their file copied next to the SVG; autoplay is
+  muted (browsers allow nothing else); it plays inline and in an `<object>`, not in `<img>`, and
+  not in Lottie, GIF or WebP (warned). Video embedded in the timeline (FLV) is not exported. Layer parenting follows Animate's per-frame rig matrices (between frames they are
   interpolated linearly).
 - Shape tweens: CSS output draws them frame by frame. Animate draws a shape tween's keyframe a
   little differently from the start of its morph (it re-approximates curves): if they differ by

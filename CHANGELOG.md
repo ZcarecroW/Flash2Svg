@@ -191,6 +191,13 @@
   SVG compressed by the server is smaller: the 46 test documents as SMIL 1070 KB, .svgz 372 KB,
   Brotli 341 KB. Node's zlib packs it (the CLI and the panel; 3–8 % smaller and faster than the
   JavaScript fallback).
+- **Video components.** AS3 *FLVPlayback* and HTML5 Canvas *Video* components become an HTML
+  `<video>` in a `<foreignObject>` over their place, in SMIL, CSS, the player and still frames;
+  the linked file is copied next to the SVG (`videos/`), autoplay is muted (as browsers require),
+  loop, controls and poster follow the component. Tested in Edge, Firefox and WebKit, inline and
+  in an `<object>`: the video plays where the component was (`scripts/e2e-video.ts`; test
+  documents f51, f52). Found on the way: a self-closing `<video/>` inlined in an HTML page stays
+  open (the HTML parser ignores "/>" there) and swallows what follows — written with an end tag.
 - **GIF and WebP fallbacks** (`--format gif|webp`): the timeline's first pass as an animated
   GIF (a palette per frame, 1-bit transparency, delays rounded on the running total so the length
   stays) or an animated WebP (lossy at the image quality with alpha; each frame only the rectangle

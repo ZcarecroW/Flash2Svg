@@ -40,7 +40,7 @@ support (sources below) before starting a package.
 
 | # | Package | Benefit | Effort | Status |
 |---|---|---|---|---|
-| 1 | Media encoding settings | very high | medium | 🚧 images ✅, downscaling ✅, audio ✅, budget view ✅, fonts ✅, video ⬜ |
+| 1 | Media encoding settings | very high | medium | ✅ images, downscaling, audio, budget view, fonts, video components |
 | 2 | Player: compositor animations, pause off-screen, reduced motion | high | small | ✅ (canvas renderer ⬜) |
 | 3 | Shape tweens as path morphing (SMIL and player) | very high for shape tweens | medium–high | ✅ |
 | 4 | CSS: `linear()` easing, individual transform properties | medium | small–medium | ✅ (also decimals from the displayed size, .svgz) |
@@ -75,7 +75,7 @@ support (sources below) before starting a package.
   - The test sound document: 886 KB of WAV → 64 KB MP3 / 41 KB Opus. Encoding 3 min stereo: MP3 2.2 s, Opus 1.8 s.
   - Code: `src/core/audio.ts`, `src/core/audio-codecs.ts`, the Mixer in `src/player/runtime.ts`; test document f43.
   - Not done: AAC (no small WebAssembly encoder without FFmpeg; Opus already beats it in size, MP3 in reach); a gapless header (LAME tag) in our MP3s — the player compensates the delay instead; trimming silence inside a sound; encoding in a worker (the panel waits ~2 s for a 3-minute song).
-- ⬜ **Video:** embedded video is not exported today. Plan: `<foreignObject><video>` for inline and player output, AV1 with an H.264 fallback, and a poster image.
+- ✅ **Video:** video components (FLVPlayback, Canvas Video) as `<foreignObject><video>` in every SVG format, the linked file copied along, muted autoplay, loop/controls/poster from the component (f51, f52; `scripts/e2e-video.ts`). Not done: transcoding (AV1/H.264: no encoder without FFmpeg; the linked file is kept as it is) and video embedded in the timeline (FLV).
 - ✅ **Fonts:** dynamic and input text with its installed fonts embedded as WOFF2 subsets (`src/core/fonts.ts`; harfbuzzjs subsetter without hinting, woff2-encoder; name-table index of the font folders; fsType respected), laid out by the fonts' metrics (Animate's baselines, multiline wrapping; within 1–2 px). Test document f49.
 - ✅ **Budget view:**
   - After an export the panel shows a bar of what the size is made of: drawing, animation, images, sounds, the player's script and linked files.
