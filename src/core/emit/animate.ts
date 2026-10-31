@@ -96,6 +96,14 @@ export function renderAnimated(ctx: Context, rootId: string, opts: AnimateOption
 	return { svg: doc.toString(svg, { pretty: opts.pretty }), assets: doc.assets, drawingBytes: doc.drawingBytes, horizon, warnings: ctx.warnings };
 }
 
+/**
+ * The length of an animation that repeats for ever. Rounding adds up loop after loop: at 4
+ * decimals an 8-frame loop at 24 fps (.3333 s) runs half a frame off after 3.5 minutes, and loops
+ * meant to stay in step (8 and 16 frames, rounded apart) drift a frame apart in 5 minutes. 7
+ * decimals keep it under a third of a frame a day; durations that end (.5 s) stay short.
+ */
+const loopSeconds = (ticks: number, fps: number) => fmt(ticks / fps, 7) + "s";
+
 class Writer {
 	readonly ctx: Context;
 	readonly doc: OutputDoc;
@@ -151,7 +159,7 @@ class Writer {
 		this.posterTick = opts.posterFrame === "last" ? Math.max(0, this.H - 1) : 0;
 		this.tail = horizon.loop ? 0 : horizon.tail;
 		// with a tail, the first pass ends where the tail starts
-		this.dur = fmt((this.tail || this.H) / horizon.fps, 4) + "s";
+		this.dur = horizon.loop ? loopSeconds(this.H, horizon.fps) : fmt((this.tail || this.H) / horizon.fps, 4) + "s";
 		const delay = opts.delay ? `+${fmt(opts.delay, 3)}s` : "";
 		this.begin =
 			opts.begin === "click" ? `${svgId}.click${delay}` : opts.begin === "hover" ? `${svgId}.mouseover${delay}` : opts.begin === "manual" ? "indefinite" : opts.delay ? fmt(opts.delay, 3) + "s" : "";
@@ -370,7 +378,7 @@ class Writer {
 
 	/** Timing of an animation that repeats every `P` ticks, in step with the horizon. */
 	periodTiming(P: number): Record<string, string> {
-		const t: Record<string, string> = { dur: fmt(P / this.fps, 4) + "s", repeatCount: "indefinite" };
+		const t: Record<string, string> = { dur: loopSeconds(P, this.fps), repeatCount: "indefinite" };
 		if (this.begin) t.begin = this.begin;
 		return t;
 	}
@@ -784,7 +792,7 @@ class Writer {
 			// syncbase end before the begin would make browsers drop the interval).
 			if (!this.clockId) this.clockId = this.doc.uid("clock");
 			const restart = this.opts.begin === "click" ? `${this.svgId}.click` : this.opts.begin === "hover" ? `${this.svgId}.mouseover` : undefined;
-			const t: Record<string, string> = { dur: fmt((this.H - this.tail) / this.fps, 4) + "s", begin: `${this.clockId}.end`, repeatCount: "indefinite" };
+			const t: Record<string, string> = { dur: loopSeconds(this.H - this.tail, this.fps), begin: `${this.clockId}.end`, repeatCount: "indefinite" };
 			if (restart) t.end = restart;
 			return t;
 		}
@@ -940,7 +948,7 @@ class Writer {
 		const delay = this.opts.delay ? ` ${fmt(this.opts.delay, 3)}s` : "";
 		// the tail loops after the first pass; until then the first animation (fill: both) holds
 		const decl = tail
-			? `${name} ${fmt((this.H - this.tail) / this.fps, 4)}s ${timing} ${fmt((this.opts.delay ?? 0) + this.tail / this.fps, 4)}s infinite`
+			? `${name} ${loopSeconds(this.H - this.tail, this.fps)} ${timing} ${fmt((this.opts.delay ?? 0) + this.tail / this.fps, 4)}s infinite`
 			: `${name} ${this.dur} ${timing}${delay}${iter}${fill}`;
 		let list = this.ruleOf.get(cls);
 		if (!list) {

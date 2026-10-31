@@ -281,9 +281,11 @@ export function compileScene(model: SceneModel, files: FileSource, partial: Part
 		out.stats.durationSeconds = r.horizon.ticks / r.horizon.fps;
 		if (r.horizon.tail) out.stats.loopFrom = r.horizon.tail;
 	} else if (s.format === "static") {
-		const start = s.startFrame ?? 0;
-		const end = s.endFrame ?? prog.frameCount;
-		const frames = s.frames ?? Array.from({ length: Math.max(1, end - start) }, (_, i) => start + i);
+		// frames of the timeline only (a range typed past its end, a frame list from elsewhere)
+		const start = Math.max(0, Math.min(prog.frameCount - 1, s.startFrame ?? 0));
+		const end = Math.max(start + 1, Math.min(prog.frameCount, s.endFrame ?? prog.frameCount));
+		const listed = s.frames?.filter((f) => Number.isInteger(f) && f >= 0 && f < prog.frameCount);
+		const frames = listed?.length ? listed : Array.from({ length: end - start }, (_, i) => start + i);
 		for (const f of frames) {
 			const r = renderStatic(ctx, rootId, {
 				idPrefix: prefixFor(String(f)),

@@ -110,7 +110,9 @@ export function textNode(t: TextElement, digits: number, fonts?: FontSet): XmlNo
 			transform: fmtMatrix(t.matrix, digits) || undefined,
 			"text-anchor": anchor === "start" ? undefined : anchor,
 			"xml:space": "preserve",
-			id: t.name || undefined,
+			// the instance name, for page scripts (not an id: names repeat across keyframes and
+			// copies, and needn't be valid ids)
+			"data-name": t.name || undefined,
 			"aria-hidden": t.acc?.silent ? "true" : undefined,
 			"aria-label": !t.acc?.silent && t.acc?.name ? t.acc.name : undefined,
 		},

@@ -16,7 +16,7 @@ import { createFontCodecs, encodeFonts } from "../core/fonts.ts";
 import { nodeFontFiles } from "./fonts-node.ts";
 import { exportRaster } from "../core/raster.ts";
 import { nodeRasterizer } from "./raster-node.ts";
-import type { SceneModel } from "../core/model.ts";
+import { SCENE_MODEL_VERSION, type SceneModel } from "../core/model.ts";
 import { nodeWasmLoader } from "./wasm.ts";
 
 const HELP = `flash2svg <scene.json> [options]
@@ -210,7 +210,7 @@ async function main(argv: string[]) {
 	if (!input) throw new Error("No scene.json given");
 	const sceneFile = resolve(input);
 	const base = dirname(sceneFile);
-	const read = JSON.parse(readFileSync(sceneFile, "utf8")) as SceneModel;
+	const read = parseModel(readFileSync(sceneFile, "utf8"), input);
 	const loader = nodeWasmLoader();
 	let { model, files, warnings } = await encodeImages(
 		read,
@@ -235,8 +235,10 @@ async function main(argv: string[]) {
 		warnings = [...warnings, ...r.warnings];
 	}
 	const raster = s.format === "gif" || s.format === "webp";
-	const result = raster ? await exportRaster(model, files, s, nodeRasterizer(loader), createCodecs(loader)) : compileScene(model, files, s, 0, { gzip: (d) => gzipSync(d, { level: 9 }) });
+	const rasterWarnings = new Set<string>();
+	const result = raster ? await exportRaster(model, files, s, nodeRasterizer(loader, (m) => rasterWarnings.add(m)), createCodecs(loader)) : compileScene(model, files, s, 0, { gzip: (d) => gzipSync(d, { level: 9 }) });
 	result.warnings.unshift(...warnings);
+	result.warnings.push(...rasterWarnings);
 	const defaultExt = result.files[0]?.ext ?? ".svg";
 	const target = resolve(out || join(base, "..", basename(model.doc.name, extname(model.doc.name)) + defaultExt));
 	mkdirSync(dirname(target), { recursive: true });
@@ -256,11 +258,27 @@ async function main(argv: string[]) {
 	}
 	for (const w of result.warnings) process.stderr.write(`warning: ${w}\n`);
 	const kb = (n: number) => (n / 1024).toFixed(1);
-	process.stdout.write(`${result.files.length} file(s), ${kb(result.stats.bytes)} KB, ${result.stats.durationSeconds.toFixed(2)}s -> ${stem + ext}\n`);
+	const written = result.files.length > 1 ? `${stem + result.files[0]!.suffix + ext} … ${result.files[result.files.length - 1]!.suffix + ext}` : stem + (result.files[0]?.suffix ?? "") + ext;
+	process.stdout.write(`${result.files.length} file(s), ${kb(result.stats.bytes)} KB, ${result.stats.durationSeconds.toFixed(2)}s -> ${written}\n`);
 	// what the size is made of
 	const parts = Object.entries(result.stats.parts).filter(([, n]) => n > 0);
 	process.stdout.write(`  ${parts.map(([k, n]) => `${k} ${kb(n)} KB`).join(", ")}\n`);
 	void DEFAULT_SETTINGS;
+}
+
+/** The extractor's scene.json, or a message saying what it is instead. */
+function parseModel(text: string, name: string): SceneModel {
+	let m: Partial<SceneModel>;
+	try {
+		m = JSON.parse(text);
+	} catch (e) {
+		throw new Error(`${name} is not valid JSON (${(e as Error).message})`);
+	}
+	if (!m || typeof m !== "object" || typeof m.doc !== "object" || !Array.isArray(m.roots) || typeof m.timelines !== "object")
+		throw new Error(`${name} is not a Flash2SVG scene model (the scene.json the extractor writes in Animate)`);
+	if (typeof m.version === "number" && m.version > SCENE_MODEL_VERSION)
+		throw new Error(`${name} was written by a newer Flash2SVG (scene model version ${m.version}; this compiler reads up to ${SCENE_MODEL_VERSION})`);
+	return m as SceneModel;
 }
 
 main(process.argv.slice(2)).catch((e) => {

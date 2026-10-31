@@ -14,7 +14,7 @@ import { PNG } from "pngjs";
 import { compileScene, type OutputFormat } from "../src/core/compile.ts";
 import { createContext } from "../src/core/context.ts";
 import { renderStatic } from "../src/core/emit/static.ts";
-import { playhead } from "../src/core/emit/timing.ts";
+import { playhead, playheadFrame } from "../src/core/emit/timing.ts";
 import { withFonts } from "./lib/fonts.ts";
 import type { SceneModel } from "../src/core/model.ts";
 
@@ -100,6 +100,9 @@ for (const name of names) {
 	const firstPass = firstStats.loopFrom ?? firstStats.frames;
 	const stopTicks = !steps && !ph.cycle.length ? [...new Set([ph.prefix.length, ph.prefix.length + 6, firstPass - 1, firstPass + 3, firstPass + 29, 2 * firstPass + 11])] : [];
 	const stopFrame = ph.prefix[ph.prefix.length - 1] ?? 0;
+	// far ahead (the player finds where its state repeats instead of playing through): ticks with
+	// the root frame they show
+	const far = steps ? [] : [5003, 12347].map((t) => [t, playheadFrame(ctx.programs[rootId]!, t)] as const);
 	for (const format of formats) {
 		const anim = compileScene(model, files, { format, includeBackground: true, smooth: !steps });
 		const file = join(dir, `${format}${steps ? "-steps" : ""}.svg`);
@@ -128,9 +131,9 @@ for (const name of names) {
 				worstFrame = f + 1;
 			}
 		}
-		for (const t of stopTicks) {
+		for (const [t, frame] of [...stopTicks.map((t) => [t, stopFrame] as const), ...far]) {
 			const sfile = join(dir, `static-t${t}.svg`);
-			writeFileSync(sfile, renderStatic(ctx, rootId, { frame: stopFrame, ticks: t, movieClips: "play", includeBackground: true, embedImages: true, textAsOutlines: true }).svg);
+			writeFileSync(sfile, renderStatic(ctx, rootId, { frame, ticks: t, movieClips: "play", includeBackground: true, embedImages: true, textAsOutlines: true }).svg);
 			const ref = await shot(sfile, width, height, null);
 			const got = await shot(file, width, height, { format, time: (t + 0.02) / frameRate });
 			const diff = new PNG({ width: ref.width, height: ref.height });

@@ -23,7 +23,7 @@ const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
 const out = join(repo, "tests", "out");
 const args = process.argv.slice(2);
 const every = parseInt(args.find((a) => a.startsWith("--every="))?.slice(8) ?? "6", 10);
-const names = (args.find((a) => !a.startsWith("--")) ?? "f03-transforms,f04-nested,f18-bitmap,f27-stop").split(",");
+const names = (args.find((a) => !a.startsWith("--")) ?? "f03-transforms,f04-nested,f18-bitmap,f27-stop,f25-paint,f42-images,f35-edge").split(",");
 const LIMIT = { gif: 0.02, webp: 0.01 };
 const loader = nodeWasmLoader();
 const browser = await chromium.launch({ channel: "msedge", headless: true });

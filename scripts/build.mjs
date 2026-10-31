@@ -137,7 +137,13 @@ function copyStatic() {
 		for (const src of WASM) copyFileSync(join(repo, "node_modules", src), join(dir, src.slice(src.lastIndexOf("/") + 1)));
 		copyFileSync(join(repo, "node_modules/wasm-media-encoders/wasm/mp3.wasm"), join(dir, "mp3.wasm"));
 		copyFileSync(join(repo, "node_modules/harfbuzzjs/dist/harfbuzz-subset.wasm"), join(dir, "harfbuzz-subset.wasm"));
-		if (dir.endsWith(join("cli", "wasm"))) copyFileSync(join(repo, "node_modules/@resvg/resvg-wasm/index_bg.wasm"), join(dir, "resvg.wasm"));
+		if (dir.endsWith(join("cli", "wasm"))) {
+			// resvg for the GIF/WebP fallbacks: its WebAssembly and its glue (src/cli/raster-node.ts loads it again after a panic)
+			copyFileSync(join(repo, "node_modules/@resvg/resvg-wasm/index_bg.wasm"), join(dir, "resvg.wasm"));
+			const glue = readFileSync(join(repo, "node_modules/@resvg/resvg-wasm/index.mjs"), "utf8");
+			writeFileSync(join(dir, "resvg.mjs"), `// @resvg/resvg-wasm ${JSON.parse(readFileSync(join(repo, "node_modules/@resvg/resvg-wasm/package.json"), "utf8")).version}, MPL-2.0, https://github.com/thx/resvg-js
+` + glue);
+		}
 	}
 	// the panel's dotLottie preview
 	copyFileSync(join(repo, "node_modules/@lottiefiles/dotlottie-web/dist/dotlottie-player.wasm"), join(ext, "wasm", "dotlottie-player.wasm"));

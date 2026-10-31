@@ -2551,8 +2551,9 @@ export function renderLottie(ctx: Context, rootId: string, s: ExportSettings, im
 			op: H,
 			st: 0,
 			ks: {},
-			sw: d.width,
-			sh: d.height,
+			// the format has whole pixels (Animate's stage too; a model can have others)
+			sw: Math.ceil(d.width),
+			sh: Math.ceil(d.height),
 			sc:
 				"#" +
 				[bg[0], bg[1], bg[2]]
@@ -2571,8 +2572,8 @@ export function renderLottie(ctx: Context, rootId: string, s: ExportSettings, im
 		fr: horizon.fps,
 		ip: 0,
 		op: H,
-		w: d.width,
-		h: d.height,
+		w: Math.ceil(d.width),
+		h: Math.ceil(d.height),
 		nm: d.name.replace(/\.[^.]+$/, ""),
 		assets: w.assets,
 		layers: out,

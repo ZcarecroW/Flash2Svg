@@ -165,8 +165,12 @@ class Clip {
 		});
 	}
 
-	/** Runs frame scripts for the frame just entered; returns false if a goto changed the frame. */
-	runActions(): void {
+	/**
+	 * Runs frame scripts for the frame just entered. A goto enters its frame at once; scripts that
+	 * jump in a circle (a frame's own gotoAndPlay to itself) are followed 16 hops a tick, as the
+	 * other formats do (timing.ts: playhead), and then the frame reached shows.
+	 */
+	runActions(hops = 0): void {
 		if (this.enteredFrame === this.frame) return;
 		this.enteredFrame = this.frame;
 		const acts = this.tl.ac?.[this.frame];
@@ -193,8 +197,10 @@ class Clip {
 				const target = this.resolve(a[1]!);
 				this.playing = a[2] === 1;
 				this.frame = target;
-				this.enteredFrame = -1;
-				this.runActions();
+				if (hops < 15) {
+					this.enteredFrame = -1;
+					this.runActions(hops + 1);
+				} else this.enteredFrame = target;
 				return;
 			}
 		}
@@ -237,6 +243,14 @@ class Clip {
 			}
 			if (on && !v) map.set(e, m.voice(e, pos));
 		}
+	}
+
+	/** Frames, play states and counted passes of this timeline and the ones in it (see Player.seek). */
+	snap(): string {
+		const cap = this.tl.pc;
+		let k = this.frame + (this.playing ? "+" : "-") + (cap ? this.passes.map((p) => Math.min(p, cap)) : "");
+		for (const i of this.items.values()) if (i.clip) k += "(" + i.clip.snap() + ")";
+		return k;
 	}
 
 	labelAt(f: number): string | undefined {
@@ -817,6 +831,8 @@ class Player {
 		return this.rate;
 	}
 	set speed(v: number) {
+		// (0, negative, NaN: time would stand still, run back or break the clock)
+		if (!(v > 0 && v < Infinity)) return;
 		this.rate = v;
 		// playing sounds take the new rate (and their stop times) from their positions
 		this.mixer?.voices.forEach((x) => x.hold());
@@ -981,8 +997,14 @@ class Player {
 		this.root.render(0);
 	}
 
-	/** Deterministic seek: replays from the start to `seconds`. */
+	/**
+	 * Deterministic seek: replays from the start to `seconds` (negative: 0; NaN, Infinity: ignored).
+	 * Far ahead, the frames of all timelines repeat at some point: once a state comes again, whole
+	 * periods are skipped.
+	 */
 	seek(seconds: number) {
+		if (!(seconds < Infinity)) return;
+		seconds = Math.max(0, seconds);
 		const wasRunning = this.running;
 		this.pause();
 		const fd = 1 / this.P.fps;
@@ -990,9 +1012,19 @@ class Player {
 		this.quiet = true;
 		try {
 			this.reset();
+			let seen = ticks > 4096 ? new Map<string, number>() : null;
 			for (let i = 0; i < ticks; i++) {
 				this.clock += fd;
 				this.step();
+				if (seen) {
+					const k = this.root.snap();
+					const j = seen.get(k);
+					if (j !== undefined) {
+						i += Math.floor((ticks - 1 - i) / (i - j)) * (i - j);
+						seen = null;
+					} else if (seen.size < 1e5) seen.set(k, i);
+					else seen = null;
+				}
 			}
 		} finally {
 			this.quiet = false;

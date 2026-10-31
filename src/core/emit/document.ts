@@ -2,7 +2,7 @@
  * Output SVG document under construction: collects <defs> (artwork, filters, masks, symbols)
  * with unique ids and serialises the result.
  */
-import { copyArtwork, prefixArtwork, type Artwork } from "../artwork.ts";
+import { copyArtwork, type Artwork } from "../artwork.ts";
 import { templateNodes } from "../morph.ts";
 import type { Context } from "../context.ts";
 import { fmt, fmtMatrix } from "../geom.ts";
@@ -102,8 +102,9 @@ export class OutputDoc {
 		const done = this.artDone.get(a.id);
 		if (done) return done;
 		const key = a.id;
-		// artwork-internal ids (gradients...) get the document prefix too
-		a = prefixArtwork(a, this.opts.idPrefix);
+		// artwork-internal ids (gradients...) get the document prefix too, and are kept clear of
+		// the ids taken before (a morph's copy of the same drawing)
+		a = { ...copyArtwork(a, (id) => this.uid(id)), id: this.opts.idPrefix + a.id };
 		const from = this.defs.length;
 		a = this.linkImages(a);
 		for (const d of a.defs) this.defs.push(d);

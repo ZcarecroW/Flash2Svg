@@ -552,6 +552,17 @@ function buildProgram(tl: TimelineData, opts: CompileOptions, warnings: string[]
 		prog.layers.push(pl);
 	}
 	prog.labels.sort((a, b) => a.frame - b.frame);
+	// a jump to a label the timeline doesn't have goes nowhere (Flash: error #2109, the playhead
+	// stays; CreateJS ignores it): left out, so every format keeps the frame it is on
+	const labelled = new Set(prog.labels.map((l) => l.name));
+	for (const f in prog.actions) {
+		prog.actions[f] = prog.actions[f]!.filter((a) => {
+			if (a.type !== "goto" || typeof a.target !== "string" || labelled.has(a.target)) return true;
+			warnings.push(`${tl.name}, frame ${+f + 1}: ${a.play ? "gotoAndPlay" : "gotoAndStop"}("${a.target}") is left out: there is no frame label "${a.target}"`);
+			return false;
+		});
+		if (!prog.actions[f]!.length) delete prog.actions[f];
+	}
 	const camLayer = tl.layers.findIndex((l) => l.type === "camera");
 	if (camLayer >= 0) prog.view = cameraView(tl, camLayer, opts, warnings, doc);
 	return prog;

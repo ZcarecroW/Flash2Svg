@@ -21,7 +21,7 @@ const INTERNAL = [
 	"age", "named", "dispose", "playing", "running", "startAll", "stopAll", "bufs", "born", "held",
 	"emit", "node", "render", "sync", "tick", "step", "kind", "els", "player", "time", "last", "raf",
 	"rate", "defs", "svg", "voice", "trigger", "hold", "pos", "mpart", "mels", "mcopies", "mrat", "mfra",
-	"heard", "handlers", "pressed", "up", "inst", "wake", "scrub",
+	"heard", "handlers", "pressed", "up", "inst", "wake", "scrub", "snap",
 ];
 
 /**

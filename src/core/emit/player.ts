@@ -193,7 +193,9 @@ export function renderPlayer(ctx: Context, rootId: string, s: ExportSettings): {
 			for (const [f, list] of acts) {
 				t.ac[+f] = list.map((a) => {
 					const code = a.type === "stop" ? [0] : a.type === "play" ? [1] : [2, typeof a.target === "number" ? a.target - 1 : a.target, a.play ? 1 : 0];
-					return a.passes ? [9, a.passes.from, a.passes.before, ...code] : code;
+					if (!a.passes) return code;
+					t.pc = Math.max(t.pc ?? 0, a.passes.from, a.passes.before);
+					return [9, a.passes.from, a.passes.before, ...code];
 				});
 			}
 		}

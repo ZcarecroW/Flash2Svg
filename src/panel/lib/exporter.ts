@@ -179,7 +179,8 @@ export function defaultOutput(info: DocInfo, symbol?: string, ext = ".svg"): str
 
 /** `file` with the format's extension, if it has one of another format. */
 function withExt(file: string, ext: string): string {
-	return file.replace(/\.(svgz?|json|lottie)$/i, "") + (/\.(svgz?|json|lottie)$/i.test(file) || !/\.[^\\/.]+$/.test(file) ? ext : "");
+	const known = /\.(svgz?|json|lottie|gif|webp)$/i;
+	return file.replace(known, "") + (known.test(file) || !/\.[^\\/.]+$/.test(file) ? ext : "");
 }
 
 export async function runExport(

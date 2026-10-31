@@ -36,12 +36,19 @@ function decode(s: string): string {
 	});
 }
 
+// What XML can't hold, not even as a character reference: control characters, unpaired
+// surrogates, U+FFFE/FFFF (an author's label, name or text can have them). Left out.
+const NOT_XML = /[\0-\x08\x0B\x0C\x0E-\x1F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+const xmlChars = (s: string) => s.replace(NOT_XML, "");
+
 // one scan for the common case of nothing to escape (path data, numbers)
 export function escapeText(s: string): string {
-	return /[&<>]/.test(s) ? s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") : s;
+	return /[&<>\0-\x08\x0B\x0C\x0E-\x1F\uD800-\uDFFF\uFFFE\uFFFF]/.test(s) ? xmlChars(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") : s;
 }
 export function escapeAttr(s: string): string {
-	return /[&<"\n]/.test(s) ? s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;").replace(/\n/g, "&#10;") : s;
+	return /[&<"\n\0-\x08\x0B\x0C\x0E-\x1F\uD800-\uDFFF\uFFFE\uFFFF]/.test(s)
+		? xmlChars(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;").replace(/\n/g, "&#10;")
+		: s;
 }
 
 /** Parses an XML document and returns its root element. Comments, PIs and doctype are dropped. */
@@ -153,7 +160,7 @@ export function serialize(node: XmlChild, opts: SerializeOptions = {}, depth = 0
 	if (typeof node === "string") return escapeText(node);
 	// already serialized markup (see OutputDoc.toString)
 	if (node.name === "#raw") return String(node.children[0] ?? "");
-	if (node.name === "#cdata") return "<![CDATA[" + String(node.children[0] ?? "").split("]]>").join("]]]]><![CDATA[>") + "]]>";
+	if (node.name === "#cdata") return "<![CDATA[" + xmlChars(String(node.children[0] ?? "")).split("]]>").join("]]]]><![CDATA[>") + "]]>";
 	const ind = opts.pretty ? "\n" + "  ".repeat(depth) : "";
 	let s = ind + "<" + node.name;
 	for (const k in node.attrs) s += " " + k + '="' + escapeAttr(node.attrs[k]!) + '"';

@@ -328,6 +328,22 @@ const near = (a: [number, number, number], b: [number, number, number]) => a.eve
 		check("labels: gotoAndPlay(label) plays on", f > 4 && f <= 12, `frame ${f}`);
 		await api(page, (a) => a.seek(0.5));
 		check("labels: seek(0.5s) -> frame 7", (await frame()) === 7, `frame ${await frame()}`);
+		// out-of-range values: NaN and Infinity leave it, negative times are the start; speed takes positive numbers only
+		await api(page, (a) => a.seek(Number.NaN));
+		await api(page, (a) => a.seek(Infinity));
+		check("labels: seek(NaN), seek(Infinity) are ignored", (await frame()) === 7, `frame ${await frame()}`);
+		await api(page, (a) => a.seek(-3));
+		check("labels: seek(-3) -> frame 1", (await frame()) === 1, `frame ${await frame()}`);
+		const speeds = await page.evaluate(() => {
+			const a = (document.documentElement as unknown as { flash2svg: { speed: number } }).flash2svg;
+			const got: number[] = [];
+			for (const v of [0, -1, Number.NaN, Infinity, 2, 1]) {
+				a.speed = v;
+				got.push(a.speed);
+			}
+			return got;
+		});
+		check("labels: speed keeps positive numbers only", JSON.stringify(speeds) === "[1,1,1,1,2,1]", JSON.stringify(speeds));
 		await api(page, (a) => a.pause());
 		const events = await page.evaluate(
 			() =>

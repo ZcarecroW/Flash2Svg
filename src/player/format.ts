@@ -39,6 +39,8 @@ export interface PTimeline {
 	lb?: Record<string, number>;
 	/** frame -> actions: [0]=stop [1]=play [2, target, play(0/1)]=goto; [9, from, before, ...] = only on passes [from, before) over the frame */
 	ac?: Record<number, (number | string)[][]>;
+	/** passes over a frame its scripts count up to (the largest from / before of [9, ...]): more are the same */
+	pc?: number;
 	/** mouse handlers added by frame scripts */
 	ev?: PListener[];
 	/** layers bottom to top */

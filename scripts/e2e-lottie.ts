@@ -28,6 +28,9 @@ const steps = args.includes("--steps");
 const TOLERANCE: Record<string, number> = {
 	// Animate's layer "fx" filter: left out (warned)
 	"f22-layers": 0.002,
+	// Lottie has no subtract blend: drawn as multiply by the inverted colours (warned); a solid box
+	// at 60 % over a dark ground shows it (1.22 % in all three players, 2026-10-31)
+	"f32-blend2": 0.013,
 	// a gradient glow with four stops, looked up at 0, 50 and 100 % (warned)
 	"f46-filters3": 0.0013,
 	// dotLottie (ThorVG) blurs narrower: bevels, which subtract two blurred copies, show it most
