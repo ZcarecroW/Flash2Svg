@@ -38,7 +38,10 @@ const TOLERANCE: Record<string, number> = { "f22-layers": 0.006, "f31-text2": 0.
 const imagesOpt = opt("images", "");
 const images: Partial<ImageSettings> | null = !imagesOpt ? null : imagesOpt === "lossless" ? {} : { imageLossy: imagesOpt as ImageSettings["imageLossy"] };
 const codecs = createCodecs(nodeWasmLoader());
-const names = list ? list.split(",") : readdirSync(out).filter((d) => existsSync(join(out, d, "model", "scene.json")));
+// video components play only in a browser (scripts/e2e-video.ts checks them); Animate draws the
+// component's placeholder, Lottie has no video
+const VIDEO = new Set(["f51-video", "f52-video-canvas"]);
+const names = list ? list.split(",") : readdirSync(out).filter((d) => existsSync(join(out, d, "model", "scene.json")) && !VIDEO.has(d));
 
 interface Row {
 	name: string;

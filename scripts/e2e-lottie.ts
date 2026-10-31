@@ -51,7 +51,10 @@ const TOLERANCE: Record<string, number> = {
 };
 const limit = (name: string, player: string) => TOLERANCE[`${name}/${player}`] ?? TOLERANCE[name] ?? threshold;
 const list = args.find((a) => !a.startsWith("--"));
-const names = list ? list.split(",") : readdirSync(out).filter((d) => existsSync(join(out, d, "model", "scene.json")));
+// video components play only in a browser (scripts/e2e-video.ts checks them); Animate draws the
+// component's placeholder, Lottie has no video
+const VIDEO = new Set(["f51-video", "f52-video-canvas"]);
+const names = list ? list.split(",") : readdirSync(out).filter((d) => existsSync(join(out, d, "model", "scene.json")) && !VIDEO.has(d));
 
 const require = createRequire(import.meta.url);
 const { LottieValidator, get_schema_path } = require("@lottie-animation-community/lottie-specs/src/validator-node.js");
@@ -89,7 +92,8 @@ for (const name of names) {
 	const problems = validator.validate(JSON.parse(json), true) as { type: string; message: string; path: string }[];
 	const errors = problems.filter((p) => p.type === "error");
 	const unknown = [...new Set(problems.filter((p) => p.type === "warning").map((p) => p.message))];
-	const statics = compileScene(model, files, { format: "static", includeBackground: true });
+	// (Lottie draws dynamic text from Animate's outlines)
+	const statics = compileScene(model, files, { format: "static", includeBackground: true, textAsOutlines: true });
 	const frames = Math.min(statics.files.length, res.stats.frames || statics.files.length);
 	const sample: number[] = [];
 	for (let f = 0; f < frames; f += every) sample.push(f);
