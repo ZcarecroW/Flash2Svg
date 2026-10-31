@@ -16,10 +16,10 @@
   Looping movie clips are drawn once and played again by a time remap instead of keying every
   loop (test documents: 2.2 MB → 251 KB, 684 → 15 KB, 448 → 186 KB). Apart from effects (below), only features of the Lottie
   spec 1.0 are used: every test document is valid against the official schema and checked frame
-  by frame in lottie-web 5.13, dotLottie 0.82 (ThorVG) and Skottie (CanvasKit 0.42) — all 45
-  within 0.15 % of the SVG frames, smooth and stepped, except the documented limits (filters,
-  approximated blends, three ThorVG image quirks). The 45 test documents: 1369 KB of Lottie JSON,
-  372 KB gzipped (SMIL: 1022 KB, 369 KB gzipped), 405 KB as .lottie; exporting all of them takes
+  by frame in lottie-web 5.13, dotLottie 0.82 (ThorVG) and Skottie (CanvasKit 0.42) — all 46
+  within 0.15 % of the SVG frames, smooth and stepped, except the documented limits (a
+  four-stop gradient glow, approximated blends, ThorVG's narrower blur and three image quirks). The 46 test documents: 1462 KB of Lottie JSON,
+  379 KB gzipped (SMIL: 1078 KB, 373 KB gzipped), 413 KB as .lottie; exporting all of them takes
   0.2 s. `--format lottie|dotlottie`; in the panel the file name follows the format.
 - **Filters as Lottie effects.** Blur becomes a Gaussian blur (two directional ones when blurX
   and blurY differ), drop shadow and glow a drop shadow, animated filters keyframed effect values;
@@ -31,8 +31,33 @@
   parent's space, as Animate applies filters) with room for them, the instance's alpha one level
   up. The effect values carry After Effects' names (lottie-android reads them by name). Test
   documents with filters, worst frame: 2.8 % → 0.03 %, 0.45 % → 0.01 %, 0.8 % → 0.00 % (dotLottie
-  0.19 %: ThorVG blurs narrower). Bevels, gradient filters, inner and knockout shadows and glows
-  have no Lottie effect (warned).
+  0.19 %: ThorVG blurs narrower).
+- **The other filters, built from mattes.** Inner, knockout and *hide object* shadows and glows,
+  shadows and glows stronger than 100 % or blurred unevenly, bevels (inner, outer, full,
+  knockout), gradient glows and gradient bevels have no Lottie effect: they are built from track
+  mattes, blend modes and Gaussian blur / Tritone effects — the silhouette (a colour under a
+  matte of the instance, inverted for inner ones), blurred and moved; bevels from two moved
+  copies as one grey image ½ + ½ (o1 − o2) (half opacities and a difference blend, exact) and
+  Tritone lookups of its two sides; strength as a gain in colour dodge; gradient lookups by Tritone and luma mattes at 0, 50 and 100 % (exact for Animate's
+  default gradients and any straight in between; warned otherwise). Every building block was
+  measured in lottie-web, dotLottie and Skottie first. Filter test documents against the SVG
+  frames, worst frame: 7.2 % → 0.00 % (lottie-web, Skottie; dotLottie 0.14 %), 0.74 % → 0.00 %,
+  the new one with 16 kinds of filter: 0.11 % (its four-stop gradient glow; dotLottie 0.22 %).
+  dotLottie (ThorVG) ignores a track matte on a layer with effects and the opacity and blend mode
+  of the layers right inside one: the output keeps to that (also for filtered instances on masked
+  layers, which dotLottie showed unmasked before). Cost: players render a precomposition again
+  for every reference, so a built filter is drawn several times (a bevel blurs four times): the
+  new test document (16 filtered instances, 500×400) takes 31 ms a frame in Skottie on the CPU
+  (6 ms without its filters), 28 ms in dotLottie; a shadow costs about 0.5–2 ms, a bevel 6–9 ms.
+  Lottie JSON of all 46 test documents: 1462 KB (gzip 379 KB; without these filters 1378 / 373).
+- **Filters closer to Animate (SVG and Lottie).** Blurs: Animate's box covers the pixels at its
+  ends in part (blur 2: ¼ ½ ¼), so even blur amounts are wider than we drew them (blur 2 at high
+  quality: σ 1.22, was 0.87). Gradient glows: colour and alpha come from the gradient at
+  strength × blurred alpha (we faded the alpha once more and looked the colour up unstrengthened),
+  inner ones from the plain blurred alpha (the gradient's end fills the inside; we used the
+  inverse), a knockout cuts the shape out. Measured in Animate over black and white backgrounds;
+  test documents against Animate: 1.64 % → 0.12 % (new filter document), 0.41 % → 0.35 %,
+  0.76 % → 0.73 %, the others unchanged.
 - **dotLottie state machine.** A `.lottie` carries a state machine (`s/playback.json`,
   dotLottie 2.0) that plays it as the *Loop*, *Start* and *Poster* settings say: through once,
   looping, or — a `stop()` while movie clips run on — the intro once and then the tail; started

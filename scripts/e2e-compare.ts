@@ -29,8 +29,10 @@ const list = args.find((a) => !a.startsWith("--"));
 // dynamic text; our geometry is the unsnapped one. f31 is mostly text: Animate hints glyphs
 // (same outlines and positions, edge pixels differ). f35: Animate never draws a stroke thinner
 // than a pixel (the box flipping through scale 0); f40: strokes that scale only horizontally or
-// vertically are drawn as normal strokes (both are known limits).
-const TOLERANCE: Record<string, number> = { "f22-layers": 0.006, "f31-text2": 0.008, "f35-edge": 0.005, "f40-strokes": 0.004 };
+// vertically are drawn as normal strokes (both are known limits). f45: where a shape that splits
+// overlaps itself during the tween, Animate's rendering leaves the overlap empty; its SVG export
+// (what we follow) fills it.
+const TOLERANCE: Record<string, number> = { "f22-layers": 0.006, "f31-text2": 0.008, "f35-edge": 0.005, "f40-strokes": 0.004, "f45-morph": 0.012 };
 const imagesOpt = opt("images", "");
 const images: Partial<ImageSettings> | null = !imagesOpt ? null : imagesOpt === "lossless" ? {} : { imageLossy: imagesOpt as ImageSettings["imageLossy"] };
 const codecs = createCodecs(nodeWasmLoader());

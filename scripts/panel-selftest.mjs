@@ -46,7 +46,7 @@ const jobs = [
 	{ fla: fla("f42-images"), output: join(out, "images lottie linked", "images.json"), settings: { format: "lottie", embedImages: false }, preview: {}, expect: { files: 1, ext: ".json", lottie: true, linkedImages: true, preview: { svg: true, images: true } } },
 	// Lottie effects (filters) and the preview: lottie-web draws them as SVG filters; a JSON in dotLottie;
 	// a .lottie whose state machine waits for a click, then plays the intro (a stop() with running clips)
-	{ fla: fla("f08-filters"), output: join(out, "filters.json"), settings: { format: "lottie" }, preview: {}, expect: { files: 1, lottie: true, contains: [/"ty":25/, /"ty":29/], preview: { svg: true, filters: true } } },
+	{ fla: fla("f08-filters"), output: join(out, "filters.json"), settings: { format: "lottie" }, preview: {}, expect: { files: 1, lottie: true, contains: [/"ty":25/, /"ty":29/, /"tt":3/, /"bm":10/], preview: { svg: true, filters: true } } },
 	{ fla: fla("f02-eases"), output: join(out, "eases-in-dotlottie.json"), settings: { format: "lottie" }, preview: { player: "dotlottie" }, expect: { files: 1, lottie: true, preview: { canvas: true, moving: true } } },
 	{ fla: fla("f27-stop"), output: join(out, "stop-click.lottie"), settings: { format: "dotlottie", begin: "click" }, preview: { click: true }, expect: { files: 1, dotlottie: true, preview: { canvas: true, state: "idle", stateAfterClick: "intro" } } },
 	// selected library symbols: one file per symbol, named after it

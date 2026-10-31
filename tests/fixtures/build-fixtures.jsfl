@@ -1940,6 +1940,93 @@
 		extendAll(150);
 	});
 
+	// ---------------------------------------------------------------- f46: filters built from mattes in Lottie
+	build("f46-filters3", function () {
+		newDoc("timeline", 500, 400, 24);
+		boxSymbol();
+		layer("bg");
+		rect(0, 0, 500, 400, "#88CC88");
+		function sel(el) { doc.selectNone(); el.selected = true; }
+		function prop(i, k, v) { doc.setFilterProperty(k, i, v); }
+		function filtered(name, x, y, fn, mod) {
+			layer(name);
+			var el = place("box", x, y, 0);
+			if (mod) mod(el);
+			sel(el);
+			fn();
+			doc.selectNone();
+			return el;
+		}
+		function gradient(colors, ratios) {
+			var fs = doc.getFilters();
+			fs[fs.length - 1].colorArray = colors;
+			fs[fs.length - 1].posArray = ratios;
+			doc.setFilters(fs);
+		}
+		// row 1: inner / knockout / hidden object, an outline glow, uneven blur
+		filtered("innerKnock", 60, 70, function () { doc.addFilter("dropShadowFilter"); prop(0, "inner", true); prop(0, "knockout", true); prop(0, "distance", 6); });
+		filtered("outerKnock", 155, 70, function () { doc.addFilter("dropShadowFilter"); prop(0, "knockout", true); prop(0, "distance", 6); prop(0, "blurX", 8); prop(0, "blurY", 8); prop(0, "color", "#CC0000"); });
+		filtered("outline", 250, 70, function () { doc.addFilter("glowFilter"); prop(0, "color", "#000000"); prop(0, "strength", 1000); prop(0, "blurX", 3); prop(0, "blurY", 3); prop(0, "quality", "high"); });
+		filtered("uneven", 345, 70, function () { doc.addFilter("dropShadowFilter"); prop(0, "blurX", 16); prop(0, "blurY", 2); prop(0, "distance", 5); prop(0, "quality", "high"); });
+		filtered("innerHide", 440, 70, function () { doc.addFilter("dropShadowFilter"); prop(0, "inner", true); prop(0, "hideObject", true); prop(0, "color", "#0000FF"); prop(0, "distance", 5); });
+		// row 2: chains, a faded / tinted / turned instance
+		filtered("chain1", 60, 170, function () { doc.addFilter("blurFilter"); prop(0, "blurX", 4); prop(0, "blurY", 4); doc.addFilter("glowFilter"); prop(1, "inner", true); prop(1, "color", "#FFFF00"); prop(1, "blurX", 8); prop(1, "blurY", 8); });
+		filtered("chain2", 155, 170, function () {
+			doc.addFilter("dropShadowFilter"); prop(0, "inner", true); prop(0, "distance", 5); prop(0, "color", "#FF0000");
+			doc.addFilter("dropShadowFilter"); prop(1, "distance", 6);
+			doc.addFilter("adjustColorFilter"); prop(2, "hue", 120);
+		});
+		filtered("fadedBevel", 250, 170, function () { doc.addFilter("bevelFilter"); prop(0, "distance", 5); prop(0, "highlightColor", "#FFFF00"); prop(0, "shadowColor", "#0000FF"); }, function (el) { el.colorMode = "alpha"; el.colorAlphaPercent = 50; });
+		filtered("tintBevel", 345, 170, function () { doc.addFilter("bevelFilter"); prop(0, "type", "outer"); prop(0, "distance", 4); prop(0, "blurX", 6); prop(0, "blurY", 6); }, function (el) { el.colorMode = "tint"; el.tintColor = "#FF6600"; el.tintPercent = 60; });
+		filtered("turnedInner", 440, 170, function () { doc.addFilter("glowFilter"); prop(0, "inner", true); prop(0, "color", "#FFFFFF"); prop(0, "blurX", 10); prop(0, "blurY", 10); }, function (el) { el.rotation = 30; el.scaleX = 1.4; el.scaleY = 0.8; });
+		// row 3: gradient filters with other stops, a filtered instance under a mask
+		filtered("gradGlow4", 60, 270, function () {
+			doc.addFilter("gradientGlowFilter"); prop(0, "distance", 3); prop(0, "blurX", 12); prop(0, "blurY", 12);
+			gradient(["#FF000000", "#FFFF00", "#00FF00", "#0000FF"], [0, 80, 170, 255]);
+		});
+		filtered("gradBevelOut", 155, 270, function () {
+			doc.addFilter("gradientBevelFilter"); prop(0, "type", "outer"); prop(0, "knockout", true); prop(0, "distance", 5);
+		});
+		filtered("gradGlowInner", 250, 270, function () {
+			doc.addFilter("gradientGlowFilter"); prop(0, "type", "inner"); prop(0, "distance", 0); prop(0, "strength", 200);
+			gradient(["#FFFFFF00", "#FF00FF"], [0, 255]);
+		});
+		filtered("maskedContent", 345, 270, function () { doc.addFilter("dropShadowFilter"); prop(0, "inner", true); prop(0, "distance", 5); });
+		layer("maskShape");
+		oval(305, 245, 385, 300, "#000000");
+		var t = tl();
+		var mi = -1, ci = -1;
+		for (var i = 0; i < t.layers.length; i++) {
+			if (t.layers[i].name == "maskShape") mi = i;
+			if (t.layers[i].name == "maskedContent") ci = i;
+		}
+		t.layers[mi].layerType = "mask";
+		t.layers[ci].layerType = "masked";
+		t.layers[ci].parentLayer = t.layers[mi];
+		// row 4: filter tweens (values change every frame, the kinds stay)
+		function tweened(name, x, y, start, end) {
+			layer(name);
+			var t = tl();
+			var li = t.currentLayer;
+			var el = place("box", x, y, 0);
+			sel(el);
+			start();
+			doc.selectNone();
+			t.insertKeyframe(23);
+			t.currentFrame = 23;
+			var e2 = t.layers[li].frames[23].elements[0];
+			e2.x = x + 60;
+			sel(e2);
+			end();
+			doc.selectNone();
+			t.setSelectedFrames(0, 1);
+			t.createMotionTween();
+		}
+		tweened("innerTween", 60, 360, function () { doc.addFilter("dropShadowFilter"); prop(0, "inner", true); prop(0, "distance", 2); }, function () { prop(0, "distance", 12); prop(0, "color", "#FF0000"); prop(0, "blurX", 10); prop(0, "blurY", 10); });
+		tweened("bevelTween", 300, 360, function () { doc.addFilter("bevelFilter"); prop(0, "distance", 2); }, function () { prop(0, "distance", 8); prop(0, "strength", 300); prop(0, "angle", 135); });
+		extendAll(24);
+	});
+
 	FLfile.write(outDir + "/build-log.txt", log.join("\n"));
 	fl.closeAll(false);
 	fl.quit(false);

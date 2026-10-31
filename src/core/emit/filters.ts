@@ -129,11 +129,19 @@ export interface FilterBuild {
 	margin: number;
 }
 
-/** Converts Animate's box-blur amount (pixels) and quality to a Gaussian standard deviation. */
+/**
+ * Converts Animate's box-blur amount (pixels) and quality (passes) to a Gaussian standard
+ * deviation. The box is centred on the pixel and covers the pixels at its ends in part (blur 2:
+ * 1/4 1/2 1/4, blur 3: 1/3 1/3 1/3; measured in Animate), so one pass has the variance
+ * sum k^2 w_k: (w^2 - 1) / 12 for odd widths, (w^2 + 2) / 12 for even ones.
+ */
 export function blurSigma(amount: number, quality: unknown): number {
 	const passes = quality === "low" ? 1 : quality === "medium" ? 2 : 3;
 	if (amount <= 1) return 0;
-	return Math.sqrt((passes * (amount * amount - 1)) / 12);
+	const r = amount / 2;
+	let v = 0;
+	for (let k = 1; k - 0.5 < r; k++) v += 2 * k * k * (Math.min(k + 0.5, r) - (k - 0.5));
+	return Math.sqrt((passes * v) / amount);
 }
 
 /**
@@ -228,7 +236,7 @@ export function buildFilters(filters: FilterData[], scale: { x: number; y: numbe
 					prims.push(el("feComposite", { in: o1, in2: o2, operator: "arithmetic", k1: 0, k2: fmt(strength / 2, 3), k3: fmt(-strength / 2, 3), k4: 0.5, result: t }));
 					const spread = id();
 					prims.push(el("feColorMatrix", { in: t, type: "matrix", values: "0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0", result: spread }));
-					const tables = gradientTables(f, false);
+					const tables = gradientTables(f);
 					let effect = id();
 					prims.push(
 						el("feComponentTransfer", { in: spread, result: effect }, [
@@ -280,8 +288,11 @@ export function buildFilters(filters: FilterData[], scale: { x: number; y: numbe
 				break;
 			}
 			case "gradientGlowFilter": {
+				// Animate looks colour and alpha up at t = strength x the blurred alpha (the alpha of the
+				// gradient there, nothing else), inner glows too: from the gradient's end inwards; a
+				// knockout cuts the shape out (measured)
 				const inner = String(f.type ?? "outer") === "inner";
-				const a = inner ? invertAlpha(prims, src, id) : alphaOf(prims, src, id);
+				const a = alphaOf(prims, src, id);
 				const blur = id();
 				prims.push(el("feGaussianBlur", { in: a, stdDeviation: std, result: blur }));
 				let shaped = blur;
@@ -290,9 +301,10 @@ export function buildFilters(filters: FilterData[], scale: { x: number; y: numbe
 					prims.push(el("feOffset", { in: blur, dx: fmt(dx, 3), dy: fmt(dy, 3), result: o }));
 					shaped = o;
 				}
-				// alpha -> gradient colour lookup
+				// t -> gradient colour lookup
 				const spread = id();
-				prims.push(el("feColorMatrix", { in: shaped, type: "matrix", values: "0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 " + fmt(Math.min(strength, 10), 3) + " 0", result: spread }));
+				const k = fmt(Math.min(strength, 10), 3);
+				prims.push(el("feColorMatrix", { in: shaped, type: "matrix", values: `0 0 0 ${k} 0 0 0 0 ${k} 0 0 0 0 ${k} 0 0 0 0 ${k} 0`, result: spread }));
 				const tables = gradientTables(f);
 				const mapped = id();
 				prims.push(
@@ -310,9 +322,11 @@ export function buildFilters(filters: FilterData[], scale: { x: number; y: numbe
 					effect = ci;
 				}
 				const out = id();
-				prims.push(
-					el("feMerge", { result: out }, f.knockout ? [el("feMergeNode", { in: effect })] : inner ? [el("feMergeNode", { in: src }), el("feMergeNode", { in: effect })] : [el("feMergeNode", { in: effect }), el("feMergeNode", { in: src })]),
-				);
+				if (f.knockout && !inner) prims.push(el("feComposite", { in: effect, in2: src, operator: "out", result: out }));
+				else
+					prims.push(
+						el("feMerge", { result: out }, f.knockout ? [el("feMergeNode", { in: effect })] : inner ? [el("feMergeNode", { in: src }), el("feMergeNode", { in: effect })] : [el("feMergeNode", { in: effect }), el("feMergeNode", { in: src })]),
+					);
 				src = out;
 				break;
 			}
@@ -342,12 +356,12 @@ function invertAlpha(prims: XmlNode[], src: string, id: () => string): string {
 	return r;
 }
 
-/** Gradient lookup tables indexed by 0..1 (= ratio 0..255). Glows also fade the colour with the index (their blurred alpha). */
-function gradientTables(f: FilterData, fadeWithIndex = true): { r: string; g: string; b: string; a: string } {
+/** A gradient filter's colour (r, g, b, a in 0..1) at t = ratio / 255. */
+export function gradientSampler(f: FilterData): (t: number) => { r: number; g: number; b: number; a: number } {
 	const colors = (Array.isArray(f.colorArray) ? f.colorArray : ["#FFFFFF00", "#FFFFFF"]) as unknown[];
 	const ratios = (Array.isArray(f.posArray) ? f.posArray : colors.map((_, i) => (i / Math.max(1, colors.length - 1)) * 255)) as number[];
 	const stops = colors.map((c, i) => ({ ...splitColor(c), pos: n(ratios[i], 0) / 255 }));
-	const sample = (t: number) => {
+	return (t: number) => {
 		let i = 0;
 		while (i < stops.length - 1 && stops[i + 1]!.pos < t) i++;
 		const a = stops[i]!,
@@ -361,6 +375,11 @@ function gradientTables(f: FilterData, fadeWithIndex = true): { r: string; g: st
 			a: a.alpha + (b.alpha - a.alpha) * u,
 		};
 	};
+}
+
+/** Gradient lookup tables indexed by 0..1 (= ratio 0..255). */
+function gradientTables(f: FilterData): { r: string; g: string; b: string; a: string } {
+	const sample = gradientSampler(f);
 	const N = 16;
 	const r: string[] = [],
 		g: string[] = [],
@@ -371,7 +390,7 @@ function gradientTables(f: FilterData, fadeWithIndex = true): { r: string; g: st
 		r.push(fmt(s.r, 3));
 		g.push(fmt(s.g, 3));
 		b.push(fmt(s.b, 3));
-		a.push(fmt(fadeWithIndex ? s.a * (i / N) : s.a, 3));
+		a.push(fmt(s.a, 3));
 	}
 	return { r: r.join(" "), g: g.join(" "), b: b.join(" "), a: a.join(" ") };
 }

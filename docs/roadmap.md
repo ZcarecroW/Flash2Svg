@@ -45,7 +45,7 @@ support (sources below) before starting a package.
 | 3 | Shape tweens as path morphing (SMIL and player) | very high for shape tweens | medium–high | ✅ |
 | 4 | CSS: `linear()` easing, individual transform properties | medium | small–medium | ⬜ |
 | 5 | Interactivity: triggers, scroll, label state machine | high | medium | ⬜ |
-| 6 | Lottie / dotLottie export | very high (reach) | high | ✅ (effects ✅, state machine ✅, panel preview ✅; constructed inner filters ⬜) |
+| 6 | Lottie / dotLottie export | very high (reach) | high | ✅ (effects ✅, built filters ✅, state machine ✅, panel preview ✅) |
 | 7 | WOFF2 fonts, video, library export | medium | medium | ⬜ |
 
 ### 1. Media encoding settings
@@ -129,7 +129,7 @@ support (sources below) before starting a package.
   - Filter test documents, worst frame: 2.8 % → 0.03 %, 0.45 % → 0.01 %, 0.8 % → 0.00 %.
 - ✅ dotLottie state machine (`s/playback.json`): follow the timeline (intro once, then the tail), loop or play once; start automatically, on click, on hover or from script (event `play`), poster until then, restart on the next click. Markers `intro` / `loop` also in Lottie JSON. dotlottie-rs plays marker ends inclusive: markers in .lottie end a frame earlier. `scripts/e2e-statemachine.ts`.
 - ✅ Lottie preview in the panel: lottie-web or dotLottie (separate bundles loaded on demand), state machine with clicks; checked inside Animate by the panel self-test.
-- ⬜ Inner and knockout shadows and glows, *hide object*: no Lottie effect, but they can be built from track mattes (the instance as an inverted matte of a coloured box, blurred, matted again) and a recoloured, blurred copy.
+- ✅ The filters without a Lottie effect, built from track mattes, blend modes and blur / Tritone effects: inner, knockout and *hide object* shadows and glows, strong or unevenly blurred ones, bevels (exact clamped difference: lighten, then difference), gradient glows and bevels (Tritone lookup at 0, 50, 100 %); strength as a colour-dodge gain. Exact in lottie-web and Skottie except gradients with other stops.
 - ⬜ Colour effects on bitmaps: a tint (equal multipliers) is Lottie's Fill effect (colour, opacity = amount).
 - ⬜ A seamless loop seam in dotLottie (its loops run about a frame short): a closing key one frame past the end.
 - ⬜ Labels as states (package 5), buttons as state machine interactions.

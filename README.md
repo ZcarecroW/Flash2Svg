@@ -31,9 +31,10 @@ documents.
 - **Shape tweens as morphs**: in SMIL and the JS player one drawing whose paths, colours and
   gradients blend, checked against every frame Animate drew (v3: a drawing per frame).
 - **Lottie and dotLottie export** (Animate has none of its own): the same timelines as Lottie
-  JSON or a `.lottie` archive, checked in three Lottie players; blur, drop shadow and glow as
-  Lottie effects; a state machine in the `.lottie` plays it like the SVG (stop(), start on a
-  click or hover); a preview in the panel (lottie-web or dotLottie).
+  JSON or a `.lottie` archive, checked in three Lottie players; all of Animate's filters (blur,
+  drop shadow and glow as Lottie effects, the rest built from mattes); a state machine in the
+  `.lottie` plays it like the SVG (stop(), start on a click or hover); a preview in the panel
+  (lottie-web or dotLottie).
 - **HTML5 Canvas documents** (v3 refused them), frame scripts `stop()`, `play()`,
   `gotoAndPlay()`, `gotoAndStop()` in AS3 or JavaScript syntax, including the banner idiom
   "play 3 times, then stop" (a pass counter in an `if`). Movie clips keep running after the main
@@ -203,6 +204,13 @@ lottie-ios / lottie-android.
   the Lottie specification 1.0, but lottie-web, dotLottie, Skottie and the iOS / Android players
   draw them. The three players disagree on where effect values apply, so the effects sit on a
   layer of their own in the parent's space, as Animate applies filters.
+- The filters Lottie has no effect for are built from track mattes, blend modes and blur / Tritone
+  effects: inner, knockout and *hide object* shadows and glows, strong (over 100 %) or unevenly
+  blurred ones, bevels, gradient glows and gradient bevels — in lottie-web and Skottie they match
+  the SVG output exactly. A gradient filter's colours are looked up at 0, 50 and 100 %: exact for
+  Animate's default gradients and any gradient straight in between, close otherwise (warned).
+  These use effects lottie-web, dotLottie and Skottie draw (Tritone among them); other players
+  may not.
 - Each test document is checked frame by frame in lottie-web, dotLottie and Skottie against the
   SVG output, and validated with the official schema.
 - Playback: a Lottie JSON loops and autoplays as the player is told. After a `stop()` while
@@ -211,18 +219,21 @@ lottie-ios / lottie-android.
   and *Poster* settings say — follow the timeline or loop or play once, start automatically, on
   a click, on hover or from script (fire its event `play`; a click or hover starts it again).
   dotLottie players run it when asked: `stateMachineId: "playback"`.
-- Not in Lottie (warned): bevels, gradient glows and bevels, inner and knockout shadows and glows,
-  *hide object*; the *subtract* and *add* blends are drawn as multiply by the inverted colours
-  and as screen (close, not exact); sounds, button states and editable text (text is outlined)
+- Not in Lottie (warned): the *subtract* and *add* blends are drawn as multiply by the inverted
+  colours and as screen (close, not exact); sounds, button states and editable text (text is outlined)
   are not exported; hairlines keep the width they have at the scale their symbol starts with;
   bitmaps without smoothing are drawn smoothed, and colour effects on bitmaps keep only their
   alpha.
 - The players differ in a few things (measured): lottie-web blurs drop shadows a little less
-  than the others; dotLottie (ThorVG) blurs narrower (two of its three box-blur passes), draws
+  than the others; dotLottie (ThorVG) blurs narrower (two of its three box-blur passes; bevels
+  show it most), draws
   thin seams between the tiles of a repeating bitmap fill and faded edges where a clipped bitmap
   fill stretches its edge pixels, smooths pixel art, and its loops run about a frame short.
-- Size: Lottie JSON is wordier than SVG, but compresses as well — the 45 test documents take
-  1369 KB as Lottie and 1022 KB as SMIL, gzipped 372 KB and 369 KB; as .lottie archives 405 KB.
+- Size: Lottie JSON is wordier than SVG, but compresses as well — the 46 test documents take
+  1462 KB as Lottie and 1078 KB as SMIL, gzipped 379 KB and 373 KB; as .lottie archives 413 KB.
+- Speed: players draw a precomposition again for each use, so built filters cost render time
+  (a bevel blurs four times): about 0.5–2 ms per shadow and 6–9 ms per bevel and frame in Skottie
+  on the CPU at 500×400.
 
 ```js
 // lottie-web (frame labels are markers: goToAndPlay("intro", true))
@@ -259,7 +270,8 @@ write it to `tests/out/<name>/model/`.)
   drop/inner shadow, bevel inner/outer/full, knockout, hide object, gradient glow and bevel,
   adjust colour): in the browser they match within a fraction of a percent of the pixels. Filters
   follow the stage orientation like Animate's; for instances nested in rotated symbols they turn
-  with the parent symbol.
+  with the parent symbol. A low-quality (one pass) blur is a box in Animate, with straight edge
+  ramps; SVG and Lottie blur with a Gaussian of the same spread (strong gradient glows show it).
 - *Alpha* and *erase* act inside a symbol placed with the *layer* blend, like in Animate (they
   cut into what lies below them in that symbol).
 - Frame scripts are not run: `stop()`, `play()`, `gotoAndPlay()`/`gotoAndStop()` with a frame
@@ -293,8 +305,8 @@ write it to `tests/out/<name>/model/`.)
   `stop()` the running clips loop on (their common period). Very long timelines with many short
   nested loops of different lengths make big SMIL/CSS files — use the JS player then.
 - *Loop: once* stops everything on the last frame, movie clips included.
-- Lottie: bevels, gradient filters, inner and knockout shadows and glows, sounds, button states
-  and editable text are not exported; *subtract* and *add* are approximated; see [Lottie](#lottie).
+- Lottie: sounds, button states and editable text are not exported; *subtract* and *add* are
+  approximated; see [Lottie](#lottie).
 
 ## Development
 

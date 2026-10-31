@@ -4,6 +4,7 @@ import { strFromU8, unzipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { compileScene, type ExportSettings } from "../../src/core/compile.ts";
 import { evalBezier } from "../../src/core/easing.ts";
+import { blurSigma } from "../../src/core/emit/filters.ts";
 import { internals } from "../../src/core/emit/lottie.ts";
 import { trackRepeats } from "../../src/core/emit/periods.ts";
 import type { SceneModel } from "../../src/core/model.ts";
@@ -103,15 +104,28 @@ describe("Lottie effects", () => {
 	const warn = (m: string) => warnings.push(m);
 	const effects = (filters: Json[]) => {
 		const fx = lottieFilters(filters as never, warn);
-		return { fx, ef: effectsJson({ a: 0, b: 10, fx, sets: [{ t: 0, fx }] }, null) };
+		const run = { a: 0, b: 10, fx, sets: [{ t: 0, fx }] };
+		return { fx, ef: fx.stages.flatMap((s) => (s.kind === "fx" ? effectsJson(run, [s], null) : [])) };
 	};
 	const value = (ef: Json, name: string) => ((ef.ef as Json[]).find((v) => v.nm === name)!.v as Json).k;
+
+	it("blurs like Animate: a box centred on the pixel, partly covering the pixels at its ends", () => {
+		// blur 2: 1/4 1/2 1/4 per pass; blur 3: 1/3 1/3 1/3; blur 1 and less: none
+		expect(blurSigma(2, "low")).toBeCloseTo(Math.sqrt(0.5), 9);
+		expect(blurSigma(2, "high")).toBeCloseTo(Math.sqrt(1.5), 9);
+		expect(blurSigma(3, "medium")).toBeCloseTo(Math.sqrt((2 * 8) / 12), 9);
+		expect(blurSigma(6, "high")).toBeCloseTo(Math.sqrt((3 * 38) / 12), 9);
+		expect(blurSigma(1, "high")).toBe(0);
+		// continuous in between
+		expect(blurSigma(1.0001, "low")).toBeLessThan(0.02);
+		expect(Math.abs(blurSigma(2.0001, "low") - blurSigma(1.9999, "low"))).toBeLessThan(1e-3);
+	});
 
 	it("writes blurs as Gaussian blurs (blurriness = sigma / 0.3), two directions when they differ", () => {
 		const even = effects([{ name: "blurFilter", blurX: 10, blurY: 10, quality: "high" }]);
 		expect(even.ef).toHaveLength(1);
 		expect(even.ef[0]).toMatchObject({ ty: 29, nm: "Gaussian Blur" });
-		expect(value(even.ef[0]!, "Blurriness")).toBeCloseTo(Math.sqrt((3 * 99) / 12) / 0.3, 1);
+		expect(value(even.ef[0]!, "Blurriness")).toBeCloseTo(Math.sqrt((3 * 102) / 12) / 0.3, 1);
 		expect(value(even.ef[0]!, "Blur Dimensions")).toBe(1);
 		const uneven = effects([{ name: "blurFilter", blurX: 10, blurY: 4, quality: "low" }]);
 		expect(uneven.ef.map((e) => value(e, "Blur Dimensions"))).toEqual([2, 3]);
@@ -130,17 +144,65 @@ describe("Lottie effects", () => {
 		expect(value(glow, "Opacity")).toBeCloseTo(127.5, 1);
 	});
 
-	it("leaves out what Lottie has no effect for, with a warning", () => {
+	it("builds what Lottie has no effect for from layers, in the filters' order, without warnings", () => {
 		warnings.length = 0;
 		const { fx } = effects([
+			{ name: "blurFilter", blurX: 4, blurY: 4 },
 			{ name: "dropShadowFilter", inner: true },
 			{ name: "glowFilter", knockout: true },
-			{ name: "bevelFilter" },
+			{ name: "dropShadowFilter", hideObject: true },
+			{ name: "glowFilter", strength: 300, blurX: 4, blurY: 4 },
+			{ name: "dropShadowFilter", blurX: 16, blurY: 2 },
+			{ name: "glowFilter", blurX: 4, blurY: 4 },
+			{ name: "bevelFilter", type: "full" },
 			{ name: "gradientGlowFilter" },
+			{ name: "gradientBevelFilter", colorArray: ["#FFFFFF", "#FF000000", "#000000"], posArray: [0, 128, 255] },
 			{ name: "blurFilter", enabled: false, blurX: 9, blurY: 9 },
 		]);
-		expect(fx.slots).toEqual([]);
-		expect(warnings.join("\n")).toMatch(/drop shadows.*left out[\s\S]*glows.*left out[\s\S]*bevel[\s\S]*gradient glow/);
+		expect(fx.stages.map((s) => s.kind)).toEqual(["fx", "shadow", "shadow", "shadow", "shadow", "shadow", "fx", "bevel", "gradient", "gradient"]);
+		expect(fx.stages[1]).toMatchObject({ kind: "shadow", inner: true, knockout: false, hide: false, dx: 3, dy: 3 });
+		expect(fx.stages[4]).toMatchObject({ kind: "shadow", m: 3, dx: 0, dy: 0 });
+		expect(warnings).toEqual([]);
+	});
+
+	it("looks gradient filters up at grey levels 0, 1/2 and 1, and says when that is not exact", () => {
+		warnings.length = 0;
+		const { fx } = effects([{ name: "gradientGlowFilter", strength: 200, colorArray: ["#FF000000", "#0000FF"], posArray: [0, 255] }]);
+		// the strength is in the grey levels: the lookup is the gradient's own
+		expect(fx.stages[0]).toMatchObject({
+			kind: "gradient",
+			rgb: [
+				[1, 0, 0],
+				[0.5, 0, 0.5],
+				[0, 0, 1],
+			],
+			alpha: [0, 0.5, 1],
+		});
+		expect(warnings).toEqual([]);
+		effects([{ name: "gradientGlowFilter", colorArray: ["#FF000000", "#FFFF00", "#00FF00", "#0000FF"], posArray: [0, 80, 170, 255] }]);
+		expect(warnings.join("\n")).toMatch(/0, 50 and 100%.*not exact/);
+	});
+
+	it("keeps effects off matte layers and blending and opacity off the layers right inside effect layers (ThorVG)", () => {
+		const anim = JSON.parse(compile("f46-filters3", { format: "lottie" }).files[0]!.svg);
+		const assets = new Map((anim.assets as Json[]).map((a) => [a.id as string, a]));
+		const comps = [anim.layers as Json[], ...(anim.assets as Json[]).filter((a) => a.layers).map((a) => a.layers as Json[])];
+		const kinds = new Set<string>();
+		for (const layers of comps)
+			for (const l of layers) {
+				if (l.bm) kinds.add(`bm${l.bm}`);
+				if (l.tt) kinds.add(`tt${l.tt}`);
+				for (const e of (l.ef as Json[] | undefined) ?? []) kinds.add(`ef${e.ty}`);
+				if (!l.ef) continue;
+				expect(l.td ?? l.tt, "a matte with effects").toBeUndefined();
+				for (const c of ((assets.get(l.refId as string)?.layers as Json[] | undefined) ?? []) as Json[]) {
+					expect(c.bm, "blending right inside an effect layer").toBeUndefined();
+					expect((c.ks as Json | undefined)?.o, "opacity right inside an effect layer").toBeUndefined();
+				}
+			}
+		// built filters: blur and Tritone effects, alpha / inverted / luma mattes, difference, colour dodge
+		for (const k of ["ef29", "ef23", "tt1", "tt2", "tt3", "bm10", "bm6"]) expect(kinds, k).toContain(k);
+		expect((validator.validate(anim, true) as { type: string }[]).filter((p) => p.type === "error")).toEqual([]);
 	});
 
 	it("puts colour adjustments into the paints and the colour of the shadows before them", () => {

@@ -238,6 +238,24 @@ Lottie spec 1.0 has (no expressions) plus layer effects for filters, so lottie-w
   (`effectsLayer`), its box grown by the effects' reach and covered by a transparent rectangle
   (the bounding box), the instance's alpha on one more precomp level above. Effect values carry
   After Effects' names (`nm`): lottie-android finds drop shadow values by name.
+- **Built filters** (`builtLayer`): the filter chain is a list of stages (`Stage`): runs of
+  effects (`FxStage`, one wrapper each) and filters Lottie has no effect for (`Built`: inner /
+  knockout / hide-object, strong or unevenly blurred shadows and glows, bevels, gradient glows
+  and bevels), each on the result of the stages before. The source becomes a precomp used
+  several times. Pieces (measured in all three players, 2026-10-31): a silhouette is a rectangle
+  under a track matte of the source (inverted for inner ones), blurred on a precomp layer and
+  moved by its position; knockouts and inner filters are mattes of the source again. Bevels: the
+  blurred silhouette moved by ∓d as grey images u, v, combined into L = ½ + ½ (u − v) (u at 50 %
+  over white, then v at 50 % over black as a *difference*: exact, as the first is at least ½ and
+  the second at most); highlight max(0, 2L − 1) and shadow max(0, 1 − 2L) are Tritone lookups of
+  it — a matte product u (1 − v) would be wrong along edges in the light's direction. Players
+  render a precomp again for each reference: a bevel blurs 4 times, a gradient bevel 4 (8 when
+  stronger than 100 %). Strength m: the grey image under grey 1 − 1/m in *colour dodge* (L / (1 − c)) or
+  black at 1 − m, used as a luma matte. Gradient filters: the grey levels mapped by Tritone
+  effects (a 3-point lookup in sRGB) to the gradient's colours and, as a luma matte, its alpha.
+  ThorVG ignores a track matte on a layer with effects and the opacity / blend mode of the layers
+  right inside a layer with effects: effects go one precomp level down where that would happen
+  (also for filtered instances that are masks or masked).
 - **Playback:** after a `stop()` with running movie clips the horizon has a looping tail; the
   markers `intro` and `loop` hold the two parts. dotLottie players (dotlottie-rs) play a marker
   over [tm, tm + dr] with the end frame, a whole animation over [0, op − 1]: in a .lottie the

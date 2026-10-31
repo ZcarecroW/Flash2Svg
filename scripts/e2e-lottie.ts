@@ -25,11 +25,13 @@ const threshold = parseFloat(opt("threshold", "0.0015"));
 const steps = args.includes("--steps");
 // Known differences (measured 2026-10-30, set just above), by fixture or "fixture/player".
 const TOLERANCE: Record<string, number> = {
-	// filters without a Lottie effect (bevel, gradient glow / bevel, inner shadow and glow,
-	// knockout, Animate's layer "fx" filter): left out (warned)
-	"f08-filters": 0.008,
-	"f19-filters2": 0.075,
+	// Animate's layer "fx" filter: left out (warned)
 	"f22-layers": 0.002,
+	// a gradient glow with four stops, looked up at 0, 50 and 100 % (warned)
+	"f46-filters3": 0.0013,
+	// dotLottie (ThorVG) blurs narrower: bevels, which subtract two blurred copies, show it most
+	"f19-filters2/dotlottie": 0.0017,
+	"f46-filters3/dotlottie": 0.0026,
 	// dotLottie (ThorVG) blurs narrower (two of its three box blur passes at its quality)
 	"f20-misc/dotlottie": 0.0025,
 	"f29-motion/dotlottie": 0.0025,

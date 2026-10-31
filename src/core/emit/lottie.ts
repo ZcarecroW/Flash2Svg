@@ -27,7 +27,7 @@ import { valueAt, type Ease, type Track } from "../tracks.ts";
 import { copyArtwork, type Artwork } from "../artwork.ts";
 import { isNode, walk, type XmlNode } from "../xml.ts";
 import { bake, sliceTrack, type BakedInstance, type BakedMorph, type BakedNode, type BakedTimeline, type GTrack, type Interval } from "./bake.ts";
-import { adjustColorMatrix, blendHides, blurSigma, splitColor } from "./filters.ts";
+import { adjustColorMatrix, blendHides, blurSigma, gradientSampler, splitColor } from "./filters.ts";
 import { Periods } from "./periods.ts";
 
 type Json = Record<string, unknown>;
@@ -1054,10 +1054,16 @@ class LottieWriter {
 		mode: "alpha" | "erase" | undefined,
 		box?: { left: number; top: number; width: number; height: number },
 	): LayerOut[] {
-		// a matte must exist all the time (outside its own frames it would mask nothing)
+		// a matte must exist all the time (outside its own frames it would mask nothing); ThorVG
+		// ignores a track matte on a layer with effects: those go one level down
 		const one = (list: LayerOut[], key: string, whole: boolean): LayerOut => {
 			const l = list[0]!;
-			if (list.length === 1 && !l.td && (!whole || (((l.json.ip as number | undefined) ?? 0) === 0 && ((l.json.op as number | undefined) ?? this.H) >= this.H)))
+			if (
+				list.length === 1 &&
+				!l.td &&
+				!l.json.ef &&
+				(!whole || (((l.json.ip as number | undefined) ?? 0) === 0 && ((l.json.op as number | undefined) ?? this.H) >= this.H))
+			)
 				return l;
 			const ref = this.precomp(key, "", () => [...list].reverse());
 			return { json: { ty: 0, refId: ref.id, w: ref.w, h: ref.h, ip: 0, op: this.H, st: 0, ks: { a: st([ref.ox, ref.oy]) } }, box: ref.box };
@@ -1281,7 +1287,7 @@ class LottieWriter {
 			// Animate fades an instance after its filters (content and shadow together, the content
 			// opaque over its shadow): with effects, its alpha is the effects layer's opacity and only
 			// its tint goes into the paints
-			const effects = fx.slots.length > 0;
+			const effects = fx.stages.length > 0;
 			const own = effects && color ? withoutAlpha(color) : color;
 			const bakeOwn = effects ? !!color && !mode.opaque && !alphaOnly : baked;
 			// the colour after the filters (the shadows' too): own colour, blend recolour, parents'
@@ -1319,8 +1325,8 @@ class LottieWriter {
 			const json: Json = { ty: 0, refId: ref.id, w: ref.w, h: ref.h, ip: a, op: b, st: 0, ks };
 			if (loop) json.tm = sawtooth(a, b, period, this.fps);
 			const box = this.instanceBox(n, ref.box, a, b);
-			// effects go on a wrapper (identity transform) holding the instance: see effectsLayer
-			const top = effects ? this.effectsLayer({ json, box }, run, after, opacity) : { json, box };
+			// the filters go around the instance: see filtersLayer
+			const top = effects ? this.filtersLayer({ json, box }, run, after, opacity) : { json, box };
 			if (n.item.name) top.json.nm = n.item.name;
 			if (bm) top.json.bm = bm;
 			out.push(top);
@@ -1333,7 +1339,7 @@ class LottieWriter {
 	 * the colour matrix); within a run only effect values change (keyframed).
 	 */
 	private filterRuns(n: BakedInstance, vis: Interval[], mode: Mode): FilterRun[] {
-		const none: LottieFilters = { slots: [], matrix: null, sig: "", margin: 0 };
+		const none: LottieFilters = { stages: [], matrix: null, sig: "" };
 		if (mode.opaque || !n.filters.some((f) => f.filters.length)) return vis.map(([a, b]) => ({ a, b, fx: none, sets: [] }));
 		const mapped = new Map<FilterData[], LottieFilters>();
 		const map = (fs: FilterData[]) => {
@@ -1366,52 +1372,245 @@ class LottieWriter {
 	}
 
 	/**
-	 * A layer with the instance's filters as Lottie effects. Players differ in the space of effect
-	 * values (lottie-web and ThorVG: the layer's own, with its transform and parents; Skottie: the
-	 * composition's), so the effects sit on a precomp layer without a transform (the parent's
-	 * space, where Animate's filters work) that holds the instance. ThorVG clips effects to the
-	 * precomp and lottie-web its drop shadows to the layer's bounding box: the precomp gets room for
-	 * the effects and a transparent rectangle over all of it. ThorVG fades a layer before its
-	 * effects (a half transparent instance over its own shadow): the opacity goes one level up.
+	 * An instance with its filters, in their order: runs of Lottie effects on a wrapper layer each
+	 * (effectsLayer), the others built from layers and track mattes (builtLayer). Animate fades an
+	 * instance after its filters; ThorVG fades a layer before its effects (a half transparent
+	 * instance over its own shadow): after effects the opacity goes one level up.
 	 */
-	private effectsLayer(inner: LayerOut, run: FilterRun, after: Paint | null, opacity: Json | null): LayerOut {
+	private filtersLayer(inner: LayerOut, run: FilterRun, after: Paint | null, opacity: Json | null): LayerOut {
+		let cur = inner;
+		run.fx.stages.forEach((stage, j) => {
+			const per = run.sets.map((s) => s.fx.stages[j]!);
+			cur = stage.kind === "fx" ? this.effectsLayer(cur, run, per as FxStage[], after) : this.builtLayer(cur, run, per as Built[], after);
+		});
+		if (!opacity) return cur;
+		if (run.fx.stages[run.fx.stages.length - 1]!.kind !== "fx") {
+			(cur.json.ks as Json).o = opacity;
+			return cur;
+		}
+		const up = this.precomp(null, "", () => [cur]);
+		return { json: { ty: 0, refId: up.id, w: up.w, h: up.h, ip: run.a, op: run.b, st: 0, ks: { a: st([up.ox, up.oy]), o: opacity } }, box: up.box };
+	}
+
+	/**
+	 * A layer with filters as Lottie effects. Players differ in the space of effect values
+	 * (lottie-web and ThorVG: the layer's own, with its transform and parents; Skottie: the
+	 * composition's), so the effects sit on a precomp layer without a transform (the parent's
+	 * space, where Animate's filters work) that holds the source. ThorVG clips effects to the
+	 * precomp and lottie-web its drop shadows to the layer's bounding box: the precomp gets room for
+	 * the effects and a transparent rectangle over all of it.
+	 */
+	private effectsLayer(src: LayerOut, run: FilterRun, per: FxStage[], after: Paint | null): LayerOut {
 		const { a, b } = run;
-		const m = Math.max(...run.sets.map((s) => s.fx.margin));
-		const ib = inner.box ?? EMPTY_BOX;
-		const g: Box = { x0: ib.x0 - m, y0: ib.y0 - m, x1: ib.x1 + m, y1: ib.y1 + m };
-		const pts = [
-			[g.x0, g.y0],
-			[g.x1, g.y0],
-			[g.x1, g.y1],
-			[g.x0, g.y1],
-		].map(([x, y]) => [round(x!, 2), round(y!, 2)]);
-		const zero = pts.map(() => [0, 0]);
-		const clear: LayerOut = {
-			json: {
-				ty: 4,
-				ip: a,
-				op: b,
-				st: 0,
-				ks: {},
-				shapes: [
-					{
-						ty: "gr",
-						it: [
-							{ ty: "sh", ks: st({ c: true, v: pts, i: zero, o: zero }) },
-							{ ty: "fl", c: st([1, 1, 1]), o: st(0), r: 1 },
-							{ ty: "tr", o: st(100) },
-						],
-					},
-				],
-			},
-			box: g,
+		const g = growBox(src.box ?? EMPTY_BOX, Math.max(...per.map((s) => s.margin)));
+		const ref = this.precomp(null, "", () => [src, rectLayer(g, st([1, 1, 1]), st(0), a, b)]);
+		const ef = effectsJson(run, per, after);
+		return { json: { ty: 0, refId: ref.id, w: ref.w, h: ref.h, ip: a, op: b, st: 0, ks: { a: st([ref.ox, ref.oy]) }, ef }, box: ref.box };
+	}
+
+	/**
+	 * A filter Lottie has no effect for, built from layers (in the parent's space, as effects) on
+	 * the source (the instance, or it with the filters before): its silhouette is a rectangle in
+	 * the filter's colour under a track matte of the source (the inverted matte for inner ones),
+	 * blurred by Gaussian blur effects and moved. Shadows and glows: inner ones under a matte of
+	 * the source, knockouts under its inverse, the source over (outer), under (inner) or left out.
+	 * Bevels: the blurred silhouette moved by -d and +d as grey levels o1 and o2, the highlight by
+	 * max(0, o1 - o2) (blend modes), the shadow the other way round (a matte product o1 (1 - o2)
+	 * would be off along edges in the light's direction). Gradient filters: the glow or bevel as grey levels mapped
+	 * to the gradient's colours and alpha by Tritone effects (a lookup at 0, 1/2 and 1) and luma
+	 * mattes. Stronger than 100 %: the alpha as grey levels in colour dodge with a grey, as a luma
+	 * matte (exact). Values change with held keys.
+	 */
+	private builtLayer(src: LayerOut, run: FilterRun, per: Built[], after: Paint | null): LayerOut {
+		const { a, b } = run;
+		const times = run.sets.map((s) => s.t);
+		const f = per[0]!;
+		const G = growBox(src.box ?? EMPTY_BOX, Math.max(...per.map((s) => s.margin)));
+		const pre = (layers: LayerOut[]) => this.precomp(null, "", () => layers);
+		const use = (r: PrecompRef, ks: Json = {}, extra: Json = {}): LayerOut => ({
+			json: { ty: 0, refId: r.id, w: r.w, h: r.h, ip: a, op: b, st: 0, ks: { a: st([r.ox, r.oy]), ...ks }, ...extra },
+			box: r.box,
+		});
+		const matte = (m: LayerOut, content: LayerOut, tt: 1 | 2 | 3): LayerOut[] => [
+			{ ...m, td: true },
+			{ ...content, json: { ...content.json, tt } },
+		];
+		const x = pre([src]);
+		const solid = (c: Json, o: Json) => rectLayer(G, c, o, a, b);
+		const fixed = (v: number) => st([v, v, v]);
+		const blur = blurEffects(per, times);
+		const moves = per.some((s) => s.dx || s.dy);
+		/** `r` moved by sign x the offset (held keys), its box with every offset. */
+		const moved = (r: PrecompRef, sign: number, extra: Json = {}): LayerOut => {
+			const l = use(
+				r,
+				{
+					p: heldKeys(
+						times,
+						per.map((s) => [sign * s.dx, sign * s.dy]),
+					),
+				},
+				extra,
+			);
+			let box: Box | null = null;
+			for (const s of per)
+				box = unionBox(box, { x0: r.box.x0 + sign * s.dx, y0: r.box.y0 + sign * s.dy, x1: r.box.x1 + sign * s.dx, y1: r.box.y1 + sign * s.dy });
+			l.box = box;
+			return l;
 		};
-		const ref = this.precomp(null, "", () => [inner, clear]);
-		const ef = effectsJson(run, after);
-		const layer: LayerOut = { json: { ty: 0, refId: ref.id, w: ref.w, h: ref.h, ip: a, op: b, st: 0, ks: { a: st([ref.ox, ref.oy]) }, ef }, box: ref.box };
-		if (!opacity) return layer;
-		const up = this.precomp(null, "", () => [layer]);
-		return { json: { ty: 0, refId: up.id, w: up.w, h: up.h, ip: a, op: b, st: 0, ks: { a: st([up.ox, up.oy]), o: opacity } }, box: up.box };
+		/** The source's silhouette (or the inverse) in a colour, blurred and moved by sign x the offset. */
+		const silhouette = (c: Json, o: Json, inverted: boolean, sign: number): PrecompRef => {
+			const sil = pre(matte(use(x), solid(c, o), inverted ? 2 : 1));
+			if (!blur.length && !(sign && moves)) return sil;
+			const ef = blur.length ? { ef: blur } : {};
+			const l = sign && moves ? moved(sil, sign, ef) : use(sil, {}, ef);
+			return pre([l, rectLayer(unionBox(G, l.box)!, st([1, 1, 1]), st(0), a, b)]);
+		};
+		const strengths = per.map((s) => (s.kind === "shadow" ? s.m : s.s));
+		const strong = Math.max(...strengths) > 1 + 1e-6;
+		const opacityOf = (v: number[]) => (v.every((o) => o === 100) ? null : heldKeys(times, v));
+		const q = heldKeys(
+			times,
+			strengths.map((v) => round(Math.min(1, v) * 100, 2)),
+		);
+		/**
+		 * A white image's alpha A as grey levels min(1, m A) over black, for a luma matte: under black
+		 * at 1 - m (m < 1; a fill: ThorVG ignores the opacity of layers right inside a layer with
+		 * effects) and grey 1 - 1/m in colour dodge (m > 1: L / (1 - c), one pass, all three players).
+		 */
+		const strengthened = (white: PrecompRef, ms: number[]): PrecompRef => {
+			const cover = ms.map((m) => round((1 - Math.min(1, m)) * 100, 2));
+			const dodge = ms.map((m) => round(Math.max(0, 1 - 1 / Math.max(m, 1e-9)), 4));
+			const layers: LayerOut[] = [];
+			if (dodge.some((c) => c > 0)) {
+				const l = solid(
+					heldKeys(
+						times,
+						dodge.map((c) => [c, c, c]),
+					),
+					st(100),
+				);
+				l.json.bm = 6;
+				layers.push(l);
+			}
+			if (cover.some((v) => v > 0)) layers.push(solid(fixed(0), heldKeys(times, cover)));
+			return pre([...layers, use(white), solid(fixed(0), st(100))]);
+		};
+		/** A colour where a white image is, its alpha strengthened (shadows: m, bevels: s; exact). */
+		const coloured = (white: PrecompRef, c: Json) => use(pre(matte(use(strengthened(white, strengths)), solid(c, st(100)), 3)));
+		const colour = (pick: (s: Built) => RGB) =>
+			colourKeys(
+				run,
+				after,
+				per.map((s) => pick(s)),
+				per.map((s) => s.after),
+			);
+		const white = st([1, 1, 1, 1]),
+			black = st([0, 0, 0, 1]);
+		/**
+		 * Grey levels mapped by a Tritone effect, for a luma matte or a colour (one level down twice:
+		 * ThorVG ignores the matte of a layer with effects, and the opacity and blending of the
+		 * layers right inside one).
+		 */
+		const lookup = (plain: PrecompRef, to: Json[]) => pre([use(plain, {}, { ef: [tritone(to)] })]);
+		/**
+		 * A bevel as grey levels L = 1/2 + k (o1 - o2) / 2 (k <= 1; o1, o2 the blurred silhouette moved
+		 * by -d and +d): o1 at k/2 over grey 1/2 / (1 - k/2), the difference with o2 at k/2 over
+		 * black (|.| is exact: the first is at least 1/2, the second at most). Each copy is blurred
+		 * once per use of L (a matte product o1 (1 - o2) would be off along edges in the light's
+		 * direction). Ready for `lookup`.
+		 */
+		const bevelGreys = (ks: number[]): PrecompRef => {
+			const blurred = silhouette(fixed(1), st(100), false, 0);
+			const grey = (sign: number) => pre([moved(blurred, sign), solid(fixed(0), st(100))]);
+			const half = heldKeys(
+				times,
+				ks.map((k) => round(k * 50, 2)),
+			);
+			const base = heldKeys(
+				times,
+				ks.map((k) => {
+					const g = round(0.5 / (1 - k / 2), 4);
+					return [g, g, g];
+				}),
+			);
+			const low = pre([use(grey(1), { o: half }), solid(fixed(0), st(100))]);
+			return pre([use(pre([use(low, {}, { bm: 10 }), use(grey(-1), { o: half }), solid(base, st(100))]))]);
+		};
+		/** A bevel's highlight max(0, 2L - 1) = max(0, o1 - o2) and shadow max(0, 1 - 2L), coloured and strengthened. */
+		const bevelSides = (L: PrecompRef, hi: Json, sh: Json, hiAlpha: Json | null, shAlpha: Json | null) => {
+			const side = (to: Json[], c: Json, o: Json | null) => {
+				const l = coloured(lookup(L, to), c);
+				if (o) (l.json.ks as Json).o = o;
+				return l;
+			};
+			return { hi: side([white, black, black], hi, hiAlpha), sh: side([black, black, white], sh, shAlpha) };
+		};
+		const typed = (l: LayerOut, type: BevelType): LayerOut[] => (type === "full" ? [l] : matte(use(x), l, type === "inner" ? 1 : 2));
+		let layers: LayerOut[];
+		if (f.kind === "shadow") {
+			const c = colour((s) => (s as ShadowBuilt).rgb);
+			const shadow = strong && blur.length ? coloured(silhouette(fixed(1), st(100), f.inner, 1), c) : use(silhouette(c, q, f.inner, 1));
+			if (f.inner) layers = [...matte(use(x), shadow, 1), ...(f.knockout || f.hide ? [] : [use(x)])];
+			else if (f.knockout) layers = matte(use(x), shadow, 2);
+			else layers = [...(f.hide ? [] : [use(x)]), shadow];
+		} else if (f.kind === "bevel") {
+			const alpha = (pick: (s: BevelBuilt) => number) => opacityOf(per.map((s) => round(pick(s as BevelBuilt) * 100, 2)));
+			const { hi, sh } = bevelSides(
+				bevelGreys(per.map(() => 1)),
+				colour((s) => (s as BevelBuilt).hi.rgb),
+				colour((s) => (s as BevelBuilt).sh.rgb),
+				alpha((s) => s.hi.a),
+				alpha((s) => s.sh.a),
+			);
+			layers = [...typed(sh, f.type), ...typed(hi, f.type), ...(f.knockout ? [] : [use(x)])];
+		} else {
+			// grey levels: the glow's strengthened blurred alpha over black; the bevel's
+			// 1/2 + s (o1 - o2) / 2 (stronger than 100 %: from its two sides, strengthened)
+			let lum: PrecompRef;
+			if (f.bevel && !strong) lum = bevelGreys(strengths);
+			else if (f.bevel) {
+				const { hi, sh } = bevelSides(bevelGreys(per.map(() => 1)), white, black, null, null);
+				lum = pre([use(pre([sh, hi, solid(fixed(0.5), st(100))]))]);
+			} else lum = pre([use(strengthened(silhouette(fixed(1), st(100), false, 1), strengths))]);
+			const gs = per as GradientBuilt[];
+			const greys = (pick: (s: GradientBuilt) => number[]) =>
+				[2, 1, 0].map((i) =>
+					heldKeys(
+						times,
+						gs.map((s) => {
+							const v = round(pick(s)[i]!, 4);
+							return [v, v, v, 1];
+						}),
+					),
+				);
+			const colours = [2, 1, 0].map((i) =>
+				colourKeys(
+					run,
+					after,
+					gs.map((s) => s.rgb[i]!),
+					gs.map((s) => s.after),
+				),
+			);
+			const eff = use(
+				pre(
+					matte(
+						use(
+							lookup(
+								lum,
+								greys((s) => s.alpha),
+							),
+						),
+						use(lookup(lum, colours)),
+						3,
+					),
+				),
+			);
+			if (f.bevel) layers = [...typed(eff, f.type), ...(f.knockout ? [] : [use(x)])];
+			else if (f.type === "inner") layers = [...matte(use(x), eff, 1), ...(f.knockout ? [] : [use(x)])];
+			else layers = f.knockout ? matte(use(x), eff, 2) : [use(x), eff];
+		}
+		return use(pre(layers));
 	}
 
 	/** Where an instance draws in its parent over [a, b): its content's box, sampled every tick. */
@@ -1641,21 +1840,47 @@ function paintFirst(p: Paint | null, ct: CT, a: number): Paint {
 	return { ...base, key: hashString(base.key + "|first|" + ct.map((v) => round(v, 5)).join(",")), values };
 }
 
-// ---------------------------------------------------------------- filters as effects
+// ---------------------------------------------------------------- filters
+
+type RGB = [number, number, number];
+type BevelType = "inner" | "outer" | "full";
 
 /** One Lottie effect: a Gaussian blur (both directions or one) or a drop shadow (also glows). */
 type Slot =
-	| { kind: "blur"; dim: 1 | 2 | 3; sigma: number }
-	| { kind: "shadow"; rgb: [number, number, number]; alpha: number; dx: number; dy: number; sigma: number; after: CT | null };
+	{ kind: "blur"; dim: 1 | 2 | 3; sigma: number } | { kind: "shadow"; rgb: RGB; alpha: number; dx: number; dy: number; sigma: number; after: CT | null };
 type ShadowSlot = Extract<Slot, { kind: "shadow" }>;
 
-/** Animate filters in Lottie terms: effects, a colour matrix for the paints inside, room needed. */
-interface LottieFilters {
+/** Filters in a row that are Lottie effects (on one wrapper layer); `margin`: the room they need. */
+interface FxStage {
+	kind: "fx";
 	slots: Slot[];
-	matrix: CT | null;
-	/** What stays the same within a run (effect kinds, matrices): values may change. */
-	sig: string;
 	margin: number;
+}
+
+/** What a built filter blurs and moves (Flash's whole pixels), the colour transforms after it. */
+interface Spread {
+	dx: number;
+	dy: number;
+	sx: number;
+	sy: number;
+	after: CT | null;
+	margin: number;
+}
+/** Shadows and glows that aren't effects (inner, knockout, hidden object, strong, uneven blur); m = strength x alpha. */
+type ShadowBuilt = Spread & { kind: "shadow"; inner: boolean; knockout: boolean; hide: boolean; rgb: RGB; m: number };
+type BevelBuilt = Spread & { kind: "bevel"; type: BevelType; knockout: boolean; s: number; hi: { rgb: RGB; a: number }; sh: { rgb: RGB; a: number } };
+/** Gradient glows and bevels: colour, alpha and (glows) the strengthened alpha at grey levels 0, 1/2 and 1. */
+type GradientBuilt = Spread & { kind: "gradient"; bevel: boolean; type: BevelType; knockout: boolean; s: number; rgb: [RGB, RGB, RGB]; alpha: number[] };
+/** A filter Lottie has no effect for, drawn with layers and mattes. */
+type Built = ShadowBuilt | BevelBuilt | GradientBuilt;
+type Stage = FxStage | Built;
+
+/** Animate filters in Lottie terms: effects and built filters in order, a colour matrix for the paints inside. */
+interface LottieFilters {
+	stages: Stage[];
+	matrix: CT | null;
+	/** What stays the same within a run (stage kinds and flags, matrices): values may change. */
+	sig: string;
 }
 
 /** A stretch of an instance's interval with filters of one make-up, and the filter sets in it. */
@@ -1666,80 +1891,164 @@ interface FilterRun {
 	sets: { t: number; fx: LottieFilters }[];
 }
 
-const FILTER_NAMES: Record<string, string> = { bevelFilter: "bevel", gradientBevelFilter: "gradient bevel", gradientGlowFilter: "gradient glow" };
 /** Gaussian blur: Lottie's blurriness is 1 / 0.3 of the standard deviation (lottie-web, ThorVG and Skottie agree). */
 const BLUR_TO_SIGMA = 0.3;
 
 /**
- * Maps Animate filters (in the instance's parent space) to Lottie effects: blur -> Gaussian blur
- * (two directional ones when blurX and blurY differ), drop shadow and glow (outer) -> drop shadow
+ * Maps Animate filters (in the instance's parent space) to Lottie: blur -> Gaussian blur (two
+ * directional ones when blurX and blurY differ), outer drop shadow and glow -> drop shadow
  * (Flash's integer pixel offset as direction and distance), adjust colour -> a colour matrix in
- * every paint inside (and in the colour of the shadows before it). Bevels, gradient filters and
- * inner / knockout shadows and glows have no Lottie effect: left out.
+ * every paint inside (and in the colours of the filters before it). Inner, knockout and "hide
+ * object" shadows and glows, strong or unevenly blurred ones, bevels and gradient filters are
+ * built from layers (builtLayer).
  */
 function lottieFilters(filters: FilterData[], warn: (m: string) => void): LottieFilters {
-	const slots: Slot[] = [];
+	const stages: Stage[] = [];
 	let matrix: CT | null = null;
-	const shadows: ShadowSlot[] = [];
-	let margin = 0;
+	const tinted: { after: CT | null }[] = [];
 	const num = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? v : d);
+	const effects = (): FxStage => {
+		const last = stages[stages.length - 1];
+		if (last?.kind === "fx") return last;
+		const s: FxStage = { kind: "fx", slots: [], margin: 2 };
+		stages.push(s);
+		return s;
+	};
+	const rgbOf = (c: unknown): { rgb: RGB; a: number } => {
+		const { hex, alpha } = splitColor(c);
+		const p = parseColor(hex) ?? [0, 0, 0, 1];
+		return { rgb: [p[0], p[1], p[2]], a: alpha };
+	};
 	for (const f of filters) {
 		if (f.enabled === false) continue;
 		const sx = blurSigma(num(f.blurX, 5), f.quality),
 			sy = blurSigma(num(f.blurY, 5), f.quality);
+		const blurred = sx + sy > 0;
+		const dist = num(f.distance, 4);
+		const ang = (num(f.angle, 45) * Math.PI) / 180;
+		const s = num(f.strength, 100) / 100;
+		// a glow is a shadow that isn't moved
+		const moves = f.name !== "glowFilter";
+		const spread = (after: CT | null = null): Spread => {
+			const dx = moves ? Math.round(Math.cos(ang) * dist) : 0,
+				dy = moves ? Math.round(Math.sin(ang) * dist) : 0;
+			return { dx, dy, sx, sy, after, margin: 3 * Math.max(sx, sy) + Math.abs(dx) + Math.abs(dy) + 2 };
+		};
 		switch (f.name) {
-			case "blurFilter":
+			case "blurFilter": {
+				const fx = effects();
 				if (Math.abs(sx - sy) < 1e-3) {
-					if (sx > 0) slots.push({ kind: "blur", dim: 1, sigma: sx });
+					if (sx > 0) fx.slots.push({ kind: "blur", dim: 1, sigma: sx });
 				} else {
-					if (sx > 0) slots.push({ kind: "blur", dim: 2, sigma: sx });
-					if (sy > 0) slots.push({ kind: "blur", dim: 3, sigma: sy });
+					if (sx > 0) fx.slots.push({ kind: "blur", dim: 2, sigma: sx });
+					if (sy > 0) fx.slots.push({ kind: "blur", dim: 3, sigma: sy });
 				}
-				margin += 3 * Math.max(sx, sy);
+				fx.margin += 3 * Math.max(sx, sy);
 				break;
+			}
 			case "dropShadowFilter":
 			case "glowFilter": {
-				const shadow = f.name === "dropShadowFilter";
-				if (f.inner || f.knockout || (shadow && f.hideObject)) {
-					warn(`Inner, knockout and "hide object" ${shadow ? "drop shadows" : "glows"} have no Lottie effect and were left out`);
+				const { rgb, a } = rgbOf(f.color);
+				const m = a * s;
+				const hide = f.name === "dropShadowFilter" && !!f.hideObject;
+				const sp = spread();
+				if (!f.inner && !f.knockout && !hide && !(m > 1 + 1e-6 && blurred) && Math.abs(sx - sy) <= 0.5) {
+					const slot: ShadowSlot = { kind: "shadow", rgb, alpha: Math.min(1, m), dx: sp.dx, dy: sp.dy, sigma: (sx + sy) / 2, after: null };
+					const fx = effects();
+					fx.slots.push(slot);
+					fx.margin += sp.margin - 2;
+					tinted.push(slot);
 					break;
 				}
-				// a glow is a shadow that isn't moved
-				const dist = shadow ? num(f.distance, 4) : 0;
-				const ang = (num(f.angle, 45) * Math.PI) / 180;
-				const c = parseColor(splitColor(f.color).hex) ?? [0, 0, 0, 1];
-				const alpha = splitColor(f.color).alpha * (num(f.strength, 100) / 100);
-				if (Math.abs(sx - sy) > 0.5) warn("Drop shadows and glows with different horizontal and vertical blur are blurred evenly in Lottie");
-				if (alpha > 1 + 1e-6 && sx + sy > 0) warn("Drop shadows and glows stronger than 100% are drawn softer in Lottie");
-				const s: ShadowSlot = {
-					kind: "shadow",
-					rgb: [c[0], c[1], c[2]],
-					alpha: Math.min(1, alpha),
-					dx: Math.round(Math.cos(ang) * dist),
-					dy: Math.round(Math.sin(ang) * dist),
-					sigma: (sx + sy) / 2,
-					after: null,
+				const b: ShadowBuilt = { ...sp, kind: "shadow", inner: !!f.inner, knockout: !!f.knockout, hide, rgb, m };
+				stages.push(b);
+				tinted.push(b);
+				break;
+			}
+			case "bevelFilter": {
+				const b: BevelBuilt = {
+					...spread(),
+					kind: "bevel",
+					type: bevelType(f.type, "inner"),
+					knockout: !!f.knockout,
+					s,
+					hi: rgbOf(f.highlightColor ?? "#FFFFFF"),
+					sh: rgbOf(f.shadowColor ?? "#000000"),
 				};
-				slots.push(s);
-				shadows.push(s);
-				margin += 3 * Math.max(sx, sy) + Math.abs(s.dx) + Math.abs(s.dy);
+				if (blurred && Math.hypot(b.dx, b.dy) < 0.6 * Math.max(sx, sy)) warn("Bevels blurred more than their distance come out a little stronger in Lottie");
+				stages.push(b);
+				tinted.push(b);
+				break;
+			}
+			case "gradientGlowFilter":
+			case "gradientBevelFilter": {
+				const bevel = f.name === "gradientBevelFilter";
+				const g = gradientSampler(f);
+				// colour and alpha at grey level L: glows' min(1, s x the blurred alpha), bevels'
+				// 1/2 + s (o1 - o2) / 2 (builtLayer draws the grey levels)
+				const rgbAt = (L: number): RGB => {
+					const c = g(L);
+					return [c.r, c.g, c.b];
+				};
+				const alphaAt = (L: number) => g(L).a;
+				const b: GradientBuilt = {
+					...spread(),
+					kind: "gradient",
+					bevel,
+					type: bevel ? bevelType(f.type, "inner") : f.type === "inner" ? "inner" : "outer",
+					knockout: !!f.knockout,
+					s,
+					rgb: [rgbAt(0), rgbAt(0.5), rgbAt(1)],
+					alpha: [0, 0.5, 1].map(alphaAt),
+				};
+				// the 3 point lookup: exact when the gradient is straight in between
+				const lerp = (v: number[], L: number) => (L < 0.5 ? v[0]! + (v[1]! - v[0]!) * 2 * L : v[1]! + (v[2]! - v[1]!) * (2 * L - 1));
+				let err = 0;
+				for (let i = 0; i <= 32; i++) {
+					const L = i / 32;
+					const c = rgbAt(L);
+					for (let ch = 0; ch < 3; ch++)
+						err = Math.max(
+							err,
+							Math.abs(
+								c[ch]! -
+									lerp(
+										b.rgb.map((v) => v[ch]!),
+										L,
+									),
+							),
+						);
+					err = Math.max(err, Math.abs(alphaAt(L) - lerp(b.alpha, L)));
+				}
+				if (err > 0.02) warn("Gradient glows and bevels are drawn with their colours at 0, 50 and 100% in Lottie (close, not exact here)");
+				stages.push(b);
+				tinted.push(b);
 				break;
 			}
 			case "adjustColorFilter": {
 				const m = adjustColorMatrix(f);
 				if (isIdentityCT(m)) break;
 				matrix = matrix ? composeCT(matrix, m) : m;
-				for (const s of shadows) s.after = s.after ? composeCT(s.after, m) : m;
+				for (const t of tinted) t.after = t.after ? composeCT(t.after, m) : m;
 				break;
 			}
 			default:
-				warn(`The ${FILTER_NAMES[f.name] ?? f.name} filter has no Lottie effect and was left out`);
+				warn(`The ${f.name} filter is not supported`);
 		}
 	}
 	const r5 = (ct: CT | null) => (ct ? ct.map((v) => round(v, 5)).join(",") : "");
-	const sig = JSON.stringify([slots.map((s) => (s.kind === "blur" ? `b${s.dim}` : `s${r5(s.after)}`)), r5(matrix)]);
-	return { slots, matrix, sig, margin: slots.length ? margin + 2 : 0 };
+	const sig = JSON.stringify([
+		stages.map((s) => {
+			if (s.kind === "fx") return s.slots.map((x) => (x.kind === "blur" ? `b${x.dim}` : `s${r5(x.after)}`)).join(" ");
+			const flags = s.kind === "shadow" ? [s.inner, s.knockout, s.hide] : [s.type, s.knockout, s.kind === "gradient" && s.bevel];
+			return `${s.kind} ${flags.join(" ")} ${r5(s.after)}`;
+		}),
+		r5(matrix),
+	]);
+	return { stages: stages.filter((s) => s.kind !== "fx" || s.slots.length), matrix, sig };
 }
+
+const bevelType = (v: unknown, d: BevelType): BevelType => (v === "inner" || v === "outer" || v === "full" ? v : d);
 
 /**
  * The effects of a filter run, values held from each filter set to the next (as Animate shows
@@ -1747,64 +2056,142 @@ function lottieFilters(filters: FilterData[], warn: (m: string) => void): Lottie
  * softness = sigma / 0.3 (ThorVG and Skottie; lottie-web blurs shadows by softness / 4, a little
  * less); its colour goes through the colour transforms after the filter (`after`).
  */
-function effectsJson(run: FilterRun, after: Paint | null): Json[] {
+function effectsJson(run: FilterRun, per: FxStage[], after: Paint | null): Json[] {
 	const times = run.sets.map((s) => s.t);
-	const held = (vals: (number | number[])[], ts: number[] = times): Json => {
-		const keys: { t: number; v: number | number[] }[] = [];
-		vals.forEach((v, i) => {
-			if (!keys.length || JSON.stringify(keys[keys.length - 1]!.v) !== JSON.stringify(v)) keys.push({ t: ts[i]!, v });
-		});
-		if (keys.length === 1) return st(keys[0]!.v);
-		return { a: 1, k: keys.map((k, i) => ({ t: round(k.t, 4), s: Array.isArray(k.v) ? k.v : [k.v], ...(i + 1 < keys.length ? { h: 1 } : {}) })) };
-	};
-	return run.fx.slots.map((slot, i): Json => {
+	const held = (vals: (number | number[])[]) => heldKeys(times, vals);
+	return per[0]!.slots.map((slot, i): Json => {
 		if (slot.kind === "blur") {
-			const per = run.sets.map((s) => s.fx.slots[i] as Extract<Slot, { kind: "blur" }>);
-			return {
-				ty: 29,
-				nm: "Gaussian Blur",
-				en: 1,
-				ef: [
-					{ ty: 0, nm: "Blurriness", v: held(per.map((s) => round(s.sigma / BLUR_TO_SIGMA, 2))) },
-					{ ty: 7, nm: "Blur Dimensions", v: st(slot.dim) },
-					{ ty: 7, nm: "Repeat Edge Pixels", v: st(0) },
-				],
-			};
+			const v = per.map((s) => (s.slots[i] as Extract<Slot, { kind: "blur" }>).sigma);
+			return blurEffect(slot.dim, held(v.map((x) => round(x / BLUR_TO_SIGMA, 2))));
 		}
-		const per = run.sets.map((s) => s.fx.slots[i] as ShadowSlot);
-		const rgbAt = (s: ShadowSlot, t: number) => {
-			const c = applyCT(after ? paintAt(after, t) : null, applyCT(s.after, [...s.rgb, 1]));
-			return [round(c[0], 4), round(c[1], 4), round(c[2], 4), 1];
-		};
-		let colour: Json;
-		if (!after || paintConstantIn(after, run.a, run.b)) colour = held(per.map((s, k) => rgbAt(s, times[k]!)));
-		else {
-			// the colour changes with the paint: every tick
-			const ticks: number[] = [];
-			for (let t = run.a; t < run.b; t = Math.floor(t) + 1) ticks.push(t);
-			const slotAt = (t: number) => {
-				let k = 0;
-				while (k + 1 < times.length && times[k + 1]! <= t) k++;
-				return per[k]!;
-			};
-			colour = held(
-				ticks.map((t) => rgbAt(slotAt(t), t)),
-				ticks,
-			);
-		}
+		const sl = per.map((s) => s.slots[i] as ShadowSlot);
 		return {
 			ty: 25,
 			nm: "Drop Shadow",
 			en: 1,
 			ef: [
-				{ ty: 2, nm: "Shadow Color", v: colour },
-				{ ty: 0, nm: "Opacity", v: held(per.map((s) => round(s.alpha * 255, 1))) },
-				{ ty: 1, nm: "Direction", v: held(per.map((s) => (s.dx || s.dy ? round((Math.atan2(s.dx, -s.dy) * 180) / Math.PI, 2) : 0))) },
-				{ ty: 0, nm: "Distance", v: held(per.map((s) => round(Math.hypot(s.dx, s.dy), 2))) },
-				{ ty: 0, nm: "Softness", v: held(per.map((s) => round(s.sigma / BLUR_TO_SIGMA, 2))) },
+				{
+					ty: 2,
+					nm: "Shadow Color",
+					v: colourKeys(
+						run,
+						after,
+						sl.map((s) => s.rgb),
+						sl.map((s) => s.after),
+					),
+				},
+				{ ty: 0, nm: "Opacity", v: held(sl.map((s) => round(s.alpha * 255, 1))) },
+				{ ty: 1, nm: "Direction", v: held(sl.map((s) => (s.dx || s.dy ? round((Math.atan2(s.dx, -s.dy) * 180) / Math.PI, 2) : 0))) },
+				{ ty: 0, nm: "Distance", v: held(sl.map((s) => round(Math.hypot(s.dx, s.dy), 2))) },
+				{ ty: 0, nm: "Softness", v: held(sl.map((s) => round(s.sigma / BLUR_TO_SIGMA, 2))) },
 			],
 		};
 	});
+}
+
+/** Values from each filter set to the next, held (as Animate shows them). */
+function heldKeys(times: number[], vals: (number | number[])[]): Json {
+	const keys: { t: number; v: number | number[] }[] = [];
+	vals.forEach((v, i) => {
+		if (!keys.length || JSON.stringify(keys[keys.length - 1]!.v) !== JSON.stringify(v)) keys.push({ t: times[i]!, v });
+	});
+	if (keys.length === 1) return st(keys[0]!.v);
+	return { a: 1, k: keys.map((k, i) => ({ t: round(k.t, 4), s: Array.isArray(k.v) ? k.v : [k.v], ...(i + 1 < keys.length ? { h: 1 } : {}) })) };
+}
+
+/**
+ * A filter colour through the colour transforms after the filter (`cts`, per filter set) and the
+ * paint: held per set, or keyed on every tick when the paint changes.
+ */
+function colourKeys(run: FilterRun, after: Paint | null, rgbs: RGB[], cts: (CT | null)[]): Json {
+	const times = run.sets.map((s) => s.t);
+	const at = (k: number, t: number) => {
+		const c = applyCT(after ? paintAt(after, t) : null, applyCT(cts[k], [...rgbs[k]!, 1]));
+		return [round(c[0], 4), round(c[1], 4), round(c[2], 4), 1];
+	};
+	if (!after || paintConstantIn(after, run.a, run.b))
+		return heldKeys(
+			times,
+			times.map((t, k) => at(k, t)),
+		);
+	const ticks: number[] = [];
+	for (let t = run.a; t < run.b; t = Math.floor(t) + 1) ticks.push(t);
+	const setAt = (t: number) => {
+		let k = 0;
+		while (k + 1 < times.length && times[k + 1]! <= t) k++;
+		return k;
+	};
+	return heldKeys(
+		ticks,
+		ticks.map((t) => at(setAt(t), t)),
+	);
+}
+
+function blurEffect(dim: 1 | 2 | 3, blurriness: Json): Json {
+	return {
+		ty: 29,
+		nm: "Gaussian Blur",
+		en: 1,
+		ef: [
+			{ ty: 0, nm: "Blurriness", v: blurriness },
+			{ ty: 7, nm: "Blur Dimensions", v: st(dim) },
+			{ ty: 7, nm: "Repeat Edge Pixels", v: st(0) },
+		],
+	};
+}
+
+/** A built filter's blur: none, even, or horizontal and vertical apart (when any set differs). */
+function blurEffects(per: Spread[], times: number[]): Json[] {
+	if (per.every((s) => s.sx <= 0 && s.sy <= 0)) return [];
+	const one = (dim: 1 | 2 | 3, pick: (s: Spread) => number) =>
+		blurEffect(
+			dim,
+			heldKeys(
+				times,
+				per.map((s) => round(pick(s) / BLUR_TO_SIGMA, 2)),
+			),
+		);
+	return per.some((s) => Math.abs(s.sx - s.sy) > 1e-3) ? [one(2, (s) => s.sx), one(3, (s) => s.sy)] : [one(1, (s) => s.sx)];
+}
+
+/** Tritone: grey levels 1, 1/2 and 0 to colours (straight in between, in sRGB values; all three players). */
+function tritone([hi, mid, lo]: Json[]): Json {
+	return {
+		ty: 23,
+		nm: "Tritone",
+		en: 1,
+		ef: [
+			{ ty: 2, nm: "Highlights", v: hi },
+			{ ty: 2, nm: "Midtones", v: mid },
+			{ ty: 2, nm: "Shadows", v: lo },
+			{ ty: 0, nm: "Blend With Original", v: st(0) },
+		],
+	};
+}
+
+function growBox(b: Box, m: number): Box {
+	return { x0: b.x0 - m, y0: b.y0 - m, x1: b.x1 + m, y1: b.y1 + m };
+}
+
+/** A rectangle over `box` in colour `c` and opacity `o` (0: room for effects). */
+function rectLayer(box: Box, c: Json, o: Json, a: number, b: number): LayerOut {
+	// a rectangle shape without a group (a third smaller than a path in one; all three players)
+	const w = round(box.x1 - box.x0, 2),
+		h = round(box.y1 - box.y0, 2);
+	return {
+		json: {
+			ty: 4,
+			ip: a,
+			op: b,
+			st: 0,
+			ks: {},
+			shapes: [
+				{ ty: "rc", p: st([round(box.x0 + w / 2, 2), round(box.y0 + h / 2, 2)]), s: st([w, h]), r: st(0) },
+				{ ty: "fl", c, o, r: 1 },
+			],
+		},
+		box,
+	};
 }
 
 /** The paint's key times within [s, e] and the eases between them (cut exactly). */
