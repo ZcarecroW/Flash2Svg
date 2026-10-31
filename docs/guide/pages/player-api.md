@@ -55,7 +55,7 @@ The player **rests** while it is out of view or in a background tab and goes on 
 
 ## The web component
 
-`<flash2svg-player>` (1.7 KB) puts an exported SVG into your page **inline**, so its scripts run and scroll-driven CSS works, without you fetching and inserting it yourself. It loads the file when it comes near the screen (`loading="eager"`: at once) and shows its children until then.
+`<flash2svg-player>` (2.2 KB) puts an exported SVG into your page **inline**, so its scripts run and scroll-driven CSS works, without you fetching and inserting it yourself. It loads the file when it comes near the screen (`loading="eager"`: at once) and shows its children until then.
 
 ```html
 <script type="module" src="flash2svg-player.js"></script>

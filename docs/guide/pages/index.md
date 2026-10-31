@@ -35,8 +35,8 @@ Already exporting? Look up a setting in the [settings reference](settings.md), s
 
 | | |
 |---|---|
-| A 119-frame shape tween | 12.7 KB as SMIL instead of 75.5 KB frame by frame |
-| The JS player's runtime | 15.1 KB (with sounds 18.7 KB), only in files that need it |
+| Shape tweens as morphs | the morph test document: 105 KB as SMIL instead of 339 KB frame by frame |
+| The JS player's runtime | 15.2 KB (with sounds 18.7 KB), only in files that need it |
 | A 12-megapixel photo shown at 20 % | 1042 KB → 100 KB as JPEG, 13 KB as AVIF |
 | 150 tweened symbols | about 110 frames a second in the JS player |
 | Export of a typical scene | well under a second after Animate hands over the drawing |

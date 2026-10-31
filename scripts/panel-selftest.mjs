@@ -2,7 +2,7 @@
 // waits for the panel to export the fixtures and quit, then prints the results.
 // Needs a --selftest build installed (npm run build -- --selftest && npm run package && node scripts/dev-install.mjs --zxp).
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,6 +16,15 @@ mkdirSync(out, { recursive: true });
 const fla = (n) => join(repo, "tests", "fixtures", "fla", `${n}.fla`);
 /** An output file's text (.svgz unzipped). */
 const text = (f) => (f.endsWith(".svgz") ? gunzipSync(readFileSync(f)) : readFileSync(f)).toString("utf8");
+// a copy of a fixture in the output folder: relative output names land next to it
+const copied = join(out, "copy dir", "eases copy.fla");
+mkdirSync(dirname(copied), { recursive: true });
+copyFileSync(fla("f02-eases"), copied);
+// a folder of the user's where the kept scene data would go: never replaced
+mkdirSync(join(out, "foreign", "mine.scene"), { recursive: true });
+writeFileSync(join(out, "foreign", "mine.scene", "notes.txt"), "the user's");
+/** Frames of a GIF: image descriptors after a graphic control extension. */
+const gifFrames = (f) => readFileSync(f).toString("latin1").split("!ù").length - 1;
 const jobs = [
 	{ fla: fla("f02-eases"), output: join(out, "eases-smil.svg"), settings: { format: "smil" } },
 	{ fla: fla("f04-nested"), output: join(out, "nested-css.svg"), settings: { format: "css" } },
@@ -213,6 +222,38 @@ const jobs = [
 		select: ["spinner", "counter"],
 		expect: { files: 2, names: ["lib_spinner.svg", "lib_counter.svg"] },
 	},
+	// output names: a relative one lands next to the FLA, a folder gets the FLA's name, another
+	// extension keeps it and gets the format's (never writing over the FLA)
+	{ fla: copied, output: join("sub", "rel"), settings: { format: "smil" }, expect: { files: 1, at: [join(out, "copy dir", "sub", "rel.svg")] } },
+	{ fla: copied, output: join(out, "to folder") + "\\", settings: { format: "css" }, expect: { files: 1, at: [join(out, "to folder", "eases copy.svg")] } },
+	{
+		fla: copied,
+		output: join(out, "copy dir", "eases copy.fla"),
+		settings: { format: "smil" },
+		expect: { files: 1, at: [join(out, "copy dir", "eases copy.fla.svg")] },
+	},
+	{ fla: fla("f02-eases"), output: join(out, "anim.v2"), settings: { format: "lottie" }, expect: { files: 1, at: [join(out, "anim.v2.json")] } },
+	// library symbols as GIF: each its own pictures (the raster export drew the first one into every file)
+	{
+		fla: fla("f04-nested"),
+		output: join(out, "lib.gif"),
+		settings: { format: "gif" },
+		source: "library",
+		select: ["spinner", "counter"],
+		expect: { files: 2, names: ["lib_spinner.gif", "lib_counter.gif"], differ: true },
+	},
+	// a range in a GIF, typed backwards: the frames between, in order
+	{
+		fla: fla("f04-nested"),
+		output: join(out, "range.gif"),
+		settings: { format: "gif" },
+		frames: "range",
+		rangeStart: 3,
+		rangeEnd: 2,
+		expect: { files: 1, gifFrames: 2 },
+	},
+	// kept scene data never replaces a folder of the user's
+	{ fla: fla("f02-eases"), output: join(out, "foreign", "mine.svg"), settings: { format: "smil" }, keepScene: true, expect: { error: /holds something else/ } },
 	// a second scene: only the current one is exported, with a warning
 	{
 		fla: fla("f12-labels"),
@@ -267,8 +308,23 @@ res.results.forEach((r, i) => {
 			r.error = "Animate's Output panel reports an error";
 		}
 	}
+	if (exp.error) {
+		// the export should stop with this message, and leave the user's files alone
+		const msg = r.error ?? "";
+		r.ok = !r.ok && exp.error.test(msg) && readFileSync(join(out, "foreign", "mine.scene", "notes.txt"), "utf8") === "the user's";
+		if (!r.ok) r.error = `expected the error ${exp.error}, got: ${msg || "no error"}`;
+		r.files ??= [];
+		r.warnings ??= [];
+		r.bytes ??= 0;
+		r.seconds ??= 0;
+		return;
+	}
 	if (!r.ok) return;
 	const problems = [];
+	for (const f of exp.at ?? []) if (!r.files.includes(f)) problems.push(`not written to ${f} (but ${r.files.join(", ")})`);
+	if (exp.differ && r.files.length > 1 && readFileSync(r.files[0]).equals(readFileSync(r.files[1]))) problems.push("the files are the same");
+	if (exp.gifFrames !== undefined && r.files[0] && gifFrames(r.files[0]) !== exp.gifFrames)
+		problems.push(`${gifFrames(r.files[0])} GIF frames, expected ${exp.gifFrames}`);
 	// the size overview: the parts add up to the files' size; the expected ones are there
 	const parts = (r.parts ?? []).reduce((all, p) => {
 		for (const k in p) all[k] = (all[k] ?? 0) + p[k];

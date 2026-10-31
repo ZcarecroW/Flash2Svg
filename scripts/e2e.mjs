@@ -10,6 +10,8 @@
 //   9. checks the start triggers "visible" and "scroll" (inline and in an <object>), scale modes, the web component
 //  10. checks the GIF and WebP fallbacks frame by frame (ImageDecoder)
 //  11. plays the video components (inline and in an <object>)
+//  12. checks the panel's interface (tips, icons, layout, contrast, presets) without Animate
+//  13. checks CSS output in browsers from before linear() easing (simulated): every animation runs
 // Usage: node scripts/e2e.mjs [names] [--rebuild] [--skip-animate]
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
@@ -43,5 +45,7 @@ if (!names) failed += run("e2e-statemachine.ts");
 if (!names) failed += run("e2e-triggers.ts");
 if (!names) failed += run("e2e-raster.ts");
 if (!names) failed += run("e2e-video.ts");
+if (!names) failed += run("e2e-panel-ui.ts");
+if (!names) failed += run("e2e-compat.ts");
 console.log(failed ? `\nE2E: ${failed} step(s) reported failures` : "\nE2E: all good");
 process.exitCode = failed ? 1 : 0;

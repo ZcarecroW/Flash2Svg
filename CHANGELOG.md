@@ -1,5 +1,66 @@
 # Changelog
 
+## 4.2.0 (2026-10-31)
+
+- **Smaller files: shortest path data.** Every path is now written in its shortest form when the
+  file is saved: relative or absolute per segment, `H`/`V` for lines along an axis, `T`/`S` where a
+  curve continues smoothly, implicit commands, no closing line before `Z`. Nothing moves: the
+  numbers keep the grid they were rounded to (relative steps are exact differences of the same
+  points; `T`/`S` only where the mirrored control point is exactly the written one). On the 59 test
+  documents, after Brotli: SMIL −30 %, CSS −29 %, still frames −38 %, JS player −11 % (runtime and
+  images unchanged); compile time the same (556 vs 557 ms for all of them in four formats). The
+  comparison with Animate's own renderings is pixel for pixel what it was. SVGO 4.1 now finds
+  only a tenth more, mostly by removing elements it takes for hidden — animated ones.
+- **CSS output in older browsers.** Where an animation's timing is a `linear()` function (18 of
+  the 59 test documents), browsers from before 2023 (Safari up to 17.1 — iPhones that stay on
+  iOS 16 —, Chrome up to 112, Firefox up to 111) dropped the whole `animation` declaration, so
+  those parts stood still (one test document lost all four of its animations). A classic timing
+  now comes first (the closest of `linear`, the `ease` family and the steps); browsers that
+  know `linear()` read on and use it. Cost: 0.3 KB with Brotli over all 59 documents. A new
+  check (`scripts/e2e-compat.ts`) simulates such a browser in Edge: every animation runs.
+- **No XML declaration** in SVG files (UTF-8 is XML's default): 38 bytes less per file. Indented
+  output (*Indent output*) keeps it.
+- **Panel: an "i" next to every setting** explains it — on hover, on keyboard focus, or pinned by a
+  click — with a link to the matching part of the user guide. Tips stay inside the panel at any
+  width and follow it when it scrolls.
+- **Panel: icons** (Nucleo) on the sections, the format buttons, Export / Cancel, the file and
+  preset buttons, the preview's play / pause, warnings and errors. Secondary text follows
+  Animate's interface brightness so it stays readable (WCAG AA) on all four.
+- **Panel keyboard use**: the format buttons are one stop for Tab; the arrow keys (and Home / End)
+  choose the format.
+- **GIF and WebP of several library symbols** drew the first symbol into every file; they now
+  draw each its own. GIF and WebP also keep to a frame *Range* (they exported every frame), and
+  *Always loop* plays all frames in order, as the SVG formats do. *All scenes in a row* as GIF or
+  WebP stopped with an error; it works now.
+- **Output file names.** A relative name (`anim.svg`) is placed next to the FLA (it went to
+  Animate's working folder); a folder (ending in `\` or `/`, or an existing one) gets the default
+  name inside it; a name with another extension keeps it and gets the format's (`anim.v2` →
+  `anim.v2.svg`; an output typed as the FLA's own name could have overwritten it). Symbols whose
+  names differ only in characters a file name can't have (`a/b`, `a:b`) get their own files.
+- **Safer writing.** Files are written next to the target and then renamed, so an export that
+  fails half-way (a full disk) leaves the previous file whole. *Keep the scene data* replaces a
+  `<name>.scene` folder only when it holds scene data — never a folder of yours. Errors of the
+  file system say what happened (no permission, file open elsewhere, disk full).
+- **Cancel** now also stops while images and sounds are encoded and GIF/WebP frames are drawn (it
+  waited for those to finish).
+- **Export reads the document right before it starts**: the current frame, timeline and document
+  in front, also when Animate didn't announce a change (an export of *Current frame* could use
+  the frame from before).
+- **Ranges** typed the wrong way round are exported in order, and the panel says so; frames past
+  the end are cut to the timeline.
+- **Settings from other versions** (stored in the panel, in an FLA or in a preset) that name an
+  unknown format or have the wrong type keep their default instead of breaking the panel. Presets
+  can be called anything ("constructor", "__proto__"), also like a built-in preset.
+- **Faster exports without dynamic text**: the font encoder (1 MB) loads only when a document has
+  dynamic or input text. The command line also encodes sounds for the *Automatic* format (it did
+  only for *JS player*) and writes one file per library symbol, as the panel does.
+- **JS player**: `gotoAndPlay("toString")` and other unknown labels named like an object's
+  methods stay where they are (they jumped to a broken frame); `on("constructor", …)` is just an
+  event name.
+- **Web component**: the same file twice (or more) in a page — the copies' ids are renamed, so
+  none uses another's gradients, clips or click targets (a hidden first copy left the others
+  without them).
+
 ## 4.1.0 (2026-10-31)
 
 - **User guide** at <https://zcarecrow.github.io/Flash2Svg/>: 19 pages with screenshots of the

@@ -244,6 +244,11 @@ function match(faces: FaceInfo[], face: string, bold: boolean, italic: boolean):
 }
 
 /** The characters each face/style is used with (input fields: all of printable ASCII and Latin-1 too). */
+/** True when the model has dynamic or input text, so encodeFonts has work (its codecs are big: load them only then). */
+export function needsFonts(model: SceneModel): boolean {
+	return usage(model).size > 0;
+}
+
 function usage(model: SceneModel): Map<string, { face: string; bold: boolean; italic: boolean; chars: Set<string> }> {
 	const out = new Map<string, { face: string; bold: boolean; italic: boolean; chars: Set<string> }>();
 	for (const t of Object.values(model.timelines))

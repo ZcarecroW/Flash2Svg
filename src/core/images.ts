@@ -6,7 +6,7 @@
  */
 import { bitmapScales, type BitmapScale } from "./bitmap-scale.ts";
 import type { FileSource } from "./context.ts";
-import type { BitmapData, SceneModel } from "./model.ts";
+import { choice, type BitmapData, type SceneModel } from "./model.ts";
 
 export type LossyFormat = "jpeg" | "webp" | "avif";
 export type LosslessFormat = "png" | "webp";
@@ -107,8 +107,8 @@ const SMALL = 32 * 1024;
 const EXT: Record<LossyFormat | LosslessFormat, string> = { jpeg: "jpg", png: "png", webp: "webp", avif: "avif" };
 
 function modeOf(b: BitmapData, s: ImageSettings): "lossy" | "lossless" {
-	const own = s.imageModes[b.name];
-	if (own) return own;
+	const own = choice(s.imageModes, b.name);
+	if (own === "lossy" || own === "lossless") return own;
 	const c = b.compression ?? (b.file.endsWith(".jpg") ? "photo" : "lossless");
 	return c === "photo" ? "lossy" : "lossless";
 }
@@ -237,7 +237,7 @@ export async function encodeImages(
 			return { rel: `${base}.${EXT[format]}`, bytes, format, webpForJpeg: format !== s.imageLossy };
 		};
 
-		let size = s.imageFullSize[b.name] ? null : targetSize(b, scale, resolution);
+		let size = choice(s.imageFullSize, b.name) === true ? null : targetSize(b, scale, resolution);
 		let r = await encode(size);
 		// resampling can cost more than it saves on flat pictures (gradients that PNG predicts
 		// exactly): when the result has more than twice the master's bytes per pixel, every pixel

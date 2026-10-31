@@ -2,6 +2,7 @@
  * Minimal XML tree, parser and serializer. Good enough for the SVG Animate writes and for
  * everything we generate; avoids depending on DOMParser so the compiler runs in Node and CEP alike.
  */
+import { minifyPath } from "./pathdata.ts";
 
 export interface XmlNode {
 	name: string;
@@ -170,7 +171,8 @@ export function serialize(node: XmlChild, opts: SerializeOptions = {}, depth = 0
 		);
 	const ind = opts.pretty ? "\n" + "  ".repeat(depth) : "";
 	let s = ind + "<" + node.name;
-	for (const k in node.attrs) s += " " + k + '="' + escapeAttr(node.attrs[k]!) + '"';
+	// path data in its shortest form (pathdata.ts: the compiler works on absolute data)
+	for (const k in node.attrs) s += " " + k + '="' + escapeAttr(k === "d" && node.name === "path" ? minifyPath(node.attrs[k]!) : node.attrs[k]!) + '"';
 	if (!node.children.length) return s + "/>";
 	s += ">";
 	let hasElements = false;

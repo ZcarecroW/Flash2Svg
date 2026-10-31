@@ -241,6 +241,40 @@ for (const name of names) {
 	const ok2 = p1 >= 0 && p2 > p1;
 	if (!ok2) failures++;
 	console.log(`web component  css scroll ${ok2 ? "ok" : "FAIL"} (progress ${p1.toFixed(1)} → ${p2.toFixed(1)} as it scrolls up)`);
+
+	// the same file three times, the first copy hidden: the others have ids of their own, their
+	// references stay inside them, and they play
+	writeFileSync(
+		join(dir, "wc-twice.html"),
+		html(
+			`<script type="module" src="flash2svg-player.js"></script><div style="display:none"><flash2svg-player id="a" src="wc-player.svg" loading="eager"></flash2svg-player></div><flash2svg-player id="b" src="wc-player.svg" loading="eager"></flash2svg-player><flash2svg-player id="d" src="wc-player.svg" loading="eager"></flash2svg-player>`,
+		),
+	);
+	await page.goto(base + "wc-twice.html");
+	await page.waitForFunction(() => ["a", "b", "d"].every((id) => document.querySelector(`#${id} > svg`)), null, { timeout: 5000 }).catch(() => {});
+	// players pause while out of view: scroll the copies in
+	await page.evaluate((y) => scrollTo(0, y), TOP - 200);
+	await page.waitForTimeout(800);
+	const twice = await page.evaluate(() => {
+		const all = [...document.querySelectorAll("[id]")].map((e) => e.id);
+		const dupes = all.filter((id, i) => all.indexOf(id) !== i);
+		let outside = 0;
+		for (const host of ["b", "d"]) {
+			const svg = document.querySelector(`#${host} > svg`)!;
+			for (const e of svg.querySelectorAll("*"))
+				for (const a of e.attributes) {
+					const m = /url\(#([^)]+)\)/.exec(a.value) ?? (a.name.endsWith("href") && a.value.startsWith("#") ? [a.value, a.value.slice(1)] : null);
+					if (m && !svg.contains(document.getElementById(m[1]!))) outside++;
+				}
+		}
+		const frames = ["b", "d"].map((id) => (document.getElementById(id) as unknown as { player?: { currentFrame: number } }).player?.currentFrame ?? 0);
+		return { dupes: [...new Set(dupes)].slice(0, 5), outside, frames };
+	});
+	const ok3 = !twice.dupes.length && !twice.outside && twice.frames.every((f) => f > 3);
+	if (!ok3) failures++;
+	console.log(
+		`web component  same file 3x ${ok3 ? "ok" : "FAIL"} (duplicate ids: ${twice.dupes.join(", ") || "none"}; references to another copy: ${twice.outside}; frames ${twice.frames.join(", ")})`,
+	);
 }
 
 await browser.close();

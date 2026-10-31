@@ -29,13 +29,13 @@ Use SMIL by default. It is usually the smallest file and needs no script. Button
 
 ## CSS
 
-CSS `@keyframes` on each animated element, using the individual `translate`, `rotate` and `scale` properties, `cubic-bezier()` eases and `linear()` for curves that one bezier can't follow. Browsers run transform and opacity animations on the compositor, so CSS output stays smooth when the page is busy.
+CSS `@keyframes` on each animated element, using the individual `translate`, `rotate` and `scale` properties, `cubic-bezier()` eases and `linear()` for curves that one bezier can't follow. Browsers run transform and opacity animations on the compositor, so CSS output stays smooth when the page is busy. It is made for browsers from 2023 on (`linear()`: Chrome and Edge 113, Firefox 112, Safari 17.2); older ones use the closest classic timing for those curves, so nothing stands still.
 
 Pick CSS when your page wants to control the animation: `animation-play-state: paused` pauses it, your stylesheet can recolour it, and scroll-driven animations (`animation-timeline`) work when the SVG is inline. CSS can't change path data in Safari, so shape tweens are drawn frame by frame here (SMIL morphs them).
 
 ## JS player
 
-The artwork plus a compact timeline and a small runtime (15.1 KB; with sound 18.7 KB) that plays it with Flash's own rules: frame scripts, movie clips that keep running after the main timeline stops, buttons with *Up*, *Over* and *Down* states, the mouse handlers that Animate's Code Snippets panel writes, and frame sounds with their sync, loops and envelopes. Your page can control it: `play()`, `stop()`, `gotoAndPlay("label")`, `seek(seconds)` — see [Player API](player-api.md).
+The artwork plus a compact timeline and a small runtime (15.2 KB; with sound 18.7 KB) that plays it with Flash's own rules: frame scripts, movie clips that keep running after the main timeline stops, buttons with *Up*, *Over* and *Down* states, the mouse handlers that Animate's Code Snippets panel writes, and frame sounds with their sync, loops and envelopes. Your page can control it: `play()`, `stop()`, `gotoAndPlay("label")`, `seek(seconds)` — see [Player API](player-api.md).
 
 Scripts don't run in `<img>`, so put the file in an `<object>`, inline it, or use the [`<flash2svg-player>`](player-api.md#the-web-component) element.
 

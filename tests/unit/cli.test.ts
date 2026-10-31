@@ -60,6 +60,56 @@ describe("command line", () => {
 		expect(existsSync(join(dir, "still_1.svgz"))).toBe(true);
 	});
 
+	it("writes one file per root (several library symbols), also as GIF, and keeps names apart", () => {
+		// the scene data of an export of two library symbols: their timelines are the roots
+		const model = JSON.parse(readFileSync(new URL("../fixtures/models/f28-onestop.json", import.meta.url), "utf8"));
+		const libDir = join(dir, "lib");
+		mkdirSync(join(libDir, "atlas"), { recursive: true });
+		for (const a of Object.values(model.atlas) as { file: string }[])
+			writeFileSync(join(libDir, a.file), `<svg xmlns="http://www.w3.org/2000/svg"><path fill="#cc3300" d="M0 0L9 0 9 9 0 9Z"/></svg>`);
+		model.roots = ["sym:spin8", "sym:pulse6"];
+		const libScene = join(libDir, "scene.json");
+		writeFileSync(libScene, JSON.stringify(model));
+		const svg = run(libScene, "-o", join(dir, "icons.svg"));
+		expect(svg.code, svg.err).toBe(0);
+		const a = readFileSync(join(dir, "icons_spin8.svg"), "utf8"),
+			b = readFileSync(join(dir, "icons_pulse6.svg"), "utf8");
+		expect(a).not.toBe(b);
+		// GIF and WebP drew the first root into every file
+		const gif = run(libScene, "--format", "gif", "-o", join(dir, "icons.gif"));
+		expect(gif.code, gif.err).toBe(0);
+		expect(readFileSync(join(dir, "icons_spin8.gif")).equals(readFileSync(join(dir, "icons_pulse6.gif")))).toBe(false);
+	}, 60000);
+
+	it("keeps to the frame range in GIF and WebP", () => {
+		// a spinning square: every frame differs (identical neighbours merge into one frame)
+		const model = JSON.parse(readFileSync(new URL("../fixtures/models/f28-onestop.json", import.meta.url), "utf8"));
+		const spinDir = join(dir, "spin");
+		mkdirSync(join(spinDir, "atlas"), { recursive: true });
+		for (const a of Object.values(model.atlas) as { file: string }[])
+			writeFileSync(join(spinDir, a.file), `<svg xmlns="http://www.w3.org/2000/svg"><path fill="#cc3300" d="M0 0L9 0 9 9 0 9Z"/></svg>`);
+		model.roots = ["sym:spin8"];
+		const spin = join(spinDir, "scene.json");
+		writeFileSync(spin, JSON.stringify(model));
+		const all = run(spin, "--format", "gif", "-o", join(dir, "all.gif"));
+		const one = run(spin, "--format", "gif", "--frames", "3-3", "-o", join(dir, "one.gif"));
+		expect(all.code, all.err).toBe(0);
+		expect(one.code, one.err).toBe(0);
+		// GIF frames start with an image descriptor after a graphic control extension
+		const frames = (f: string) => readFileSync(join(dir, f)).toString("latin1").split("!ù").length - 1;
+		expect(frames("one.gif")).toBe(1);
+		expect(frames("all.gif")).toBeGreaterThan(1);
+	}, 60000);
+
+	it("writes into a folder given as -o", () => {
+		const folder = join(dir, "into folder");
+		mkdirSync(folder, { recursive: true });
+		expect(run(scene, "-o", folder).code).toBe(0);
+		expect(existsSync(join(folder, "f12-labels.svg"))).toBe(true);
+		expect(run(scene, "-o", join(dir, "new folder") + "/", "--format", "lottie").code).toBe(0);
+		expect(existsSync(join(dir, "new folder", "f12-labels.json"))).toBe(true);
+	});
+
 	it("rejects wrong options with a message, not a stack trace", () => {
 		const cases: [string[], RegExp][] = [
 			[[scene, "--bogus"], /Unknown option --bogus/],

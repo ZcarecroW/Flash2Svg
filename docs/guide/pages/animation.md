@@ -23,7 +23,7 @@ In SMIL and the JS player a shape tween is **one drawing whose paths, colours an
 
 ::: demo morph smil,player,css,lottie A circle becomes a star, a rounded square and the circle again, its gradient turning. In CSS the shape is drawn frame by frame (Safari can't animate paths with CSS) — compare the sizes.
 
-A 119-frame shape tween takes 12.7 KB as SMIL instead of 75.5 KB frame by frame (2.4 instead of 17 KB gzipped). `--no-morph` on the command line draws every frame instead.
+The morph test document takes 105 KB as SMIL instead of 339 KB frame by frame (16 instead of 36 KB gzipped). `--no-morph` on the command line draws every frame instead.
 
 ## Symbols
 

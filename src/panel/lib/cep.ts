@@ -127,8 +127,20 @@ export function openInBrowser(path: string) {
 	window.cep?.util.openURLInDefaultBrowser(url);
 }
 
+/** A web page in the default browser (outside Animate: a new tab). */
+export function openUrl(url: string) {
+	if (window.cep) window.cep.util.openURLInDefaultBrowser(url);
+	else window.open(url, "_blank", "noopener");
+}
+
 export function revealInExplorer(path: string) {
 	if (!node) return;
-	if (node.os.platform() === "win32") node.child.spawn("explorer.exe", ["/select,", path], { detached: true });
-	else node.child.spawn("open", ["-R", path], { detached: true });
+	// Explorer splits its command line at commas: the path goes in quotes, verbatim (Node quotes only
+	// arguments with spaces)
+	const child =
+		node.os.platform() === "win32"
+			? node.child.spawn("explorer.exe", [`/select,"${path}"`], { detached: true, stdio: "ignore", windowsVerbatimArguments: true })
+			: node.child.spawn("open", ["-R", path], { detached: true, stdio: "ignore" });
+	child.on("error", () => {});
+	child.unref();
 }

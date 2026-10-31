@@ -1,4 +1,6 @@
 <script lang="ts">
+	import Icon from "./Icon.svelte";
+	import Info from "./Info.svelte";
 	import type { DotLottie } from "@lottiefiles/dotlottie-web";
 	import type { AnimationItem } from "lottie-web";
 	import { node } from "./lib/cep.ts";
@@ -144,7 +146,9 @@
 	<div class="stage" style:aspect-ratio={ratio} bind:this={box}></div>
 	{#if error}<p class="error">{error}</p>{/if}
 	<div class="controls">
-		<button class="icon" onclick={toggle} disabled={busy || machine} aria-label={playing ? "Pause" : "Play"}>{playing ? "❚❚" : "▶"}</button>
+		<button type="button" class="only" onclick={toggle} disabled={busy || machine} aria-label={playing ? "Pause" : "Play"}
+			><Icon name={playing ? "button-pause" : "button-play"} /></button
+		>
 		<input type="range" min="0" max={Math.max(0, total - 1)} step="1" value={frame} oninput={seek} disabled={busy || machine} aria-label="Frame" />
 		<span class="time">{(frame / fps).toFixed(2)}s</span>
 	</div>
@@ -159,12 +163,11 @@
 			</label>
 		{/if}
 		{#if hasMachine}
-			<label class="check" title="Plays as the .lottie file's state machine says (start, loop, clicks)"
-				><input type="checkbox" bind:checked={interactive} /> State machine</label
-			>
+			<label class="check"><input type="checkbox" bind:checked={interactive} /> State machine</label>
+			<Info topic="stateMachine" />
 			{#if machine}
 				<span class="time state">{stateName}</span>
-				<button class="icon" onclick={restart} title="Start the state machine again" aria-label="Start again">↺</button>
+				<button type="button" class="only" onclick={restart} title="Start the state machine again" aria-label="Start again"><Icon name="refresh" /></button>
 			{/if}
 		{/if}
 	</div>

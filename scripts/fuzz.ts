@@ -552,6 +552,37 @@ function checkIds(src: string): string {
 	return "";
 }
 
+/**
+ * Every path's data follows SVG's grammar strictly: commands with the right number of numbers,
+ * numbers a renderer reads the same way (written in their shortest form, see pathdata.ts).
+ */
+const ARGS: Record<string, number> = { m: 2, l: 2, h: 1, v: 1, c: 6, s: 4, q: 4, t: 2, a: 7, z: 0 };
+function checkPaths(src: string): string {
+	for (const m of src.matchAll(/<path\b[^>]*?\sd="([^"]*)"/g)) {
+		const d = m[1]!;
+		if (!d.trim()) continue;
+		const rest = d.replace(/[MmLlHhVvCcSsQqTtAaZz]|-?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?|[\s,]+/g, "");
+		if (rest) return `path data with "${rest.slice(0, 10)}" in ${d.slice(0, 80)}`;
+		const t = d.match(/[a-zA-Z]|-?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/g)!;
+		if (!/^[Mm]$/.test(t[0]!)) return `path data starts with ${t[0]}: ${d.slice(0, 60)}`;
+		let cmd = "",
+			n = 0;
+		for (const tok of t) {
+			if (/[a-zA-Z]/.test(tok)) {
+				if (cmd && ARGS[cmd]! && n % ARGS[cmd]! !== 0) return `path command ${cmd} with ${n} numbers: ${d.slice(0, 80)}`;
+				if (cmd && ARGS[cmd]! && n === 0) return `path command ${cmd} without numbers: ${d.slice(0, 80)}`;
+				cmd = tok.toLowerCase();
+				n = 0;
+			} else {
+				if (cmd === "z") return `numbers after z: ${d.slice(0, 80)}`;
+				n++;
+			}
+		}
+		if (cmd && ARGS[cmd]! && (n === 0 || n % ARGS[cmd]! !== 0)) return `path command ${cmd} with ${n} numbers at the end: ${d.slice(0, 80)}`;
+	}
+	return "";
+}
+
 function checkTokens(src: string): string {
 	const m = /NaN|undefined|Infinity|\[object Object\]/.exec(src);
 	return m ? `"${m[0]}" in the output near ${JSON.stringify(src.slice(Math.max(0, m.index - 60), m.index + 30))}` : "";
@@ -613,6 +644,7 @@ function checkOutput(out: CompileOutput, s: Partial<ExportSettings>): string {
 		const p =
 			checkXml(text) ||
 			checkIds(text) ||
+			checkPaths(text) ||
 			checkTokens(text.replace(/<desc[^>]*>[\s\S]*?<\/desc>|<title[^>]*>[\s\S]*?<\/title>|aria-label="[^"]*"|data:[^"')]*/g, ""));
 		if (p) return `${f.suffix || "main"}: ${p}`;
 	}

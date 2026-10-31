@@ -264,7 +264,9 @@ class Clip {
 
 	resolve(target: number | string): number {
 		if (typeof target === "number") return Math.max(0, Math.min(this.tl.n - 1, target));
-		const f = this.tl.lb?.[target];
+		// own labels only: "toString" or "constructor" aren't frames
+		const lb = this.tl.lb;
+		const f = lb && Object.prototype.hasOwnProperty.call(lb, target) ? lb[target] : undefined;
 		return f === undefined ? (/^\d+$/.test(target) ? Math.max(0, Math.min(this.tl.n - 1, +target - 1)) : this.frame) : f;
 	}
 
@@ -864,7 +866,8 @@ class Player {
 	}
 	named = new Map<string, Clip>();
 	inTick = false;
-	private listeners: Record<string, Listener[]> = {};
+	// no prototype: on("constructor", …) is just another event name
+	private listeners: Record<string, Listener[]> = Object.create(null);
 	time = 0; // seconds since last tick
 	private raf = 0;
 	private last = 0;

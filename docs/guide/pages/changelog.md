@@ -7,6 +7,15 @@ description: The main changes in each Flash2SVG version since the version 4 rewr
 
 The full list is in the [changelog](https://github.com/ZcarecroW/Flash2Svg/blob/main/CHANGELOG.md); downloads are on the [releases page](https://github.com/ZcarecroW/Flash2Svg/releases).
 
+## 4.2
+
+Smaller, safer, easier.
+
+- **Smaller files** — every path in its shortest form, losslessly: about 30 % less for SMIL and CSS after server compression, 38 % for still frames. [Performance](performance.md)
+- **CSS for older browsers** — Safari before 17.2 (e.g. iPhones on iOS 16), Chrome before 113 and Firefox before 112 now run every CSS animation. [Formats](formats.md#css)
+- **Help in the panel** — an *i* next to every setting explains it, with a link into this guide; icons throughout; the format buttons work with the arrow keys. [The panel](panel.md)
+- **Fixes from a full review** — GIF and WebP of several symbols and frame ranges, output names (relative, folders, other extensions), safer writing, Cancel while encoding, the same file twice in a page with `<flash2svg-player>`, names like `toString` in labels, presets, bitmaps and sounds. Details in the changelog.
+
 ## 4.1
 
 The biggest update since the rewrite.

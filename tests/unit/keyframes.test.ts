@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GTrack } from "../../src/core/emit/bake.ts";
-import { alignTracks, encodeKeyframes, serializeLinear } from "../../src/core/emit/keyframes.ts";
+import { alignTracks, encodeKeyframes, serializeLinear, legacyTiming, linearCurve, withLegacyTiming } from "../../src/core/emit/keyframes.ts";
 import { evalBezier } from "../../src/core/easing.ts";
 import { fmt } from "../../src/core/geom.ts";
 import { valueAt, type Track } from "../../src/core/tracks.ts";
@@ -234,5 +234,42 @@ describe("serializeLinear", () => {
 		expect(steps).toBe("linear(0 0% 50%,1 0% 100%)");
 		expect(evalLinear(steps, 0.49)).toBe(0);
 		expect(evalLinear(steps, 0.5)).toBe(1);
+	});
+});
+
+describe("linear() fallbacks for older browsers", () => {
+	it("reads linear() as the spec fills in positions", () => {
+		const f = linearCurve("0, .25 50%, 1")!;
+		expect(f(0.25)).toBeCloseTo(0.125);
+		expect(f(0.75)).toBeCloseTo(0.625);
+		// positions before an earlier one move up to it: a jump
+		const j = linearCurve("0 0% 40%, 1 10%, 1")!;
+		expect(j(0.39)).toBe(0);
+		expect(j(0.41)).toBe(1);
+		// missing positions spread evenly
+		const e = linearCurve("0, .5, .75, 1")!;
+		expect(e(1 / 3)).toBeCloseTo(0.5);
+		expect(linearCurve("nonsense")).toBeNull();
+	});
+
+	it("picks the closest classic timing", () => {
+		expect(legacyTiming("linear(0, 1)")).toBe("linear");
+		expect(legacyTiming("linear(0, 1 1%, 1)")).toBe("step-start");
+		expect(legacyTiming("linear(0, 0 99%, 1)")).toBe("step-end");
+		expect(legacyTiming("linear(0, .5 20%, .8 40%, .95 60%, 1)")).toBe("ease");
+		expect(legacyTiming("linear(0, .3 20%, .6 40%, .85 70%, 1)")).toBe("ease-out");
+		expect(legacyTiming("linear(0,.1 40%,.9 60%,1)")).toBe("ease-in-out");
+	});
+
+	it("writes a fallback before each declaration with linear(), which old browsers keep", () => {
+		const css = "#a .b{animation:k1 2s linear(0,1 1%,1) infinite,k2 2s step-end infinite}@keyframes k{50%{x:1;animation-timing-function:linear(0,0 99%,1)}}";
+		const out = withLegacyTiming(css);
+		expect(out).toBe(
+			"#a .b{animation:k1 2s step-start infinite,k2 2s step-end infinite;animation:k1 2s linear(0,1 1%,1) infinite,k2 2s step-end infinite}@keyframes k{50%{x:1;animation-timing-function:step-end;animation-timing-function:linear(0,0 99%,1)}}",
+		);
+		// a browser that can't read linear() drops those declarations: an animation is left
+		const old = out.replace(/[^;{}]*linear\([^;{}]*;?/g, "");
+		expect(old).toContain("animation:k1 2s step-start infinite,k2 2s step-end infinite");
+		expect(withLegacyTiming("#a{animation:k 1s linear infinite}")).toBe("#a{animation:k 1s linear infinite}");
 	});
 });

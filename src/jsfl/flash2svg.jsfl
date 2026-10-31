@@ -19,7 +19,7 @@
  * Status JSON: {"state":"running"|"done"|"error"|"idle","phase":..,"progress":0..1,"message":..,"scene":uri}
  */
 (function (global) {
-	var VERSION = "4.1.0";
+	var VERSION = "4.2.0";
 
 	// ------------------------------------------------------------------ JSON
 

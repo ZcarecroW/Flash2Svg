@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { compileScene } from "../../src/core/compile.ts";
 import type { SceneModel, TimelineData } from "../../src/core/model.ts";
 import { ALL_SCENES, joinScenes } from "../../src/core/scenes.ts";
+import { exportRaster } from "../../src/core/raster.ts";
 
 const scene = (id: string, name: string, frames: number, script: Record<number, string>, labels: Record<number, string> = {}): TimelineData => ({
 	id,
@@ -73,5 +74,21 @@ describe("all scenes in a row", () => {
 		const P = JSON.parse(/<script type="application\/json"><!\[CDATA\[([\s\S]*?)\]\]>/.exec(out.files[0]!.svg)![1]!);
 		expect(P.tl[ALL_SCENES].ac).toEqual({ 9: [[2, 12, 1]], 10: [[2, "Scene 2/intro", 0]], 14: [[0]] });
 		expect(P.tl[ALL_SCENES].ev).toEqual([[14, "btn", 0, [2, "", 0, 1]]]);
+	});
+});
+
+describe("all scenes as GIF", () => {
+	it("draws the joined scenes (the raster export used to look for a timeline that isn't stored)", async () => {
+		let drawn = 0;
+		const out = await exportRaster(
+			model(),
+			{ readText: () => "", readBinary: () => new Uint8Array() },
+			{ format: "gif", loop: "always" },
+			async (_svg, width, height) => (drawn++, { data: new Uint8ClampedArray(width * height * 4), width, height }),
+			null,
+		);
+		// "always": every frame of both scenes in order
+		expect(drawn).toBe(15);
+		expect(out.files[0]!.ext).toBe(".gif");
 	});
 });

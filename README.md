@@ -10,7 +10,7 @@ kind of animation in the file:
 | --- | --- | --- | --- |
 | **SMIL** | `<animate>` / `<animateTransform>` with exact `keySplines` easing | ✓ | button states via CSS, web links, start on click / hover / when visible, scroll |
 | **CSS** | `@keyframes` on the individual transform properties, `cubic-bezier()` or `linear()` easing, class based | ✓ | button states, web links, pause from your page CSS, scroll-driven (inline) |
-| **JS player** | artwork + compact timeline + a 15.1 KB runtime with real Flash semantics (6.2 KB gzipped; 16.4 KB with shape-tween morphs, 18.1 KB with mouse handlers) | poster frame only | ✓ `play()`, `stop()`, `gotoAndPlay("label")`, buttons, Animate's code snippets, scroll, sounds |
+| **JS player** | artwork + compact timeline + a 15.2 KB runtime with real Flash semantics (6.2 KB gzipped; 16.5 KB with shape-tween morphs, 18.2 KB with mouse handlers) | poster frame only | ✓ `play()`, `stop()`, `gotoAndPlay("label")`, buttons, Animate's code snippets, scroll, sounds |
 | **Frames** | one still SVG per frame | ✓ | – |
 | **GIF** / **WebP** | animated raster fallbacks of the first pass (GIF: 256 colours a frame; WebP: full colour with alpha, only the changed rectangle per frame), for e-mail and apps without SVG animation | ✓ | – |
 | **Automatic** | the JS player when sounds or mouse handlers need it, else CSS — or SMIL when that is clearly smaller (shape tweens) | ✓ (CSS/SMIL) | as the chosen format |
@@ -220,7 +220,7 @@ Documents without these settings stay as they were, apart from the static text l
 <!-- …or inline the SVG markup in your page -->
 ```
 
-Or let the `<flash2svg-player>` web component (1.7 KB, `dist/web/flash2svg-player.js`, an ES
+Or let the `<flash2svg-player>` web component (2.2 KB, `dist/web/flash2svg-player.js`, an ES
 module; `flash2svg-player.iife.js` as a classic script) put the SVG into your page: it loads the
 file when it comes near the screen (`loading="eager"`: at once), places it inline so its scripts
 run and scroll-driven CSS works, and shows its children until then.
@@ -268,8 +268,8 @@ Animate's in-betweens are exactly such blends; the exporter matches up the frame
 (contours started at another point, curves written as lines, holes in another order, edges that
 shrank to nothing left out), fits the start and end shape to all of them and checks every frame
 against Animate's drawing. Frames that don't fit stay drawings of their own. Files get much
-smaller and the shape moves smoothly between frames: a 119-frame shape tween takes 12.7 KB
-instead of 75.5 KB as SMIL (2.4 instead of 17 KB gzipped). CSS output keeps a drawing per frame
+smaller and the shape moves smoothly between frames: the morph test document takes 105 KB
+instead of 339 KB as SMIL (16 instead of 36 KB gzipped). CSS output keeps a drawing per frame
 (Safari can't animate paths with CSS). `--no-morph` turns it off.
 
 **Lean CSS:** an instance is one element whose tweens are the individual properties
@@ -277,11 +277,13 @@ instead of 75.5 KB as SMIL (2.4 instead of 17 KB gzipped). CSS output keeps a dr
 each with its own timing and sharing keyframes where they can. Keyframes leave out the timing
 most of them use (the animation has it), equal keyframes share a rule, and stretches that follow
 one curve — Animate's frame-by-frame samples, stepped output — are one keyframe pair with a
-`linear()` timing function where that is shorter. The 46 test documents take 1295 KB as CSS
-(1737 KB before; stepped 1375 instead of 2042 KB). CSS output needs a browser from 2023 on
-(`linear()`: Chrome / Edge 113, Firefox 112, Safari 17.2 — older ones move those stretches
-linearly); it is tested frame by frame in Edge, Firefox and WebKit. Renderers without CSS (design
-tools, image viewers) show the poster frame from the `transform` attributes.
+`linear()` timing function where that is shorter. The 59 test documents take 1429 KB as CSS.
+CSS output is made for browsers from 2023 on (`linear()`: Chrome / Edge 113, Firefox 112,
+Safari 17.2); older ones get the closest classic timing for those stretches (written first, so
+no animation is lost — `scripts/e2e-compat.ts` checks it), and the individual transform
+properties need Chrome / Edge 104, Firefox 72, Safari 14.1. It is tested frame by frame in Edge,
+Firefox and WebKit. Renderers without CSS (design tools, image viewers) show the poster frame
+from the `transform` attributes.
 
 **Decimals** (*Advanced*, `--digits`) is the precision on screen: what is shown smaller gets
 fewer decimals, what is shown larger more (a symbol at a tenth of its size one less, one at 8
@@ -291,8 +293,8 @@ least 3 and 4.
 **.svgz** (*Compressed .svgz*, `--svgz`) writes the SVG gzipped, for design tools and for servers
 that send `.svgz` files with `Content-Encoding: gzip` (Apache: `AddEncoding gzip .svgz`). Browsers
 show it only then — not from disk, not from a server that just sends the type. For the web, keep
-plain `.svg` and let the server compress it, preferably with Brotli: the 46 test documents as
-SMIL are 1086 KB, 371 KB gzipped (.svgz) and 340 KB with Brotli (nginx `brotli on` or
+plain `.svg` and let the server compress it, preferably with Brotli: the 59 test documents as
+SMIL are 1310 KB, 391 KB gzipped (.svgz) and 357 KB with Brotli (nginx `brotli on` or
 `gzip_types image/svg+xml`, Apache `mod_brotli` / `mod_deflate` for `image/svg+xml`).
 
 ### Lottie
@@ -339,8 +341,8 @@ lottie-ios / lottie-android.
   show it most), draws
   thin seams between the tiles of a repeating bitmap fill and faded edges where a clipped bitmap
   fill stretches its edge pixels and smooths pixel art.
-- Size: Lottie JSON is wordier than SVG, but compresses as well — the 46 test documents take
-  1462 KB as Lottie and 1086 KB as SMIL, gzipped 379 KB and 372 KB; as .lottie archives 413 KB.
+- Size: Lottie JSON is wordier than SVG — the 59 test documents take 2303 KB as Lottie and
+  1310 KB as SMIL, gzipped 509 KB and 391 KB; as .lottie archives 564 KB.
 - Speed: players draw a precomposition again for each use, so built filters cost render time
   (a bevel blurs four times): about 0.5–2 ms per shadow and 6–9 ms per bevel and frame in Skottie
   on the CPU at 500×400.
@@ -457,6 +459,11 @@ drives the JS player's API, buttons and sounds, and inlines several exports into
 installed one) and WebKit: `node scripts/e2e-browser.ts --browser=firefox` or `--browser=webkit`
 (once: `node node_modules/playwright-core/cli.js install webkit`).
 
+`npm run e2e:ui` checks the panel's interface without Animate (after `npm run build`): the built
+panel in Edge with a stand-in for Animate's host — every "i" tip (hover, keyboard, pinned, its
+guide link), icons, layout at narrow widths, text contrast on Animate's four interface
+brightnesses, presets and stored settings from other versions.
+
 `npm run e2e:panel` tests the panel inside Animate: it builds a self-test version, signs it with
 Adobe's `ZXPSignCmd` (put it into `tools/zxpsign/`; no CEP debug mode needed), installs it, lets
 it export a set of fixtures through the real Export path and uninstalls it again. See [docs/architecture.md](docs/architecture.md); planned features: [docs/roadmap.md](docs/roadmap.md).
@@ -464,4 +471,6 @@ it export a set of fixtures through the real Export path and uninstalls it again
 ## Credits
 
 Flash2SVG was created by Thomas Byrne and David Belais. Version 4 is a rewrite in this fork.
-MIT licensed — see [LICENSE](LICENSE).
+MIT licensed — see [LICENSE](LICENSE). The panel's icons (`src/panel/icons.svg`, listed in
+`src/panel/icons.txt`) are from [Nucleo](https://nucleoapp.com) and used under the Nucleo
+licence: they are not covered by the MIT licence and may not be reused outside Flash2SVG.

@@ -1,0 +1,38 @@
+# Nucleo icons of the panel (classic Nucleo library, outline; 16 px grid, chevrons 12 px).
+# © Nucleo (nucleoapp.com), used under the Nucleo license: they are not covered by this
+# repository's MIT license and may not be reused outside Flash2SVG.
+# Regenerate src/panel/icons.svg (needs a licensed Nucleo library and the nucleo CLI):
+#   node <nucleo-cli> sprite $(grep -v '^#' src/panel/icons.txt) --out src/panel/icons.svg
+c-info/nucleo/outline/16
+export/nucleo/outline/16
+e-remove/nucleo/outline/16
+bookmarks/nucleo/outline/16
+file/nucleo/outline/16
+file-upload/nucleo/outline/16
+play-media/nucleo/outline/16
+shapes/nucleo/outline/16
+image/nucleo/outline/16
+sound/nucleo/outline/16
+gear/nucleo/outline/16
+c-check/nucleo/outline/16
+open-folder/nucleo/outline/16
+folder/nucleo/outline/16
+globe/nucleo/outline/16
+refresh/nucleo/outline/16
+undo/nucleo/outline/16
+floppy-disk/nucleo/outline/16
+trash/nucleo/outline/16
+button-play/nucleo/outline/16
+button-pause/nucleo/outline/16
+warning-sign/nucleo/outline/16
+c-warning/nucleo/outline/16
+magic-wand/nucleo/outline/16
+code/nucleo/outline/16
+css3/nucleo/outline/16
+cursor-pointer/nucleo/outline/16
+layers/nucleo/outline/16
+animation-14/nucleo/outline/16
+archive/nucleo/outline/16
+image-2/nucleo/outline/16
+ctrl-down/nucleo/outline/12
+ctrl-right/nucleo/outline/12

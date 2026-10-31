@@ -118,7 +118,15 @@ const cliBuild = {
 };
 
 function copyStatic() {
-	copyFileSync(join(repo, "src/panel/index.html"), join(ext, "panel/index.html"));
+	// the panel's Nucleo icons (src/panel/icons.svg) go into the page as one hidden sprite: no requests,
+	// and <use> takes the text colour. Ids get "i-" (lottie-web gives layers their names as ids).
+	const sprite = readFileSync(join(repo, "src/panel/icons.svg"), "utf8")
+		.replaceAll(` data-color="color-2"`, "")
+		.replaceAll(`<symbol id="`, `<symbol id="i-`)
+		.replace("<svg ", `<svg width="0" height="0" style="position:absolute" aria-hidden="true" `);
+	const html = readFileSync(join(repo, "src/panel/index.html"), "utf8");
+	if (!html.includes("<!-- icons -->")) throw new Error("src/panel/index.html: the <!-- icons --> placeholder is missing");
+	writeFileSync(join(ext, "panel/index.html"), html.replace("<!-- icons -->", sprite));
 	copyFileSync(join(repo, "src/jsfl/flash2svg.jsfl"), join(ext, "jsfl/flash2svg.jsfl"));
 	let manifest = readFileSync(join(repo, "extension/CSXS/manifest.xml"), "utf8").replaceAll("{version}", version);
 	if (process.argv.includes("--selftest")) {

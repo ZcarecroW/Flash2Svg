@@ -8,6 +8,9 @@
 	--accent-fg: #ffffff;
 	--danger: #ff6b6b;
 	--radius: 4px;
+	--tip-bg: #1d1d1d;
+	--tip-fg: #ececec;
+	--tip-line: #555;
 	color-scheme: dark;
 }
 :root[data-theme="light"] {
@@ -15,6 +18,10 @@
 	--muted: #666;
 	--field: #ffffff;
 	--line: #c8c8c8;
+	--danger: #c62828;
+	--tip-bg: #ffffff;
+	--tip-fg: #1e1e1e;
+	--tip-line: #b4b4b4;
 	color-scheme: light;
 }
 * {
@@ -49,19 +56,45 @@ header {
 	border-bottom: 1px solid var(--line);
 }
 .doc {
+	display: flex;
+	align-items: center;
+	gap: 5px;
 	color: var(--muted);
 	font-size: 11px;
+}
+.doc span {
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
+}
+/* sprite icons (Icon.svelte): the text colour, never squeezed */
+.icon {
+	flex: none;
+	vertical-align: -3px;
 }
 .bar {
 	display: flex;
 	gap: 6px;
 }
-.presets {
+/* a select with an icon inside, at the left */
+.with-icon {
+	position: relative;
+	display: flex;
 	flex: 1;
 	min-width: 0;
+}
+.with-icon > .icon {
+	position: absolute;
+	left: 7px;
+	top: 50%;
+	transform: translateY(-50%);
+	pointer-events: none;
+	color: var(--muted);
+}
+.with-icon select {
+	flex: 1;
+	min-width: 0;
+	padding-left: 28px;
 }
 button,
 select,
@@ -70,6 +103,10 @@ input {
 	color: inherit;
 }
 button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 5px;
 	border: 1px solid var(--line);
 	background: transparent;
 	border-radius: var(--radius);
@@ -90,8 +127,10 @@ button.primary {
 	font-weight: 600;
 	padding: 4px 16px;
 }
-button.icon {
-	padding: 2px 7px;
+/* a button that is only an icon (its aria-label names it) */
+button.only {
+	padding: 3px 5px;
+	flex: none;
 }
 button.link {
 	border: none;
@@ -99,6 +138,66 @@ button.link {
 	color: var(--muted);
 	text-decoration: underline;
 	align-self: flex-start;
+}
+button.link:hover:not(:disabled) {
+	color: var(--fg);
+}
+/* the "i" next to a setting (Info.svelte) */
+button.info {
+	flex: none;
+	border: none;
+	padding: 2px;
+	border-radius: 50%;
+	color: var(--muted);
+	opacity: 0.75;
+}
+button.info:hover,
+button.info.open {
+	color: var(--accent);
+	opacity: 1;
+}
+/* the tooltip (Tooltip.svelte): fixed, so the panel's scrolling and folding can't clip it */
+.tip {
+	position: fixed;
+	z-index: 10;
+	width: max-content;
+	max-width: min(260px, calc(100vw - 12px));
+	padding: 7px 9px;
+	border: 1px solid var(--tip-line);
+	border-radius: 6px;
+	background: var(--tip-bg);
+	color: var(--tip-fg);
+	font-size: 11px;
+	line-height: 1.45;
+	box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+.tip::before {
+	content: "";
+	position: absolute;
+	left: calc(var(--arrow) - 5px);
+	top: -6px;
+	width: 9px;
+	height: 9px;
+	background: var(--tip-bg);
+	border: 1px solid var(--tip-line);
+	border-width: 1px 0 0 1px;
+	transform: rotate(45deg);
+}
+.tip.above::before {
+	top: auto;
+	bottom: -6px;
+	border-width: 0 1px 1px 0;
+}
+.tip p {
+	margin: 0;
+}
+.tip button.link {
+	margin-top: 6px;
+	color: var(--accent);
+	text-decoration: none;
+}
+.tip button.link:hover {
+	text-decoration: underline;
 }
 button:focus-visible,
 select:focus-visible,
@@ -138,9 +237,18 @@ input[type="number"] {
 	font-size: 11px;
 	line-height: 16px;
 }
+.error,
+.notice {
+	display: flex;
+	align-items: flex-start;
+	gap: 6px;
+	font-size: 11px;
+}
 .error {
 	color: var(--danger);
-	font-size: 11px;
+}
+.notice {
+	color: var(--muted);
 }
 section {
 	border: 1px solid var(--line);
@@ -152,14 +260,15 @@ section h2 {
 }
 section h2 button {
 	width: 100%;
-	text-align: left;
+	justify-content: flex-start;
+	gap: 6px;
 	border: none;
 	padding: 6px 8px;
 	font-weight: 600;
 }
 .chev {
-	display: inline-block;
-	width: 14px;
+	display: inline-flex;
+	width: 10px;
 	color: var(--muted);
 }
 .body {
@@ -181,6 +290,33 @@ section h2 button {
 .row > select,
 .row > input[type="text"] {
 	flex: 1;
+}
+/* a setting and its "i" at the right edge, so the tips line up */
+.line {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-height: 22px;
+}
+.line > .row,
+.line > .check,
+.line > .sub {
+	flex: 1;
+	min-width: 0;
+}
+.sub {
+	color: var(--muted);
+	font-size: 11px;
+}
+.unit {
+	color: var(--muted);
+	font-size: 11px;
+	white-space: nowrap;
+}
+.list-head {
+	margin-top: 2px;
+	padding-top: 6px;
+	border-top: 1px solid var(--line);
 }
 .row.range span:not(:first-child) {
 	color: var(--muted);
@@ -205,8 +341,17 @@ section h2 button {
 	gap: 4px;
 }
 .formats button {
-	padding: 5px 2px;
+	flex-direction: column;
+	gap: 3px;
+	padding: 6px 2px 5px;
 	font-size: 11px;
+	min-width: 0;
+}
+.formats button span {
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 .formats button.on {
 	background: var(--accent);
@@ -225,8 +370,16 @@ section h2 button {
 	justify-content: space-between;
 }
 .preset > span:first-child {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex: 1;
 	width: auto;
+	min-width: 0;
 	color: var(--fg);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 .stats {
 	color: var(--muted);
@@ -321,6 +474,9 @@ section h2 button {
 .warnings summary {
 	cursor: pointer;
 	color: var(--muted);
+}
+.warnings summary .icon {
+	margin: 0 5px 0 2px;
 }
 .warnings ul {
 	margin: 4px 0 0;

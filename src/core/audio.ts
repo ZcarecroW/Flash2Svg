@@ -9,7 +9,7 @@
  * by the player.
  */
 import type { FileSource } from "./context.ts";
-import type { SceneModel, SoundData } from "./model.ts";
+import { choice, type SceneModel, type SoundData } from "./model.ts";
 
 export type SoundFormat = "mp3" | "opus";
 
@@ -60,7 +60,8 @@ const MP3_RATES = [8, 16, 24, 32, 40, 48, 64, 80, 96, 112, 128, 160, 192, 224, 2
 const NO_END = 1073741823;
 
 export function modeOf(snd: SoundData, s: SoundSettings): "lossy" | "lossless" {
-	return s.soundModes[snd.name] ?? (snd.compression === "raw" ? "lossless" : "lossy");
+	const own = choice(s.soundModes, snd.name);
+	return own === "lossy" || own === "lossless" ? own : snd.compression === "raw" ? "lossless" : "lossy";
 }
 
 /**
@@ -144,6 +145,8 @@ export async function encodeSounds(
 		try {
 			pcm = mp3In ? await codecs.decodeMp3(source) : readWav(source);
 		} catch (e) {
+			// a cancelled export stops here too
+			if ((e as Error).name === "AbortError") throw e;
 			warnings.push(`Sound ${snd.name} could not be read (${(e as Error).message}); it is kept as Animate exported it`);
 			sounds[id] = snd;
 			continue;
@@ -165,7 +168,7 @@ export async function encodeSounds(
 
 		if (mode === "lossless") {
 			// Raw in Animate with a lower sample rate: as Animate publishes it
-			if (snd.compression === "raw" && !s.soundModes[snd.name] && snd.sampleRate && snd.sampleRate < pcm.rate) pcm = resample(pcm, snd.sampleRate);
+			if (snd.compression === "raw" && !choice(s.soundModes, snd.name) && snd.sampleRate && snd.sampleRate < pcm.rate) pcm = resample(pcm, snd.sampleRate);
 			keep(`${base}.wav`, writeWav(pcm), "wav", { ...extra, lead: 0 }, seconds, channels);
 			continue;
 		}

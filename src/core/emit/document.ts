@@ -362,7 +362,8 @@ export class OutputDoc {
 		const svg = { ...root, children: [...root.children.slice(0, at), ...children, ...root.children.slice(at)] };
 		for (const s of this.scripts) svg.children.push(el("script", {}, [cdata(s)]));
 		let out = serialize(svg, { pretty: opts.pretty });
-		if (opts.xmlDeclaration !== false) out = '<?xml version="1.0" encoding="UTF-8"?>\n' + out;
+		// UTF-8 is XML's default: the declaration only costs bytes (kept in indented files, for reading)
+		if (opts.xmlDeclaration ?? opts.pretty) out = '<?xml version="1.0" encoding="UTF-8"?>\n' + out;
 		return out;
 	}
 

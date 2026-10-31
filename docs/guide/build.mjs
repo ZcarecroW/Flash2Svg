@@ -162,7 +162,8 @@ const slug = (s) =>
 	s
 		.toLowerCase()
 		.replace(/<[^>]+>/g, "")
-		.replace(/&[a-z]+;/g, "")
+		// entities, also numeric ones (marked writes ' as &#39;: "animate39s" otherwise)
+		.replace(/&(?:[a-z]+|#\d+|#x[\da-f]+);/g, "")
 		.replace(/[^\w\s-]/g, "")
 		.trim()
 		.replace(/\s+/g, "-");

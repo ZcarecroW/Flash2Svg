@@ -44,7 +44,7 @@ Wrong options get a message, not a stack trace, and the exit code is 1 — handy
 
 | Option | |
 |---|---|
-| `-o`, `--out <file>` | output file (default: `<document>.svg`, `.json` or `.lottie` next to the scene folder) |
+| `-o`, `--out <file>` | output file, or a folder (existing, or ending in `/`) to write the default name into (default: `<document>.svg`, `.json` or `.lottie` next to the scene folder). A scene of several library symbols gives one file each, `<name>_<symbol>`. |
 | `--format <f>` | `smil` (default), `css`, `player`, `static`, `lottie`, `dotlottie`, `auto`, `gif`, `webp` |
 | `--frames <a-b>` | frame range, 1-based, inclusive (`1-24`, or one frame: `5`) |
 | `--loop <m>` | `auto` (follow `stop()` scripts), `always`, `never` |

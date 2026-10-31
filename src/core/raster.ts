@@ -12,6 +12,7 @@ import type { Codecs, Pixels } from "./images.ts";
 import type { SceneModel } from "./model.ts";
 import { renderStatic } from "./emit/static.ts";
 import { playhead } from "./emit/timing.ts";
+import { joinScenes } from "./scenes.ts";
 
 /** SVG text → pixels (straight alpha) at the given size. */
 export type Rasterize = (svg: string, width: number, height: number) => Promise<Pixels>;
@@ -26,8 +27,9 @@ export interface RasterFrame {
 export const MAX_RASTER_FRAMES = 1500;
 
 /**
- * The first pass, frame by frame. Loops when the timeline loops ("auto": a frame script jumps
- * back, or no stop(); "always"/"never" as set).
+ * The first pass of root `rootIndex`, frame by frame. Loops when the timeline loops ("auto": a
+ * frame script jumps back, or no stop(); "always"/"never" as set). A frame range, and "always",
+ * play the frames in order as the SVG formats do (bake.ts): the scripts don't decide then.
  */
 export async function rasterFrames(
 	model: SceneModel,
@@ -35,17 +37,31 @@ export async function rasterFrames(
 	s: ExportSettings,
 	rasterize: Rasterize,
 	warn: (m: string) => void,
+	rootIndex = 0,
 ): Promise<{ frames: RasterFrame[]; loop: boolean }> {
+	model = joinScenes(model);
 	const ctx = createContext(model, files, { smooth: true, includeHiddenLayers: s.includeHiddenLayers, includeGuides: s.includeGuides, digits: s.digits });
-	const rootId = model.roots[0]!;
-	const prog = ctx.programs[rootId]!;
-	const ph = playhead(prog);
-	let pass = [...ph.prefix, ...ph.cycle];
+	const rootId = model.roots[rootIndex];
+	const prog = rootId ? ctx.programs[rootId] : undefined;
+	if (!rootId || !prog) throw new Error("Nothing to export");
+	let pass: number[];
+	let loop: boolean;
+	if (s.startFrame !== undefined || s.endFrame !== undefined || s.loop === "always") {
+		const a = Math.max(0, Math.min(prog.frameCount - 1, s.startFrame ?? 0));
+		const e = Math.max(a + 1, Math.min(prog.frameCount, s.endFrame ?? prog.frameCount));
+		pass = [];
+		for (let f = a; f < e; f++) pass.push(f);
+		loop = s.loop !== "never";
+	} else {
+		const ph = playhead(prog);
+		pass = [...ph.prefix, ...ph.cycle];
+		loop = s.loop === "auto" && ph.cycle.length > 0;
+	}
+	if (!pass.length) pass = [0];
 	if (pass.length > MAX_RASTER_FRAMES) {
 		warn(`The animation has ${pass.length} frames: the raster export keeps the first ${MAX_RASTER_FRAMES}`);
 		pass = pass.slice(0, MAX_RASTER_FRAMES);
 	}
-	const loop = s.loop === "always" || (s.loop === "auto" && ph.cycle.length > 0);
 	const { width, height, frameRate } = model.doc;
 	const W = Math.max(1, Math.round(width)),
 		H = Math.max(1, Math.round(height));
@@ -219,16 +235,19 @@ export async function exportRaster(
 	partial: Partial<ExportSettings>,
 	rasterize: Rasterize,
 	codecs: Codecs | null,
+	rootIndex = 0,
 ): Promise<CompileOutput> {
 	const s: ExportSettings = { ...DEFAULT_SETTINGS, ...partial };
 	const warnings: string[] = [];
 	if (Object.keys(model.sounds).length) warnings.push("Sounds aren't part of a GIF or WebP animation");
 	if (Object.values(model.timelines).some((t) => t.layers.some((l) => l.keyframes.some((k) => k.elements.some((e) => e.kind === "video")))))
 		warnings.push("Videos aren't part of a GIF or WebP animation (their place stays empty)");
-	const { frames, loop } = await rasterFrames(model, files, s, rasterize, (m) => warnings.push(m));
+	const { frames, loop } = await rasterFrames(model, files, s, rasterize, (m) => warnings.push(m), rootIndex);
 	const gif = s.format === "gif";
 	if (!gif && !codecs) throw new Error("Animated WebP needs the image codecs");
-	const bytes = gif ? encodeGif(frames, loop) : await encodeAnimatedWebp(frames, loop, codecs!, s.imageQuality || 80, false);
+	const bytes = gif
+		? encodeGif(frames, loop)
+		: await encodeAnimatedWebp(frames, loop, codecs!, Number.isFinite(s.imageQuality) && s.imageQuality > 0 ? Math.min(100, s.imageQuality) : 80, false);
 	const ms = frames.reduce((n, f) => n + f.ms, 0);
 	return {
 		files: [{ suffix: "", svg: "", ext: gif ? ".gif" : ".webp", bytes }],

@@ -356,3 +356,8 @@ export interface FrameSound {
 	/** In and out point in 44.1 kHz samples; every loop plays from start to end. */
 	limits?: { start: number; end: number };
 }
+
+/** A per-name choice (bitmap, sound): own entries only — a bitmap called "constructor" isn't Object's. */
+export function choice<T>(map: Record<string, T> | undefined, name: string): T | undefined {
+	return map && Object.prototype.hasOwnProperty.call(map, name) ? map[name] : undefined;
+}

@@ -349,6 +349,13 @@ const near = (a: [number, number, number], b: [number, number, number]) => a.eve
 		check("labels: gotoAndStop(label)", (await frame()) === 7, `frame ${await frame()}`);
 		await wait(250);
 		check("labels: gotoAndStop stays", (await frame()) === 7);
+		// a label that doesn't exist stays where it is, also one named like an Object method
+		await api(page, (a) => a.gotoAndStop("nope"));
+		await api(page, (a) => a.gotoAndStop("toString"));
+		await api(page, (a) => a.gotoAndStop("constructor"));
+		await api(page, (a) => a.gotoAndStop("__proto__"));
+		await api(page, (a) => a.gotoAndStop("hasOwnProperty"));
+		check("labels: unknown labels (also toString, constructor, __proto__) stay", (await frame()) === 7, `frame ${await frame()}`);
 		await api(page, (a) => a.gotoAndStop(5));
 		check("labels: gotoAndStop(number) is 1-based", (await frame()) === 5, `frame ${await frame()}`);
 		await api(page, (a) => a.gotoAndPlay("step2"));

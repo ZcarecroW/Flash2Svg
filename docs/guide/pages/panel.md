@@ -7,6 +7,10 @@ description: A tour of every section and setting of the Flash2SVG panel in Anima
 
 The panel works on the document in front of you. Its sections fold away; it remembers which are open and every setting, per user — and, if you like, inside the FLA.
 
+Every setting has a small **i** at the right: point at it (or reach it with the Tab key) for a short explanation, click it to keep the explanation open; its link leads to the matching part of this guide.
+
+![A clicked "i" next to Start: its explanation stays open, with a link into this guide.](images/panel-tip.webp "An explanation, pinned by a click.")
+
 ## The top bar
 
 - The **document name** shows what will be exported.
@@ -18,7 +22,7 @@ The panel works on the document in front of you. Its sections fold away; it reme
 | Setting | What it does |
 |---|---|
 | **Format** | How the file animates: *Automatic*, *SMIL*, *CSS*, *JS player*, *Frames*, *Lottie*, *.lottie*, *GIF*, *WebP*. See [Formats](formats.md). |
-| **File** | Where to write. Empty: next to the FLA, named after it. The extension follows the format (a name ending in `.svg` becomes `.json` for Lottie). **…** opens a save dialog. |
+| **File** | Where to write. Empty: next to the FLA, named after it. A name without a folder goes next to the FLA; a folder (ending in ``) gets the FLA's name inside it. The extension follows the format (a name ending in `.svg` becomes `.json` for Lottie; any other is kept and the format's added). The folder button opens a save dialog. |
 | **Source** | *Current timeline* (the scene or symbol you are in), *Selected library symbols* (one file per symbol, named `<file>_<symbol>`; select them in the Library first — good for icon sets), or *All scenes in a row*, shown when the document has several scenes: they play one after the other as in Flash, and `gotoAndPlay(5, "Scene 2")`, `nextScene()` and `prevScene()` jump between them. |
 | **Frames** | *All*; *Current frame* (always a still SVG); or a *Range* (first and last frame, 1-based). |
 

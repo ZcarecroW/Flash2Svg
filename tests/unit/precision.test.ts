@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { compileScene } from "../../src/core/compile.ts";
 import type { InstanceElement, SceneModel, TimelineData } from "../../src/core/model.ts";
 import { decimalsFor, measurePrecision } from "../../src/core/precision.ts";
+import { minifyPath } from "../../src/core/pathdata.ts";
 import { buildPrograms, type InstanceItem } from "../../src/core/program.ts";
 
 const box = { left: 0, top: 0, width: 100, height: 100 };
@@ -88,8 +89,9 @@ describe("precision from the displayed size", () => {
 		const svg = compileScene(scene(), files, { format: "static", digits: 2 }).files[0]!.svg;
 		const paths = [...svg.matchAll(/ d="([^"]+)"/g)].map((m) => m[1]!);
 		// the small symbol's copy: 1 decimal; the big one's: 3 (identical drawings are not merged then)
-		expect(paths).toContain("M10.1 20.5L30.8 41L12.3 45.7Z");
-		expect(paths).toContain("M10.123 20.457L30.789 40.988L12.346 45.679Z");
+		// (written in their shortest form)
+		expect(paths).toContain(minifyPath("M10.1 20.5L30.8 41L12.3 45.7Z"));
+		expect(paths).toContain(minifyPath("M10.123 20.457L30.789 40.988L12.346 45.679Z"));
 	});
 
 	it("writes the positions of a shrunk symbol's children with fewer decimals", () => {

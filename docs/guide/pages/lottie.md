@@ -77,6 +77,6 @@ Mouse handlers from the Code Snippets panel become the state machine: every plac
 
 ## Size and speed
 
-Lottie JSON is wordier than SVG but compresses as well: the test documents take 1462 KB as Lottie and 1086 KB as SMIL — gzipped 379 KB and 372 KB, and 413 KB as .lottie archives. Players draw a precomposition again for each use, so built filters cost render time: about 0.5–2 ms per shadow and 6–9 ms per bevel and frame in Skottie at 500×400.
+Lottie JSON is wordier than SVG: the test documents take 2303 KB as Lottie and 1310 KB as SMIL — gzipped 509 KB and 391 KB, and 564 KB as .lottie archives. Players draw a precomposition again for each use, so built filters cost render time: about 0.5–2 ms per shadow and 6–9 ms per bevel and frame in Skottie at 500×400.
 
 The players differ a little (measured): lottie-web blurs drop shadows slightly less than the others; dotLottie (ThorVG) blurs narrower, draws thin seams between the tiles of a repeating bitmap fill and fades the edges of a clipped bitmap fill.

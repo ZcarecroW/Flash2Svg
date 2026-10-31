@@ -85,4 +85,4 @@ Let the server **compress** SVG, JSON and the player's script — preferably wit
 | Apache | `AddOutputFilterByType BROTLI_COMPRESS image/svg+xml application/json` (mod_brotli) or `DEFLATE` (mod_deflate) |
 | GitHub Pages, Netlify, Cloudflare | compress SVG automatically |
 
-The 59 test documents as SMIL: 1313 KB, 402 KB gzipped, 360 KB with Brotli. See [Performance](performance.md#compression) for `.svgz`.
+The 59 test documents as SMIL: 1310 KB, 391 KB gzipped, 357 KB with Brotli. See [Performance](performance.md#compression) for `.svgz`.

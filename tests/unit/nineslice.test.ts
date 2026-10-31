@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { importArtwork } from "../../src/core/artwork.ts";
 import { artworkBounds, mapAxis, mapPath, sliceArtwork, type Axis, type SliceMap } from "../../src/core/nineslice.ts";
 import { serialize } from "../../src/core/xml.ts";
+import { minifyPath } from "../../src/core/pathdata.ts";
 
 // a 60 wide symbol with 16 px corners on the left and right
 const axis = (s: number): Axis => ({ s, a: 0, b: 60, l: 16, r: 44 });
@@ -52,7 +53,7 @@ describe("sliced artwork", () => {
 	it("moves the vertices, keeps the stroke width and scales the gradient normally", () => {
 		const out = sliceArtwork(art, m, "b", 2);
 		const text = [...out.defs, out.body].map((n) => serialize(n)).join("");
-		expect(text).toContain('d="M0 0L180 0 180 40 0 40Z"');
+		expect(text).toContain(`d="${minifyPath("M0 0L180 0 180 40 0 40Z")}"`);
 		expect(text).toContain('stroke-width="2"');
 		expect(text).not.toContain('stroke-width="6"');
 		expect(text).toMatch(/gradientTransform="matrix\(3 0 0 1 30 0\)"/);

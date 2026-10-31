@@ -45,7 +45,7 @@ Bitmaps shown smaller than their pixels are already written smaller (*Resolution
 
 ## Compression
 
-Let the server compress SVG — it shrinks to about a third. The 59 test documents as SMIL: 1313 KB, **402 KB gzipped**, **360 KB with Brotli**.
+Let the server compress SVG — it shrinks to about a third. The 59 test documents as SMIL: 1310 KB, **391 KB gzipped**, **357 KB with Brotli**.
 
 **`.svgz`** (*Compressed .svgz*, `--svgz`) writes the SVG gzipped, for design tools and for servers that send `.svgz` files with `Content-Encoding: gzip` (Apache: `AddEncoding gzip .svgz`). Browsers show it only then — not from disk, not from a server that sends just the type. For the web, keep plain `.svg` and let the server compress it.
 

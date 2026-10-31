@@ -194,6 +194,12 @@ try {
 	);
 	await shot("panel-scroll");
 	await js(`await __shot.select("Start", "auto"); return true;`);
+	// 6. an "i" clicked: its tip stays open, with the link into this guide
+	await js(
+		`await __shot.section("Output", false); const b = await __shot.until(() => [...document.querySelectorAll("button.info")].find((x) => x.getAttribute("aria-label") === "About Start"), 10000); b.click(); await __shot.until(() => document.getElementById("tip"), 5000); return true;`,
+	);
+	await shot("panel-tip", { wait: 600 });
+	await js(`document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); return true;`);
 
 	// ---------------------------------------------------------------- Animate's window with the panel
 	await cdp("Emulation.clearDeviceMetricsOverride");
@@ -249,7 +255,7 @@ const { default: encode, init } = await import("@jsquash/webp/encode.js");
 const { default: decode, init: initDec } = await import("@jsquash/png/decode.js");
 await init(await WebAssembly.compile(readFileSync(join(repo, "node_modules/@jsquash/webp/codec/enc/webp_enc.wasm"))));
 await initDec(await WebAssembly.compile(readFileSync(join(repo, "node_modules/@jsquash/png/codec/pkg/squoosh_png_bg.wasm"))));
-for (const f of ["panel", "panel-result", "panel-lottie", "panel-advanced", "panel-images", "panel-sounds", "panel-scroll", "animate"]) {
+for (const f of ["panel", "panel-result", "panel-lottie", "panel-advanced", "panel-images", "panel-sounds", "panel-scroll", "panel-tip", "animate"]) {
 	const src = join(raw, `${f}.png`);
 	if (!existsSync(src)) continue;
 	const img = await decode(readFileSync(src));

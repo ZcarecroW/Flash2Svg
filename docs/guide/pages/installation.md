@@ -23,13 +23,13 @@ Pick one of these tools:
 - **Adobe's own installer** (Unified Plugin Installer Agent), which comes with the Creative Cloud app. On Windows, in a terminal:
 
 ```powershell
-& "C:\Program Files\Common Files\Adobe\Adobe Desktop Common\RemoteComponents\UPI\UnifiedPluginInstallerAgent\UnifiedPluginInstallerAgent.exe" /install "$HOME\Downloads\Flash2SVG-4.1.0.zxp"
+& "C:\Program Files\Common Files\Adobe\Adobe Desktop Common\RemoteComponents\UPI\UnifiedPluginInstallerAgent\UnifiedPluginInstallerAgent.exe" /install "$HOME\Downloads\Flash2SVG-4.2.0.zxp"
 ```
 
   On macOS:
 
 ```bash
-"/Library/Application Support/Adobe/Adobe Desktop Common/RemoteComponents/UPI/UnifiedPluginInstallerAgent/UnifiedPluginInstallerAgent.app/Contents/MacOS/UnifiedPluginInstallerAgent" --install ~/Downloads/Flash2SVG-4.1.0.zxp
+"/Library/Application Support/Adobe/Adobe Desktop Common/RemoteComponents/UPI/UnifiedPluginInstallerAgent/UnifiedPluginInstallerAgent.app/Contents/MacOS/UnifiedPluginInstallerAgent" --install ~/Downloads/Flash2SVG-4.2.0.zxp
 ```
 
 - **ZXPInstaller**, an open-source alternative.

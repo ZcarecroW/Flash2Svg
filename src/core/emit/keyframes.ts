@@ -418,3 +418,94 @@ export function groupFrames(frames: [string, string][]): string {
 	for (const [body, sels] of groups) s += `${sels.join(",")}{${body}}`;
 	return s;
 }
+
+// ---------------------------------------------------------------------- linear() fallbacks
+
+/** The timing functions every browser knows, as curves. */
+const LEGACY: [string, (x: number) => number][] = [
+	["linear", (x) => x],
+	["ease", (x) => evalBezier([0.25, 0.1, 0.25, 1], x)],
+	["ease-in", (x) => evalBezier([0.42, 0, 1, 1], x)],
+	["ease-out", (x) => evalBezier([0, 0, 0.58, 1], x)],
+	["ease-in-out", (x) => evalBezier([0.42, 0, 0.58, 1], x)],
+	["step-start", (x) => (x > 0 ? 1 : 0)],
+	["step-end", (x) => (x < 1 ? 0 : 1)],
+];
+
+/**
+ * A CSS linear() function's arguments as a curve, with the positions the spec fills in: the
+ * first at 0 %, the last at the larger of 100 % and the largest given; none before an earlier
+ * one; missing ones spread evenly between their neighbours. Null if it can't be read.
+ */
+export function linearCurve(args: string): ((x: number) => number) | null {
+	const stops: { v: number; p: number | null }[] = [];
+	for (const part of args.split(",")) {
+		let v: number | null = null;
+		const ps: number[] = [];
+		for (const t of part.trim().split(/\s+/)) {
+			if (t.endsWith("%")) ps.push(parseFloat(t) / 100);
+			else v = parseFloat(t);
+		}
+		if (v === null || !Number.isFinite(v) || ps.some((p) => !Number.isFinite(p))) return null;
+		if (!ps.length) stops.push({ v, p: null });
+		else for (const p of ps) stops.push({ v, p });
+	}
+	if (stops.length < 2) return null;
+	if (stops[0]!.p === null) stops[0]!.p = 0;
+	const last = stops[stops.length - 1]!;
+	if (last.p === null) last.p = Math.max(1, ...stops.map((s) => s.p ?? 0));
+	let max = -Infinity;
+	for (const s of stops)
+		if (s.p !== null) {
+			if (s.p < max) s.p = max;
+			max = s.p;
+		}
+	for (let i = 1; i < stops.length; i++) {
+		if (stops[i]!.p !== null) continue;
+		let j = i;
+		while (stops[j]!.p === null) j++;
+		const a = stops[i - 1]!.p!,
+			b = stops[j]!.p!;
+		for (let k = i; k < j; k++) stops[k]!.p = a + ((b - a) * (k - i + 1)) / (j - i + 1);
+		i = j;
+	}
+	return (x) => {
+		for (let i = 1; i < stops.length; i++) {
+			const a = stops[i - 1]!,
+				b = stops[i]!;
+			if (x < b.p!) return b.p === a.p ? b.v : a.v + ((b.v - a.v) * (x - a.p!)) / (b.p! - a.p!);
+		}
+		return last.v;
+	};
+}
+
+/** The timing function every browser knows that comes closest to a linear(…) one. */
+export function legacyTiming(fn: string): string {
+	const f = linearCurve(fn.slice(fn.indexOf("(") + 1, fn.lastIndexOf(")")));
+	if (!f) return "linear";
+	let best = "linear",
+		least = Infinity;
+	for (const [name, g] of LEGACY) {
+		let err = 0;
+		for (let i = 0; i < 100; i++) err += Math.abs(f((i + 0.5) / 100) - g((i + 0.5) / 100));
+		if (err < least - 1e-9) {
+			least = err;
+			best = name;
+		}
+	}
+	return best;
+}
+
+/**
+ * CSS with a fallback before every declaration that uses linear(): browsers from before 2023
+ * (Safari 17.1, Chrome 112, Firefox 111) drop a declaration they can't read — in the animation
+ * shorthand, the whole animation. They keep the fallback (the closest classic timing), the others
+ * read on and take linear().
+ */
+export function withLegacyTiming(css: string): string {
+	if (css.indexOf("linear(") < 0) return css;
+	return css.replace(
+		/(animation(?:-timing-function)?:)([^;{}]*?linear\([^;{}]*)/g,
+		(m, prop: string, value: string) => `${prop}${value.replace(/linear\([^)]*\)/g, legacyTiming)};${m}`,
+	);
+}

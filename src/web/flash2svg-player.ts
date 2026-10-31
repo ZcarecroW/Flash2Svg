@@ -9,8 +9,27 @@
  *   element.player      the JS player's API (svg.flash2svg) once loaded, else null
  *   element.svg         the <svg> once loaded
  *   events              "load" (detail: the svg), "error"
+ *
+ * The same file twice in a page: the second copy's ids get "_i2" (the third's "_i3"...), with
+ * every reference to them, so neither borrows the other's gradients, clips or click targets.
  */
 const SVG_NS = "http://www.w3.org/2000/svg";
+
+/** `text` with every id of its SVG renamed when the page already has one of them. */
+function ownIds(text: string, root: Element, doc: Document): string | null {
+	const ids = [...root.querySelectorAll("[id]")].map((e) => e.id);
+	if (root.id) ids.push(root.id);
+	if (!ids.some((id) => doc.getElementById(id))) return null;
+	let n = 2;
+	while (ids.some((id) => doc.getElementById(id + "_i" + n))) n++;
+	// whole ids only (longest first), wherever they are: attributes, CSS, the player's data;
+	// no lookbehind (Safari before 16.4 can't parse it)
+	const alt = [...new Set(ids)]
+		.sort((a, b) => b.length - a.length)
+		.map((id) => id.replace(/[.*+?^${}()|[\]\\]/g, (c) => "\\" + c))
+		.join("|");
+	return text.replace(new RegExp(`(^|[^\\w-])(${alt})(?![\\w-])`, "g"), (_m, pre: string, id: string) => pre + id + "_i" + n);
+}
 
 export class Flash2SvgPlayer extends HTMLElement {
 	static observedAttributes = ["src"];
@@ -58,10 +77,18 @@ export class Flash2SvgPlayer extends HTMLElement {
 		try {
 			const res = await fetch(src);
 			if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-			const doc = new DOMParser().parseFromString(await res.text(), "image/svg+xml");
-			const root = doc.documentElement;
+			const text = await res.text();
+			let doc = new DOMParser().parseFromString(text, "image/svg+xml");
+			let root = doc.documentElement;
 			if (root.namespaceURI !== SVG_NS || root.localName !== "svg") throw new Error("not an SVG");
 			if (this.getAttribute("src") !== src) return;
+			// the old copy (a new src) leaves first: it isn't another copy
+			this.replaceChildren();
+			const renamed = ownIds(text, root, document);
+			if (renamed !== null) {
+				doc = new DOMParser().parseFromString(renamed, "image/svg+xml");
+				root = doc.documentElement;
+			}
 			const svg = document.importNode(root, true) as unknown as SVGSVGElement;
 			// scripts from a parsed document don't run when inserted: new ones do
 			const scripts = [...svg.querySelectorAll("script")].filter((s) => !/json/i.test(s.getAttribute("type") ?? ""));

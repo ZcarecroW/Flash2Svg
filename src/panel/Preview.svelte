@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { node } from "./lib/cep.ts";
+	import Icon from "./Icon.svelte";
 
 	let { file, format }: { file: string; format: string } = $props();
 
@@ -93,7 +94,9 @@
 	<iframe bind:this={frame} title="Preview" {src} onload={onLoad}></iframe>
 	{#if format !== "static" && duration > 0}
 		<div class="controls">
-			<button class="icon" onclick={toggle} aria-label={playing ? "Pause" : "Play"}>{playing ? "❚❚" : "▶"}</button>
+			<button type="button" class="only" onclick={toggle} aria-label={playing ? "Pause" : "Play"}
+				><Icon name={playing ? "button-pause" : "button-play"} /></button
+			>
 			<input type="range" min="0" max={duration} step="0.01" value={time} oninput={seek} aria-label="Time" />
 			<span class="time">{time.toFixed(2)}s</span>
 		</div>

@@ -18,6 +18,17 @@ import { playhead, playheadFrame } from "../src/core/emit/timing.ts";
 import { withFonts } from "./lib/fonts.ts";
 import type { SceneModel } from "../src/core/model.ts";
 
+/**
+ * Videos hidden: their frames aren't part of this comparison (scripts/e2e-video.ts plays them),
+ * and the clip isn't copied here, so engines draw a missing video differently (Edge nothing,
+ * Firefox its "no video" box).
+ */
+const noVideo = (svg: string) =>
+	svg
+		.replace(/<video ([^>]*?)style="/g, '<video $1style="visibility:hidden;')
+		// the player's template, in its JSON ("<" written as \u003c, quotes escaped)
+		.replace(/(\\u003cvideo [^>]*?)style=\\"/g, '$1style=\\"visibility:hidden;');
+
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
 const out = join(repo, "tests", "out");
 const args = process.argv.slice(2);
@@ -112,7 +123,7 @@ for (const name of names) {
 	for (const format of formats) {
 		const anim = compileScene(model, files, { format, includeBackground: true, smooth: !steps });
 		const file = join(dir, `${format}${steps ? "-steps" : ""}.svg`);
-		writeFileSync(file, anim.files[0]!.svg);
+		writeFileSync(file, noVideo(anim.files[0]!.svg));
 		const horizon = Math.round(anim.stats.durationSeconds * frameRate);
 		let worst = 0,
 			worstFrame = -1,
@@ -120,7 +131,7 @@ for (const name of names) {
 			n = 0;
 		for (let f = 0; f < Math.min(frameCount, horizon || frameCount); f += every) {
 			const sfile = join(dir, `static-${f + 1}.svg`);
-			writeFileSync(sfile, statics.files[f]!.svg);
+			writeFileSync(sfile, noVideo(statics.files[f]!.svg));
 			const ref = await shot(sfile, width, height, null);
 			const got = await shot(file, width, height, { format, time: (f + (steps ? 0.5 : 0.02)) / frameRate });
 			const diff = new PNG({ width: ref.width, height: ref.height });
@@ -144,7 +155,7 @@ for (const name of names) {
 			// (text as the outputs draw it: dynamic text stays text)
 			writeFileSync(
 				sfile,
-				renderStatic(ctx, rootId, { frame, ticks: t, movieClips: "play", includeBackground: true, embedImages: true, textAsOutlines: false }).svg,
+				noVideo(renderStatic(ctx, rootId, { frame, ticks: t, movieClips: "play", includeBackground: true, embedImages: true, textAsOutlines: false }).svg),
 			);
 			const ref = await shot(sfile, width, height, null);
 			const got = await shot(file, width, height, { format, time: (t + 0.02) / frameRate });
@@ -164,10 +175,10 @@ for (const name of names) {
 		// the end state of a non-looping export: everything holds the last frame
 		const once = compileScene(model, files, { format, includeBackground: true, smooth: !steps, loop: "never" });
 		const onceFile = join(dir, `${format}${steps ? "-steps" : ""}-once.svg`);
-		writeFileSync(onceFile, once.files[0]!.svg);
+		writeFileSync(onceFile, noVideo(once.files[0]!.svg));
 		const lastFrame = Math.min(frameCount, Math.round(once.stats.durationSeconds * frameRate) || frameCount) - 1;
 		const lastFile = join(dir, `static-${lastFrame + 1}.svg`);
-		writeFileSync(lastFile, statics.files[lastFrame]!.svg);
+		writeFileSync(lastFile, noVideo(statics.files[lastFrame]!.svg));
 		const ref = await shot(lastFile, width, height, null);
 		const got = await shot(onceFile, width, height, { format, time: once.stats.durationSeconds + 0.5 });
 		const diff = new PNG({ width: ref.width, height: ref.height });

@@ -28,7 +28,7 @@ import {
 } from "./bake.ts";
 import { OutputDoc, svgRoot, withAcc } from "./document.ts";
 import { blendHides, blendSubtract, blendWhite, colorMatrix, cssBlendMode, isAlphaOnly, matrixString, type ColorMatrixValues } from "./filters.ts";
-import { alignTracks, encodeKeyframes, groupFrames, type MKey } from "./keyframes.ts";
+import { alignTracks, encodeKeyframes, groupFrames, withLegacyTiming, type MKey } from "./keyframes.ts";
 import { StaticRenderer } from "./static.ts";
 import { outlineText, textField, textNode } from "./text.ts";
 import { scrollCss, scrollScript, visibleScript, type ScrollRange } from "./triggers.ts";
@@ -1113,7 +1113,8 @@ class Writer {
 			// "reduce motion" in the system settings: no animation, every element shows its poster state
 			const still = this.opts.reducedMotion !== false ? `@media (prefers-reduced-motion:reduce){#${this.svgId} *{animation:none!important}}` : "";
 			const rules = this.rules.map((cls) => `#${this.svgId} .${cls}{animation:${this.ruleOf.get(cls)!.join(",")}}`);
-			this.doc.styles.push([...this.keyframes, ...rules, play, still].filter(Boolean).join("\n"));
+			// (browsers before linear() get the closest classic timing: keyframes.ts withLegacyTiming)
+			this.doc.styles.push(withLegacyTiming([...this.keyframes, ...rules, play, still].filter(Boolean).join("\n")));
 			if (begin === "click")
 				this.doc.scripts.push(`document.getElementById(${JSON.stringify(this.svgId)}).addEventListener("click",function(){this.classList.add("playing")});`);
 			if (begin === "visible") this.doc.scripts.push(visibleScript(this.svgId, true));
