@@ -66,7 +66,7 @@ async function run(page: Page, bytes: Uint8Array, w: number, h: number) {
 		[[...bytes], w, h] as const,
 	);
 	const samples = () => page.evaluate(() => (window as unknown as { smSamples: Sample[] }).smSamples.splice(0));
-	return { samples, wait: (ms: number) => page.waitForTimeout(ms), click: () => page.mouse.click(w / 2, h / 2) };
+	return { samples, wait: (ms: number) => page.waitForTimeout(ms), click: (x = w / 2, y = h / 2) => page.mouse.click(x, y) };
 }
 
 let failures = 0;
@@ -158,6 +158,26 @@ for (const name of ["f27-stop", "f28-onestop", "f30-banner"]) {
 		!t.some((x, i) => i && x.f < t[i - 1]!.f) && Math.abs(end - once.frames) < 1e-6,
 		`ends at ${end} of ${once.frames}`,
 	);
+}
+
+// buttons from code snippets (f47): labels as states, clicks on the buttons' layers as transitions
+{
+	const e = exportLottie("f47-snippets", {});
+	const p = await run(page, e.bytes, e.w, e.h);
+	await p.wait(400);
+	const a = await p.samples();
+	const held = a.length > 0 && a.every((x) => x.s === "f1" && x.f === 0);
+	// btn_next at (60, 260): gotoAndPlay(2), up to the stop() on frame 24
+	await p.click(60, 260);
+	await p.wait(1400);
+	const b = await p.samples();
+	const played = b.some((x) => x.s === "f2") && b[b.length - 1]!.f === 23 && b.some((x) => x.f > 1 && x.f < 23);
+	// btn_end at (153, 260): gotoAndStop("end") (frame 19)
+	await p.click(153, 260);
+	await p.wait(300);
+	const c = await p.samples();
+	const stopped = c[c.length - 1]?.s === "still19" && c[c.length - 1]?.f === 18;
+	check("f47-snippets: buttons switch the states", held && played && stopped, `held ${held} (${[...new Set(a.map((x) => x.s + ":" + x.f))].join(" ")}), played ${played} (last ${b[b.length - 1]?.s} ${b[b.length - 1]?.f}), stopped ${stopped} (${c[c.length - 1]?.s} ${c[c.length - 1]?.f})`);
 }
 
 await browser.close();

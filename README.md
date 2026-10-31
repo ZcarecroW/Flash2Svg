@@ -172,7 +172,10 @@ the parent or named instances (`MovieClip(this.root)`, `exportRoot`, `this.paren
 (`navigateToURL(new URLRequest(…))`, `window.open(…)`). The handlers' jumps are no longer mistaken
 for frame actions. Other code in a handler is warned about. Instances with click handlers show
 the hand cursor. SMIL, CSS and still frames turn *Go to Web Page* into an SVG link; for the other
-handlers they warn.
+handlers they warn. A *.lottie* gets them as its state machine: the whole root timeline, every
+place playback can start (frame 1, jump targets, labels the buttons go to) a state, clicks on the
+buttons' layers the transitions, web pages *OpenUrl* (dotLottie players; mouse over / out and
+nested timelines aren't followed, warned).
 
 ### Fonts
 

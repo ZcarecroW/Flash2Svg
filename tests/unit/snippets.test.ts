@@ -128,3 +128,29 @@ describe("code snippets", () => {
 		expect(targetPath("getChildByName('x')")).toBeNull();
 	});
 });
+
+describe("labels as dotLottie states", () => {
+	it("states from frame 1, jumps and button targets; clicks on the buttons' layers fire them", async () => {
+		const { readFileSync } = await import("node:fs");
+		const { unzipSync, strFromU8 } = await import("fflate");
+		const { compileScene } = await import("../../src/core/compile.ts");
+		const model = JSON.parse(readFileSync(new URL("../fixtures/models/f47-snippets.json", import.meta.url), "utf8"));
+		const files = { readText: () => `<svg xmlns="http://www.w3.org/2000/svg"><rect width="5" height="5"/></svg>`, readBinary: () => new Uint8Array() };
+		const out = compileScene(model, files, { format: "dotlottie" });
+		const zip = unzipSync(out.files[0]!.bytes!);
+		const sm = JSON.parse(strFromU8(zip["s/playback.json"]!));
+		expect(sm.initial).toBe("f1");
+		expect(sm.states.map((s: { name: string; autoplay: boolean }) => [s.name, s.autoplay])).toEqual([
+			["f1", false],
+			["f2", true],
+			["still19", false],
+		]);
+		expect(sm.interactions).toContainEqual({ type: "Click", layerName: "btn_next", actions: [{ type: "Fire", inputName: "go_f2" }] });
+		expect(sm.interactions).toContainEqual({ type: "Click", layerName: "btn_web", actions: [{ type: "OpenUrl", url: "https://example.com/", target: "_blank" }] });
+		// the whole root timeline (24 frames, held once more), a marker per state
+		const anim = JSON.parse(strFromU8(zip[Object.keys(zip).find((k) => k.startsWith("a/"))!]!));
+		expect(anim.op).toBe(25);
+		expect(anim.markers).toContainEqual({ cm: "state f2", tm: 1, dr: 22 });
+		expect(out.warnings.some((w) => /over handler on mc_spin/.test(w))).toBe(true);
+	});
+});

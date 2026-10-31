@@ -191,6 +191,11 @@
   SVG compressed by the server is smaller: the 46 test documents as SMIL 1070 KB, .svgz 372 KB,
   Brotli 341 KB. Node's zlib packs it (the CLI and the panel; 3–8 % smaller and faster than the
   JavaScript fallback).
+- **Labels as dotLottie states.** A .lottie of a document whose code snippets make buttons jump
+  holds the whole root timeline and a state machine: frame 1, the frame scripts' and the buttons'
+  jump targets are states playing up to the next stop() or jump (gotoAndStop targets: stills),
+  clicks on the buttons' layers fire the jumps, *Go to Web Page* opens with OpenUrl. Checked in
+  dotlottie-web: f47's buttons go to frame 2 and play to the stop(), and to the "end" label.
 - **Video components.** AS3 *FLVPlayback* and HTML5 Canvas *Video* components become an HTML
   `<video>` in a `<foreignObject>` over their place, in SMIL, CSS, the player and still frames;
   the linked file is copied next to the SVG (`videos/`), autoplay is muted (as browsers require),

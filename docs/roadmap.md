@@ -44,7 +44,7 @@ support (sources below) before starting a package.
 | 2 | Player: compositor animations, pause off-screen, reduced motion | high | small | ✅ (canvas renderer ⬜) |
 | 3 | Shape tweens as path morphing (SMIL and player) | very high for shape tweens | medium–high | ✅ |
 | 4 | CSS: `linear()` easing, individual transform properties | medium | small–medium | ✅ (also decimals from the displayed size, .svgz) |
-| 5 | Interactivity: triggers, scroll, label state machine | high | medium | ✅ (labels as dotLottie states ⬜, see 6) |
+| 5 | Interactivity: triggers, scroll, label state machine | high | medium | ✅ |
 | 6 | Lottie / dotLottie export | very high (reach) | high | ✅ (effects ✅, built filters ✅, state machine ✅, panel preview ✅) |
 | 7 | WOFF2 fonts, video, library export | medium | medium | ✅ accessibility, scale modes, automatic format, library symbols, scenes, web component, GIF/WebP fallbacks |
 
@@ -123,7 +123,7 @@ support (sources below) before starting a package.
   - `scripts/e2e-triggers.ts`: frames at scroll positions against the static frames, inline and in an `<object>` (served over HTTP), in Edge, Firefox and WebKit.
 - ✅ Animate's code snippets (`src/core/snippets.ts`): mouse handlers in AS3 and Canvas syntax (named functions, `.bind(this)`, `.on()`, function literals, arrows) on this timeline or named instances; in the handlers goto/play/stop/next/previous frame on this timeline, the root, the parent or named instances, `visible`, web pages. The player runs them (a build with the handler code only when needed: 14.6 → 17.4 KB); SMIL/CSS/frames turn web pages into SVG links. Their jumps had been mistaken for frame actions. Test document f47.
   - Found on the way (player): a `stop()` on frame 1 was overridden by the automatic start, and movie clips created at the start or after a jump skipped their first frame's script.
-- 🚧 Labels as states and buttons as transitions: the player follows them through the code snippets and its API (`gotoAndPlay("label")`); as dotLottie states see package 6.
+- ✅ Labels as states and buttons as transitions: the player through the code snippets and its API; dotLottie through its state machine (`src/core/interactive.ts`).
 
 ### 6. Lottie / dotLottie export
 - ✅ Formats *Lottie* (JSON) and *.lottie* (dotLottie v2: manifest, `a/`, bitmaps in `i/`; fflate), written from the baked timeline like SMIL (`src/core/emit/lottie.ts`, `src/core/dotlottie.ts`).
@@ -142,7 +142,7 @@ support (sources below) before starting a package.
 - ✅ The filters without a Lottie effect, built from track mattes, blend modes and blur / Tritone effects: inner, knockout and *hide object* shadows and glows, strong or unevenly blurred ones, bevels (exact clamped difference: lighten, then difference), gradient glows and bevels (Tritone lookup at 0, 50, 100 %); strength as a colour-dodge gain. Exact in lottie-web and Skottie except gradients with other stops.
 - ✅ Colour effects on bitmaps: tint and brightness as Lottie's Fill effect (colour, opacity = amount, keyed), exact in all three players (f50); other colour effects alpha only (warned).
 - ✅ A seamless loop seam in dotLottie: one more frame holding the last (op + 1, layers that run to the end extended), markers over their full length; loop periods measured exact.
-- ⬜ Labels as states (package 5), buttons as state machine interactions: needs a bake of every part a handler can jump to (today Lottie follows the first pass like SMIL).
+- ✅ Labels as states, buttons as state machine interactions (`src/core/interactive.ts`): the whole root timeline in the .lottie (a frame range bakes it in order), states from frame 1 and every jump target, Click interactions on the buttons' layers, OpenUrl; one-frame states are stills (dotLottie plays everything for a zero-length segment).
 - ⬜ Shared tile grids for frame-by-frame bitmap fills (each frame repeats its tiles today).
 
 ### 7. More

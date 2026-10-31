@@ -10,6 +10,7 @@ import { renderPlayer } from "./emit/player.ts";
 import { renderStatic } from "./emit/static.ts";
 import { playbackStateMachine } from "./statemachine.ts";
 import { joinScenes } from "./scenes.ts";
+import { hasRootInteractions, interactiveStateMachine } from "./interactive.ts";
 import type { ScrollRange } from "./emit/triggers.ts";
 import { playhead } from "./emit/timing.ts";
 import type { SoundSettings } from "./audio.ts";
@@ -235,7 +236,9 @@ export function compileScene(model: SceneModel, files: FileSource, partial: Part
 	if (lottie && (s.begin === "visible" || s.begin === "scroll"))
 		out.warnings.push(`Start "${s.begin === "visible" ? "when visible" : "on scroll"}" is up to the page that shows a Lottie animation: it plays when loaded`);
 	if (s.format !== "player" && !lottie && Object.keys(model.sounds).length) out.warnings.push("Sounds play only in the JS player format (SMIL, CSS and still frames have no sound)");
-	if (s.format !== "player") {
+	// buttons from code snippets in a .lottie: labels as states, clicks as transitions (interactive.ts)
+	const interactive = s.format === "dotlottie" && hasRootInteractions(prog);
+	if (s.format !== "player" && !interactive) {
 		// web links work as SVG links (not in Lottie); the other handlers need the player's script
 		const handlers = Object.values(ctx.programs).flatMap((p) => p.interactions ?? []);
 		const scripted = handlers.filter((i) => lottie || i.event !== "click" || i.actions.some((a) => a.type !== "url"));
@@ -248,14 +251,20 @@ export function compileScene(model: SceneModel, files: FileSource, partial: Part
 
 	if (lottie) {
 		const dot = s.format === "dotlottie";
-		const r = renderLottie(ctx, rootId, s, dot ? "dotlottie" : s.embedImages ? "embed" : "link");
+		// interactive: the whole root timeline, in order (the state machine follows its scripts)
+		const r = renderLottie(ctx, rootId, interactive ? { ...s, startFrame: 0, endFrame: prog.frameCount, loop: "never" } : s, dot ? "dotlottie" : s.embedImages ? "embed" : "link");
+		const plan = interactive ? interactiveStateMachine(prog, dotLottieId(String(r.animation.nm || "animation"))) : null;
+		if (plan) {
+			r.animation.markers = [...((r.animation.markers as unknown[]) ?? []), ...plan.markers];
+			out.warnings.push(...plan.warnings);
+		}
 		const json = JSON.stringify(r.animation, null, s.pretty ? 1 : undefined);
 		const p = lottieParts(r.animation, json.length);
 		if (dot) {
 			const images = r.images.map((i) => ({ name: i.name, bytes: files.readBinary(i.source) }));
 			const id = dotLottieId(String(r.animation.nm || "animation"));
 			const begin = s.begin === "visible" || s.begin === "scroll" ? "auto" : s.begin;
-			const sm = r.horizon.ticks > 1 ? playbackStateMachine({ animation: id, loop: r.horizon.loop, begin, ...r.segments }) : null;
+			const sm = plan ? plan.stateMachine : r.horizon.ticks > 1 ? playbackStateMachine({ animation: id, loop: r.horizon.loop, begin, ...r.segments }) : null;
 			const bytes = packDotLottie(json, id, images, sm);
 			// the archive's share of the bitmaps; the compressed JSON split like the plain one
 			const img = images.reduce((n, i) => n + i.bytes.length, 0);
