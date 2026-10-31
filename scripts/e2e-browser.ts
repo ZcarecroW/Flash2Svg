@@ -39,7 +39,12 @@ const names = list ? list.split(",") : readdirSync(out).filter((d) => existsSync
 const engine = opt("browser", "msedge");
 const browser =
 	engine === "firefox"
-		? await firefox.launch({ channel: "moz-firefox", headless: true, firefoxUserPrefs: { "security.sandbox.content.level": 0 }, env: { ...process.env, MOZ_DISABLE_CONTENT_SANDBOX: "1" } })
+		? await firefox.launch({
+				channel: "moz-firefox",
+				headless: true,
+				firefoxUserPrefs: { "security.sandbox.content.level": 0 },
+				env: { ...process.env, MOZ_DISABLE_CONTENT_SANDBOX: "1" },
+			})
 		: engine === "webkit"
 			? await webkit.launch({ headless: true })
 			: await chromium.launch({ channel: engine, headless: true });
@@ -98,7 +103,8 @@ for (const name of names) {
 	// after the stop, around the end of the first pass (SMIL/CSS switch to the tail there) and in the tail
 	const firstStats = compileScene(model, files, { format: "smil" }).stats;
 	const firstPass = firstStats.loopFrom ?? firstStats.frames;
-	const stopTicks = !steps && !ph.cycle.length ? [...new Set([ph.prefix.length, ph.prefix.length + 6, firstPass - 1, firstPass + 3, firstPass + 29, 2 * firstPass + 11])] : [];
+	const stopTicks =
+		!steps && !ph.cycle.length ? [...new Set([ph.prefix.length, ph.prefix.length + 6, firstPass - 1, firstPass + 3, firstPass + 29, 2 * firstPass + 11])] : [];
 	const stopFrame = ph.prefix[ph.prefix.length - 1] ?? 0;
 	// far ahead (the player finds where its state repeats instead of playing through): ticks with
 	// the root frame they show
@@ -136,7 +142,10 @@ for (const name of names) {
 		for (const [t, frame] of [...stopTicks.map((t) => [t, stopFrame] as const), ...(jumps ? [] : far)]) {
 			const sfile = join(dir, `static-t${t}.svg`);
 			// (text as the outputs draw it: dynamic text stays text)
-			writeFileSync(sfile, renderStatic(ctx, rootId, { frame, ticks: t, movieClips: "play", includeBackground: true, embedImages: true, textAsOutlines: false }).svg);
+			writeFileSync(
+				sfile,
+				renderStatic(ctx, rootId, { frame, ticks: t, movieClips: "play", includeBackground: true, embedImages: true, textAsOutlines: false }).svg,
+			);
 			const ref = await shot(sfile, width, height, null);
 			const got = await shot(file, width, height, { format, time: (t + 0.02) / frameRate });
 			const diff = new PNG({ width: ref.width, height: ref.height });

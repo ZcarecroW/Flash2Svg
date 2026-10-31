@@ -27,49 +27,200 @@ const jobs = [
 	{ fla: fla("f02-eases"), output: join(out, "current-frame.svg"), settings: { format: "smil" }, frames: "current", expect: { files: 1, format: "static" } },
 	{ fla: fla("f12-labels"), output: join(out, "range.svg"), settings: { format: "static" }, frames: "range", rangeStart: 4, rangeEnd: 6, expect: { files: 3 } },
 	{ fla: fla("f02-eases"), output: join(out, "empty fields.svg"), settings: { format: "css", digits: null, delay: null }, expect: { files: 1 } },
-	{ fla: fla("f18-bitmap"), output: join(out, "dir #1", "bitmap linked.svg"), settings: { format: "smil", embedImages: false }, expect: { files: 1, assets: true } },
+	{
+		fla: fla("f18-bitmap"),
+		output: join(out, "dir #1", "bitmap linked.svg"),
+		settings: { format: "smil", embedImages: false },
+		expect: { files: 1, assets: true },
+	},
 	// image codecs (loaded on demand inside the panel): per-bitmap modes, every format, linked files
-	{ fla: fla("f42-images"), output: join(out, "images-webp.svg"), settings: { format: "smil", imageLossy: "webp", imageLossless: "webp", imageModes: { "photo.jpg": "lossless" } }, expect: { files: 1, mimes: ["image/webp"], noMimes: ["image/jpeg", "image/png"], parts: ["drawing", "animation", "images"] } },
-	{ fla: fla("f42-images"), output: join(out, "images-avif.svg"), settings: { format: "css", imageLossy: "avif", imageQuality: 60 }, expect: { files: 1, mimes: ["image/avif", "image/png"] } },
-	{ fla: fla("f42-images"), output: join(out, "images linked", "images.svg"), settings: { format: "player", embedImages: false }, expect: { files: 1, assets: true, parts: ["runtime", "linked"] } },
+	{
+		fla: fla("f42-images"),
+		output: join(out, "images-webp.svg"),
+		settings: { format: "smil", imageLossy: "webp", imageLossless: "webp", imageModes: { "photo.jpg": "lossless" } },
+		expect: { files: 1, mimes: ["image/webp"], noMimes: ["image/jpeg", "image/png"], parts: ["drawing", "animation", "images"] },
+	},
+	{
+		fla: fla("f42-images"),
+		output: join(out, "images-avif.svg"),
+		settings: { format: "css", imageLossy: "avif", imageQuality: 60 },
+		expect: { files: 1, mimes: ["image/avif", "image/png"] },
+	},
+	{
+		fla: fla("f42-images"),
+		output: join(out, "images linked", "images.svg"),
+		settings: { format: "player", embedImages: false },
+		expect: { files: 1, assets: true, parts: ["runtime", "linked"] },
+	},
 	// downscaling: bitmaps shown smaller are written at 2x (the default) or 1x their size on stage; tiles, pixel art and "Full" keep every pixel
-	{ fla: fla("f44-bitmap-sizes"), output: join(out, "sizes-2x.svg"), settings: { format: "smil" }, expect: { files: 1, pixels: { "large.png": [320, 240], "nested.png": [200, 150], "fill.png": [160, 160], "tile.png": [64, 64], "pixels.png": [64, 64] } } },
-	{ fla: fla("f44-bitmap-sizes"), output: join(out, "sizes-1x.svg"), settings: { format: "player", imageResolution: 1, imageFullSize: { "large.png": true } }, expect: { files: 1, pixels: { "large.png": [640, 480], "nested.png": [100, 75], "fill.png": [80, 80] } } },
+	{
+		fla: fla("f44-bitmap-sizes"),
+		output: join(out, "sizes-2x.svg"),
+		settings: { format: "smil" },
+		expect: { files: 1, pixels: { "large.png": [320, 240], "nested.png": [200, 150], "fill.png": [160, 160], "tile.png": [64, 64], "pixels.png": [64, 64] } },
+	},
+	{
+		fla: fla("f44-bitmap-sizes"),
+		output: join(out, "sizes-1x.svg"),
+		settings: { format: "player", imageResolution: 1, imageFullSize: { "large.png": true } },
+		expect: { files: 1, pixels: { "large.png": [640, 480], "nested.png": [100, 75], "fill.png": [80, 80] } },
+	},
 	// audio codecs (loaded on demand): Opus embedded (Raw stays WAV), MP3 linked, no sound outside the player
-	{ fla: fla("f43-sounds"), output: join(out, "sounds-opus.svg"), settings: { format: "player", soundFormat: "opus" }, expect: { files: 1, mimes: ["audio/ogg", "audio/wav"], noMimes: ["audio/mpeg"], parts: ["sounds", "runtime"] } },
-	{ fla: fla("f43-sounds"), output: join(out, "sounds linked", "sounds.svg"), settings: { format: "player", embedImages: false, soundModes: { "chord.wav": "lossless" } }, expect: { files: 1, soundFiles: [".mp3", ".wav"] } },
-	{ fla: fla("f43-sounds"), output: join(out, "sounds-smil.svg"), settings: { format: "smil" }, expect: { files: 1, warning: /Sounds play only in the JS player/ } },
+	{
+		fla: fla("f43-sounds"),
+		output: join(out, "sounds-opus.svg"),
+		settings: { format: "player", soundFormat: "opus" },
+		expect: { files: 1, mimes: ["audio/ogg", "audio/wav"], noMimes: ["audio/mpeg"], parts: ["sounds", "runtime"] },
+	},
+	{
+		fla: fla("f43-sounds"),
+		output: join(out, "sounds linked", "sounds.svg"),
+		settings: { format: "player", embedImages: false, soundModes: { "chord.wav": "lossless" } },
+		expect: { files: 1, soundFiles: [".mp3", ".wav"] },
+	},
+	{
+		fla: fla("f43-sounds"),
+		output: join(out, "sounds-smil.svg"),
+		settings: { format: "smil" },
+		expect: { files: 1, warning: /Sounds play only in the JS player/ },
+	},
 	// shape tweens as path morphs: SMIL animates path data and gradient matrices, the player gets morph parts
-	{ fla: fla("f45-morph"), output: join(out, "morph.svg"), settings: { format: "smil" }, expect: { files: 1, contains: [/<animate attributeName="d"/, /<animateTransform attributeName="gradientTransform"/] } },
+	{
+		fla: fla("f45-morph"),
+		output: join(out, "morph.svg"),
+		settings: { format: "smil" },
+		expect: { files: 1, contains: [/<animate attributeName="d"/, /<animateTransform attributeName="gradientTransform"/] },
+	},
 	{ fla: fla("f45-morph"), output: join(out, "morph-player.svg"), settings: { format: "player" }, expect: { files: 1, contains: [/"mp":\[/] } },
 	// lean CSS (one element per instance, individual transform properties), written gzipped: the
 	// name follows (.svg chosen, .svgz written)
-	{ fla: fla("f03-transforms"), output: join(out, "transforms-css.svg"), settings: { format: "css", svgz: true }, expect: { files: 1, ext: ".svgz", svgz: true, parts: ["drawing", "animation"], contains: [/translate:[-\d.]+px/, /rotate:[-\d.]+deg/, /transform:scale\(1\)/] } },
-	{ fla: fla("f47-snippets"), output: join(out, "snippets-player.svg"), settings: { format: "player" }, expect: { files: 1, contains: [/"ev":\[\[0,"btn_next",0,\[2,"",1,1\]\]/, /data-begin="auto"/] } },
-	{ fla: fla("f47-snippets"), output: join(out, "snippets-smil.svg"), settings: { format: "smil" }, expect: { files: 1, warning: /mouse handlers from frame scripts/, contains: [/<a xlink:href="https:\/\/example\.com\/" target="_blank">/] } },
-	{ fla: fla("f03-transforms"), output: join(out, "transforms-scroll.svg"), settings: { format: "css", begin: "scroll", scrollRange: "crossing" }, expect: { files: 1, contains: [/view-timeline:--/, /animation-timeline:--/] } },
-	{ fla: fla("f03-transforms"), output: join(out, "transforms-visible.svg"), settings: { format: "smil", begin: "visible" }, expect: { files: 1, contains: [/IntersectionObserver/, /pauseAnimations/] } },
-	{ fla: fla("f45-morph"), output: join(out, "morph-auto.svg"), settings: { format: "auto", scale: "fit" }, expect: { files: 1, warning: /Automatic format: SMIL/, contains: [/<animate attributeName="d"/, /width="100%" height="100%"/] } },
-	{ fla: fla("f36-scenes"), output: join(out, "all-scenes.svg"), settings: { format: "player" }, source: "scenes", expect: { files: 1, contains: [/#CC0000/, /"ac":\{"11":\[\[2,12,1\]\]\}/] } },
-	{ fla: fla("f49-fonts"), output: join(out, "fonts.svg"), settings: { format: "smil" }, expect: { files: 1, parts: ["fonts"], contains: [/@font-face\{font-family:"[^"]+f2s-Arial";src:url\(data:font\/woff2;base64,/] } },
-	{ fla: fla("f04-nested"), output: join(out, "nested.gif"), settings: { format: "gif", includeBackground: true }, expect: { files: 1, ext: ".gif", parts: ["images"] } },
+	{
+		fla: fla("f03-transforms"),
+		output: join(out, "transforms-css.svg"),
+		settings: { format: "css", svgz: true },
+		expect: {
+			files: 1,
+			ext: ".svgz",
+			svgz: true,
+			parts: ["drawing", "animation"],
+			contains: [/translate:[-\d.]+px/, /rotate:[-\d.]+deg/, /transform:scale\(1\)/],
+		},
+	},
+	{
+		fla: fla("f47-snippets"),
+		output: join(out, "snippets-player.svg"),
+		settings: { format: "player" },
+		expect: { files: 1, contains: [/"ev":\[\[0,"btn_next",0,\[2,"",1,1\]\]/, /data-begin="auto"/] },
+	},
+	{
+		fla: fla("f47-snippets"),
+		output: join(out, "snippets-smil.svg"),
+		settings: { format: "smil" },
+		expect: { files: 1, warning: /mouse handlers from frame scripts/, contains: [/<a xlink:href="https:\/\/example\.com\/" target="_blank">/] },
+	},
+	{
+		fla: fla("f03-transforms"),
+		output: join(out, "transforms-scroll.svg"),
+		settings: { format: "css", begin: "scroll", scrollRange: "crossing" },
+		expect: { files: 1, contains: [/view-timeline:--/, /animation-timeline:--/] },
+	},
+	{
+		fla: fla("f03-transforms"),
+		output: join(out, "transforms-visible.svg"),
+		settings: { format: "smil", begin: "visible" },
+		expect: { files: 1, contains: [/IntersectionObserver/, /pauseAnimations/] },
+	},
+	{
+		fla: fla("f45-morph"),
+		output: join(out, "morph-auto.svg"),
+		settings: { format: "auto", scale: "fit" },
+		expect: { files: 1, warning: /Automatic format: SMIL/, contains: [/<animate attributeName="d"/, /width="100%" height="100%"/] },
+	},
+	{
+		fla: fla("f36-scenes"),
+		output: join(out, "all-scenes.svg"),
+		settings: { format: "player" },
+		source: "scenes",
+		expect: { files: 1, contains: [/#CC0000/, /"ac":\{"11":\[\[2,12,1\]\]\}/] },
+	},
+	{
+		fla: fla("f49-fonts"),
+		output: join(out, "fonts.svg"),
+		settings: { format: "smil" },
+		expect: { files: 1, parts: ["fonts"], contains: [/@font-face\{font-family:"[^"]+f2s-Arial";src:url\(data:font\/woff2;base64,/] },
+	},
+	{
+		fla: fla("f04-nested"),
+		output: join(out, "nested.gif"),
+		settings: { format: "gif", includeBackground: true },
+		expect: { files: 1, ext: ".gif", parts: ["images"] },
+	},
 	{ fla: fla("f04-nested"), output: join(out, "nested.webp"), settings: { format: "webp" }, expect: { files: 1, ext: ".webp", parts: ["images"] } },
 	// Lottie: the file name follows the format (.svg chosen, .json / .lottie written); bitmaps embedded,
 	// linked next to the JSON, or inside the archive
-	{ fla: fla("f45-morph"), output: join(out, "morph-lottie.svg"), settings: { format: "lottie" }, preview: {}, expect: { files: 1, ext: ".json", lottie: true, parts: ["drawing", "animation"], preview: { svg: true, moving: true } } },
-	{ fla: fla("f42-images"), output: join(out, "images.lottie"), settings: { format: "dotlottie", imageLossy: "webp" }, preview: {}, expect: { files: 1, ext: ".lottie", dotlottie: true, parts: ["images"], preview: { canvas: true, moving: true, state: "play" } } },
-	{ fla: fla("f42-images"), output: join(out, "images lottie linked", "images.json"), settings: { format: "lottie", embedImages: false }, preview: {}, expect: { files: 1, ext: ".json", lottie: true, linkedImages: true, preview: { svg: true, images: true } } },
+	{
+		fla: fla("f45-morph"),
+		output: join(out, "morph-lottie.svg"),
+		settings: { format: "lottie" },
+		preview: {},
+		expect: { files: 1, ext: ".json", lottie: true, parts: ["drawing", "animation"], preview: { svg: true, moving: true } },
+	},
+	{
+		fla: fla("f42-images"),
+		output: join(out, "images.lottie"),
+		settings: { format: "dotlottie", imageLossy: "webp" },
+		preview: {},
+		expect: { files: 1, ext: ".lottie", dotlottie: true, parts: ["images"], preview: { canvas: true, moving: true, state: "play" } },
+	},
+	{
+		fla: fla("f42-images"),
+		output: join(out, "images lottie linked", "images.json"),
+		settings: { format: "lottie", embedImages: false },
+		preview: {},
+		expect: { files: 1, ext: ".json", lottie: true, linkedImages: true, preview: { svg: true, images: true } },
+	},
 	// Lottie effects (filters) and the preview: lottie-web draws them as SVG filters; a JSON in dotLottie;
 	// a .lottie whose state machine waits for a click, then plays the intro (a stop() with running clips)
-	{ fla: fla("f08-filters"), output: join(out, "filters.json"), settings: { format: "lottie" }, preview: {}, expect: { files: 1, lottie: true, contains: [/"ty":25/, /"ty":29/, /"tt":3/, /"bm":10/], preview: { svg: true, filters: true } } },
-	{ fla: fla("f02-eases"), output: join(out, "eases-in-dotlottie.json"), settings: { format: "lottie" }, preview: { player: "dotlottie" }, expect: { files: 1, lottie: true, preview: { canvas: true, moving: true } } },
-	{ fla: fla("f27-stop"), output: join(out, "stop-click.lottie"), settings: { format: "dotlottie", begin: "click" }, preview: { click: true }, expect: { files: 1, dotlottie: true, preview: { canvas: true, state: "idle", stateAfterClick: "intro" } } },
+	{
+		fla: fla("f08-filters"),
+		output: join(out, "filters.json"),
+		settings: { format: "lottie" },
+		preview: {},
+		expect: { files: 1, lottie: true, contains: [/"ty":25/, /"ty":29/, /"tt":3/, /"bm":10/], preview: { svg: true, filters: true } },
+	},
+	{
+		fla: fla("f02-eases"),
+		output: join(out, "eases-in-dotlottie.json"),
+		settings: { format: "lottie" },
+		preview: { player: "dotlottie" },
+		expect: { files: 1, lottie: true, preview: { canvas: true, moving: true } },
+	},
+	{
+		fla: fla("f27-stop"),
+		output: join(out, "stop-click.lottie"),
+		settings: { format: "dotlottie", begin: "click" },
+		preview: { click: true },
+		expect: { files: 1, dotlottie: true, preview: { canvas: true, state: "idle", stateAfterClick: "intro" } },
+	},
 	// the scene data kept for the command line: the CLI exports it again
 	{ fla: fla("f42-images"), output: join(out, "kept", "images.svg"), settings: { format: "smil" }, keepScene: true, expect: { files: 1, scene: true } },
 	// selected library symbols: one file per symbol, named after it
-	{ fla: fla("f04-nested"), output: join(out, "lib.svg"), settings: { format: "css" }, source: "library", select: ["spinner", "counter"], expect: { files: 2, names: ["lib_spinner.svg", "lib_counter.svg"] } },
+	{
+		fla: fla("f04-nested"),
+		output: join(out, "lib.svg"),
+		settings: { format: "css" },
+		source: "library",
+		select: ["spinner", "counter"],
+		expect: { files: 2, names: ["lib_spinner.svg", "lib_counter.svg"] },
+	},
 	// a second scene: only the current one is exported, with a warning
-	{ fla: fla("f12-labels"), output: join(out, "scenes.svg"), settings: { format: "smil" }, jsfl: "fl.getDocumentDOM().addNewScene('Second'); fl.getDocumentDOM().editScene(0); 'ok'", expect: { files: 1, warning: /2 scenes/ } },
+	{
+		fla: fla("f12-labels"),
+		output: join(out, "scenes.svg"),
+		settings: { format: "smil" },
+		jsfl: "fl.getDocumentDOM().addNewScene('Second'); fl.getDocumentDOM().editScene(0); 'ok'",
+		expect: { files: 1, warning: /2 scenes/ },
+	},
 ];
 const resultFile = join(out, "result.json");
 writeFileSync(join(tmpdir(), "flash2svg-selftest.json"), JSON.stringify({ jobs, result: resultFile, quit: true }));
@@ -168,7 +319,8 @@ res.results.forEach((r, i) => {
 		if (e.canvas && !(p.canvasPixels > 0)) problems.push("preview: dotLottie drew nothing");
 		if (e.moving && (!p.time || p.time[0] === p.time[1])) problems.push(`preview: the time stands still (${p.time})`);
 		if (e.state && p.state !== e.state) problems.push(`preview: state "${p.state}", expected "${e.state}"`);
-		if (e.stateAfterClick && p.stateAfterClick !== e.stateAfterClick) problems.push(`preview: after a click "${p.stateAfterClick}", expected "${e.stateAfterClick}"`);
+		if (e.stateAfterClick && p.stateAfterClick !== e.stateAfterClick)
+			problems.push(`preview: after a click "${p.stateAfterClick}", expected "${e.stateAfterClick}"`);
 	}
 	if (exp.mimes || exp.noMimes) {
 		const svg = readFileSync(r.files[0], "utf8");
@@ -192,7 +344,11 @@ res.results.forEach((r, i) => {
 		const scene = join(dirname(r.files[0]), basename(r.files[0], extname(r.files[0])) + ".scene", "scene.json");
 		if (!existsSync(scene)) problems.push(`no scene data at ${scene}`);
 		else {
-			const cli = spawnSync(process.execPath, [join(repo, "dist", "cli", "flash2svg.js"), scene, "--format", "css", "-o", join(dirname(r.files[0]), "from-cli.svg")], { encoding: "utf8" });
+			const cli = spawnSync(
+				process.execPath,
+				[join(repo, "dist", "cli", "flash2svg.js"), scene, "--format", "css", "-o", join(dirname(r.files[0]), "from-cli.svg")],
+				{ encoding: "utf8" },
+			);
 			if (cli.status !== 0 || !existsSync(join(dirname(r.files[0]), "from-cli.svg"))) problems.push(`the CLI couldn't export the kept scene: ${cli.stderr}`);
 		}
 	}
@@ -207,10 +363,16 @@ res.results.forEach((r, i) => {
 	}
 });
 // temp folders of the exports must be gone
-const leftovers = readdirSync(tmpdir()).filter((d) => d.startsWith("flash2svg-") && statSync(join(tmpdir(), d)).isDirectory() && statSync(join(tmpdir(), d)).mtimeMs >= started);
+const leftovers = readdirSync(tmpdir()).filter(
+	(d) => d.startsWith("flash2svg-") && statSync(join(tmpdir(), d)).isDirectory() && statSync(join(tmpdir(), d)).mtimeMs >= started,
+);
 if (leftovers.length) res.results.push({ ok: false, fla: "temp folders", error: `left behind: ${leftovers.join(", ")}` });
 for (const r of res.results) {
-	console.log(r.ok ? `OK   ${r.fla.split(/[\\/]/).pop()}  ${r.files.length} file(s) ${(r.bytes / 1024).toFixed(1)} KB in ${r.seconds.toFixed(1)}s  ${r.docType}  ${r.warnings.length} warning(s)` : `FAIL ${r.fla}: ${r.error}`);
+	console.log(
+		r.ok
+			? `OK   ${r.fla.split(/[\\/]/).pop()}  ${r.files.length} file(s) ${(r.bytes / 1024).toFixed(1)} KB in ${r.seconds.toFixed(1)}s  ${r.docType}  ${r.warnings.length} warning(s)`
+			: `FAIL ${r.fla}: ${r.error}`,
+	);
 }
 console.log(`total ${((Date.now() - started) / 1000).toFixed(0)}s, done=${res.done}`);
 process.exitCode = res.results.every((r) => r.ok) && res.done ? 0 : 1;

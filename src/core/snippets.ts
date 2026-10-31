@@ -67,7 +67,7 @@ const EVENTS: Record<string, InteractionEvent> = {
 /** Comments replaced by spaces (newlines kept), strings left alone. */
 export function blankComments(code: string): string {
 	let out = "";
-	for (let i = 0; i < code.length; ) {
+	for (let i = 0; i < code.length;) {
 		const c = code[i]!;
 		if (c === '"' || c === "'" || c === "`") {
 			const end = stringEnd(code, i);

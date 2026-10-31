@@ -10,7 +10,13 @@ const target = list.find((t) => /panel\/index\.html/.test(t.url));
 if (!target) throw new Error("no panel to close");
 const ws = new WebSocket(target.webSocketDebuggerUrl);
 await new Promise((r, j) => ((ws.onopen = r), (ws.onerror = j)));
-ws.send(JSON.stringify({ id: 1, method: "Runtime.evaluate", params: { expression: `window.__adobe_cep__.evalScript("fl.closeAll(false); fl.quit(false)", () => {}); window.__adobe_cep__.closeExtension(); true` } }));
+ws.send(
+	JSON.stringify({
+		id: 1,
+		method: "Runtime.evaluate",
+		params: { expression: `window.__adobe_cep__.evalScript("fl.closeAll(false); fl.quit(false)", () => {}); window.__adobe_cep__.closeExtension(); true` },
+	}),
+);
 await new Promise((r) => setTimeout(r, 1000));
 ws.close();
 console.log("asked the panel to close and Animate to quit");

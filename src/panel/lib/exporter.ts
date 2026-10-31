@@ -269,7 +269,16 @@ async function exportInto(
 	const lottieOut = settings.format === "lottie" || settings.format === "dotlottie";
 	if (settings.embedFonts !== false && !settings.textAsOutlines && !lottieOut && settings.format !== "gif" && settings.format !== "webp") {
 		const nd = nodeOrThrow();
-		const files = fontFiles(nd.fs as unknown as FontFs, nd.path.join, fontFolders(nd.os.platform(), (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env ?? {}, nd.os.homedir(), nd.path.join));
+		const files = fontFiles(
+			nd.fs as unknown as FontFs,
+			nd.path.join,
+			fontFolders(
+				nd.os.platform(),
+				(globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env ?? {},
+				nd.os.homedir(),
+				nd.path.join,
+			),
+		);
 		const enc = await encodeFonts(model, files, await panelFonts());
 		model = enc.model;
 		imageWarnings.push(...enc.warnings);
@@ -283,7 +292,9 @@ async function exportInto(
 	const hooks = { gzip: (d: Uint8Array) => node.zlib.gzipSync(d, { level: 9 }) };
 	for (let r = 0; r < model.roots.length; r++) {
 		const raster = settings.format === "gif" || settings.format === "webp";
-		const out = raster ? await exportRaster(model, files, settings, canvasRasterizer, settings.format === "webp" ? await panelCodecs() : null) : compileScene(model, files, settings, r, hooks);
+		const out = raster
+			? await exportRaster(model, files, settings, canvasRasterizer, settings.format === "webp" ? await panelCodecs() : null)
+			: compileScene(model, files, settings, r, hooks);
 		outputs.push(out);
 		out.warnings.forEach((w) => warnings.add(w));
 		const rootName = model.timelines[model.roots[r]!]?.name ?? "";

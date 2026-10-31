@@ -146,7 +146,11 @@ describe("labels as dotLottie states", () => {
 			["still19", false],
 		]);
 		expect(sm.interactions).toContainEqual({ type: "Click", layerName: "btn_next", actions: [{ type: "Fire", inputName: "go_f2" }] });
-		expect(sm.interactions).toContainEqual({ type: "Click", layerName: "btn_web", actions: [{ type: "OpenUrl", url: "https://example.com/", target: "_blank" }] });
+		expect(sm.interactions).toContainEqual({
+			type: "Click",
+			layerName: "btn_web",
+			actions: [{ type: "OpenUrl", url: "https://example.com/", target: "_blank" }],
+		});
 		// the whole root timeline (24 frames, held once more), a marker per state
 		const anim = JSON.parse(strFromU8(zip[Object.keys(zip).find((k) => k.startsWith("a/"))!]!));
 		expect(anim.op).toBe(25);

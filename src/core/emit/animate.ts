@@ -167,14 +167,27 @@ class Writer {
 		this.dur = horizon.loop ? loopSeconds(this.H, horizon.fps) : fmt((this.tail || this.H) / horizon.fps, 4) + "s";
 		const delay = opts.delay ? `+${fmt(opts.delay, 3)}s` : "";
 		this.begin =
-			opts.begin === "click" ? `${svgId}.click${delay}` : opts.begin === "hover" ? `${svgId}.mouseover${delay}` : opts.begin === "manual" ? "indefinite" : opts.delay ? fmt(opts.delay, 3) + "s" : "";
+			opts.begin === "click"
+				? `${svgId}.click${delay}`
+				: opts.begin === "hover"
+					? `${svgId}.mouseover${delay}`
+					: opts.begin === "manual"
+						? "indefinite"
+						: opts.delay
+							? fmt(opts.delay, 3) + "s"
+							: "";
 		this.repeat = horizon.loop ? "indefinite" : "";
 		this.fps = horizon.fps;
 	}
 
 	/** The horizon once (or looping); with a tail: the first pass up to it, then the tail looping. [from, length, isTail] */
 	private windows(): [number, number, boolean][] {
-		return this.tail ? [[0, this.tail, false], [this.tail, this.H - this.tail, true]] : [[0, this.H, false]];
+		return this.tail
+			? [
+					[0, this.tail, false],
+					[this.tail, this.H - this.tail, true],
+				]
+			: [[0, this.H, false]];
 	}
 
 	/** Tracks of one window. Played once without a tail, everything holds the last tick shown. */
@@ -278,8 +291,19 @@ class Writer {
 			}
 			case "text": {
 				const it = n.item as Extract<typeof n.item, { kind: "text" }>;
-				content = this.opts.textAsOutlines || it.element.textType === "static" ? (it.art ? outlineText(it.element, this.doc.useArt(it.art)) : null) : textNode(it.element, this.ctx.precision.space(this.space), this.doc.fonts);
-				content = textField(it.element, content, this.ctx.precision.space(this.space), (fs, size) => this.doc.filter(fs, null, { x: 1, y: 1 }, this.warn, size), this.warn);
+				content =
+					this.opts.textAsOutlines || it.element.textType === "static"
+						? it.art
+							? outlineText(it.element, this.doc.useArt(it.art))
+							: null
+						: textNode(it.element, this.ctx.precision.space(this.space), this.doc.fonts);
+				content = textField(
+					it.element,
+					content,
+					this.ctx.precision.space(this.space),
+					(fs, size) => this.doc.filter(fs, null, { x: 1, y: 1 }, this.warn, size),
+					this.warn,
+				);
 				break;
 			}
 			case "video":
@@ -324,7 +348,10 @@ class Writer {
 					p[2] = last = nearestAngle(p[2], last);
 					return p;
 				});
-				const anim = (type: string, extra: Record<string, string> = {}) => (x: Record<string, string>) => el("animateTransform", { attributeName: ch.attr, type, ...extra, ...x });
+				const anim =
+					(type: string, extra: Record<string, string> = {}) =>
+					(x: Record<string, string>) =>
+						el("animateTransform", { attributeName: ch.attr, type, ...extra, ...x });
 				if (dense.every((k) => k.ease === "hold")) {
 					// one step per frame: the discrete writer (it repeats compactly with the loops)
 					const at = new Map(dense.map((k, j) => [k.v, parts[j]!]));
@@ -336,7 +363,11 @@ class Writer {
 					node.children.push(...ma.values((v) => `${fmt(p(v)[4], 5)} ${fmt(p(v)[5], 5)}`, anim("scale", { additive: "sum" })));
 					continue;
 				}
-				const comp = (i: number, d: number): GTrack => simplify(dense.map((k, j) => ({ t: k.t, v: parts[j]![i]!, ease: k.ease })), 0.5 * 10 ** -d);
+				const comp = (i: number, d: number): GTrack =>
+					simplify(
+						dense.map((k, j) => ({ t: k.t, v: parts[j]![i]!, ease: k.ease })),
+						0.5 * 10 ** -d,
+					);
 				// a part that doesn't change is written still (smil() leaves constant tracks out): the
 				// translate always, it replaces the attribute's poster value the others add to
 				const part = (tracks: GTrack[], text: (v: number[]) => string, make: (a: Record<string, string>) => XmlNode, identity: string | null) => {
@@ -356,11 +387,26 @@ class Writer {
 				// SMIL has no matrix animation: translate and scale animated, the rotation and skew
 				// (which both ends share, see morph.ts) added
 				const m = (v: number) => channelNumbers(ch, v, v);
-				const anim = (type: string, extra: Record<string, string> = {}) => (x: Record<string, string>) => el("animateTransform", { attributeName: ch.attr, type, ...extra, ...x });
+				const anim =
+					(type: string, extra: Record<string, string> = {}) =>
+					(x: Record<string, string>) =>
+						el("animateTransform", { attributeName: ch.attr, type, ...extra, ...x });
 				node.children.push(...a.values((v) => `${fmt(m(v)[4]!, digits)} ${fmt(m(v)[5]!, digits)}`, anim("translate")));
 				const [rot, skw] = ch.rs!;
-				for (const [type, v] of [["rotate", rot], ["skewX", skw]] as const) if (Math.abs(v) > 1e-6) node.children.push(...a.fixed(anim(type, { values: fmt(v, 4), additive: "sum" })));
-				node.children.push(...a.values((v) => matrixScale(m(v)).map((x) => fmt(x, 5)).join(" "), anim("scale", { additive: "sum" })));
+				for (const [type, v] of [
+					["rotate", rot],
+					["skewX", skw],
+				] as const)
+					if (Math.abs(v) > 1e-6) node.children.push(...a.fixed(anim(type, { values: fmt(v, 4), additive: "sum" })));
+				node.children.push(
+					...a.values(
+						(v) =>
+							matrixScale(m(v))
+								.map((x) => fmt(x, 5))
+								.join(" "),
+						anim("scale", { additive: "sum" }),
+					),
+				);
 			} else node.children.push(...a.values(text, (x) => el("animate", { attributeName: ch.attr, ...x })));
 		}
 		this.doc.defs.push(...defs);
@@ -510,7 +556,12 @@ class Writer {
 			// filters change over time: switch between filter definitions
 			const refs = filterSets.map((f) => this.doc.filter(f.filters, null, scale, this.warn, size) ?? "none");
 			const wrap = el("g", { filter: refs[0]! }, [inner]);
-			this.discrete(wrap, "filter", filterSets.map((f, i) => ({ t: f.t, v: refs[i]! })), "none");
+			this.discrete(
+				wrap,
+				"filter",
+				filterSets.map((f, i) => ({ t: f.t, v: refs[i]! })),
+				"none",
+			);
 			inner = wrap;
 		}
 		const blend = cssBlendMode(n.item.blendMode, this.warn);
@@ -614,7 +665,10 @@ class Writer {
 		const main = [T, R, S, ...X].filter((c): c is Comp => !!c);
 		if (main.some(moving)) node = this.cssTransformElement(node, T, R, S, X, md);
 		else if (main.length) {
-			const s = fmtMatrix(main.reduce((m, c) => mulM(m, compMatrix(c, at)), [1, 0, 0, 1, 0, 0] as Mat), ...md);
+			const s = fmtMatrix(
+				main.reduce((m, c) => mulM(m, compMatrix(c, at)), [1, 0, 0, 1, 0, 0] as Mat),
+				...md,
+			);
 			if (s) node = el("g", { transform: s }, [node]);
 		}
 		return outer.length ? this.chainNodes(outer, node, md) : node;
@@ -624,7 +678,10 @@ class Writer {
 		const at = this.posterTick;
 		const g = el("g", {}, [inner]);
 		const all = [T, R, S, ...X].filter((c): c is Comp => !!c);
-		const poster = fmtMatrix(all.reduce((m, c) => mulM(m, compMatrix(c, at)), [1, 0, 0, 1, 0, 0] as Mat), ...md);
+		const poster = fmtMatrix(
+			all.reduce((m, c) => mulM(m, compMatrix(c, at)), [1, 0, 0, 1, 0, 0] as Mat),
+			...md,
+		);
 		if (poster) g.attrs.transform = poster;
 		interface Slot {
 			tracks: GTrack[];
@@ -637,7 +694,13 @@ class Writer {
 		if (T) slots.push({ tracks: T.tracks, digits: T.digits, body: (v) => "translate:" + cssTranslate(v[0]!, v[1]!, T.digits), moving: moving(T) });
 		if (R) slots.push({ tracks: R.tracks, digits: R.digits, body: (v) => `rotate:${fmt(v[0]!, R.digits[0])}deg`, moving: moving(R) });
 		if (S) slots.push({ tracks: S.tracks, digits: S.digits, body: (v) => "scale:" + cssScale(v[0]!, v[1]!, S.digits, " "), moving: moving(S) });
-		if (X.length) slots.push({ tracks: X.flatMap((c) => c.tracks), digits: X.flatMap((c) => c.digits), body: (v) => "transform:" + cssFunctions(X, v), moving: moving(...X) });
+		if (X.length)
+			slots.push({
+				tracks: X.flatMap((c) => c.tracks),
+				digits: X.flatMap((c) => c.digits),
+				body: (v) => "transform:" + cssFunctions(X, v),
+				moving: moving(...X),
+			});
 		const moves = (s: Slot) => s.moving;
 		// slots that may share keyframes
 		const groups: Slot[][] = [];
@@ -669,7 +732,11 @@ class Writer {
 					let o = 0;
 					return group.map((s, j) => s.body(v.slice(o, (o += counts[j]!)))).join(";");
 				};
-				const enc = encodeKeyframes(keys, period || len, { digits: group.flatMap((s) => s.digits), body, extra: k === 0 && extra.length ? extra.join(";") : undefined });
+				const enc = encodeKeyframes(keys, period || len, {
+					digits: group.flatMap((s) => s.digits),
+					body,
+					extra: k === 0 && extra.length ? extra.join(";") : undefined,
+				});
 				if (!enc) return;
 				this.cssRule(g, this.cssName(g), enc.frames, enc.timing, tail, period);
 			});
@@ -750,7 +817,14 @@ class Writer {
 
 	private applyCssAnimations(g: XmlNode) {
 		// alpha values have 3 decimals
-		for (const p of this.pendingCss.splice(0)) this.cssAnimation(g, p.prop, p.tracks, p.fmtV, p.tracks.map(() => 3));
+		for (const p of this.pendingCss.splice(0))
+			this.cssAnimation(
+				g,
+				p.prop,
+				p.tracks,
+				p.fmtV,
+				p.tracks.map(() => 3),
+			);
 	}
 
 	private animateColorMatrix(node: XmlNode, color: Record<ColorProp, GTrack>) {
@@ -849,7 +923,12 @@ class Writer {
 	}
 
 	/** SMIL discrete switches, one animation per window. */
-	private smilDiscrete(attr: string, steps: { t: number; v: string }[], off: string, make = (a: Record<string, string>) => el("animate", { attributeName: attr, ...a })): XmlNode[] {
+	private smilDiscrete(
+		attr: string,
+		steps: { t: number; v: string }[],
+		off: string,
+		make = (a: Record<string, string>) => el("animate", { attributeName: attr, ...a }),
+	): XmlNode[] {
 		const out: XmlNode[] = [];
 		for (const [from, len, tail] of this.windows()) {
 			const keys = this.sliceSteps(steps, from, from + len, off);
@@ -1035,7 +1114,8 @@ class Writer {
 			const still = this.opts.reducedMotion !== false ? `@media (prefers-reduced-motion:reduce){#${this.svgId} *{animation:none!important}}` : "";
 			const rules = this.rules.map((cls) => `#${this.svgId} .${cls}{animation:${this.ruleOf.get(cls)!.join(",")}}`);
 			this.doc.styles.push([...this.keyframes, ...rules, play, still].filter(Boolean).join("\n"));
-			if (begin === "click") this.doc.scripts.push(`document.getElementById(${JSON.stringify(this.svgId)}).addEventListener("click",function(){this.classList.add("playing")});`);
+			if (begin === "click")
+				this.doc.scripts.push(`document.getElementById(${JSON.stringify(this.svgId)}).addEventListener("click",function(){this.classList.add("playing")});`);
 			if (begin === "visible") this.doc.scripts.push(visibleScript(this.svgId, true));
 		}
 		if (!this.css && this.H > 1) {
@@ -1113,7 +1193,9 @@ function colorAtTick(color: Record<ColorProp, GTrack> | null, tick: number): Col
 
 function allAlphaOnly(color: Record<ColorProp, GTrack>): boolean {
 	const fixed = (tr: GTrack, v: number) => tr.every((k) => Math.abs(k.v - v) < 1e-9);
-	return fixed(color.rP, 100) && fixed(color.gP, 100) && fixed(color.bP, 100) && fixed(color.rA, 0) && fixed(color.gA, 0) && fixed(color.bA, 0) && fixed(color.aA, 0);
+	return (
+		fixed(color.rP, 100) && fixed(color.gP, 100) && fixed(color.bP, 100) && fixed(color.rA, 0) && fixed(color.gA, 0) && fixed(color.bA, 0) && fixed(color.aA, 0)
+	);
 }
 
 function staticMatrix(t: BakedInstance["transform"], tick: number): Mat {

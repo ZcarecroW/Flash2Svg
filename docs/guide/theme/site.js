@@ -115,7 +115,10 @@
 	};
 	let results = [];
 	q?.addEventListener("input", async () => {
-		const words = q.value.toLowerCase().split(/\s+/).filter((w) => w.length > 1);
+		const words = q.value
+			.toLowerCase()
+			.split(/\s+/)
+			.filter((w) => w.length > 1);
 		sel = -1;
 		if (!words.length) return show((results = []));
 		const pages = await load();

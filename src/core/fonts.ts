@@ -122,7 +122,15 @@ export function readFaces(file: string, files: FontFiles): FaceInfo[] {
 		const o = os2 ? read(os2[0], Math.min(os2[1], 64)) : null;
 		const names = namesOf(read(nameT[0], nameT[1]));
 		const sel = o && o.length >= 64 ? u16(o, 62) : 0;
-		out.push({ file, index, at, names, weight: o ? u16(o, 4) : 400, italic: !!(sel & 1) || names.some((n) => /italic|oblique/.test(n)), fsType: o ? u16(o, 8) : 0 });
+		out.push({
+			file,
+			index,
+			at,
+			names,
+			weight: o ? u16(o, 4) : 400,
+			italic: !!(sel & 1) || names.some((n) => /italic|oblique/.test(n)),
+			fsType: o ? u16(o, 8) : 0,
+		});
 	});
 	return out;
 }
@@ -268,7 +276,11 @@ const toBase64 = (b: Uint8Array) => {
  * Embeds the fonts of the document's dynamic and input text (SceneModel.fonts). Faces not
  * installed, or whose licence restricts embedding, are left to the viewer's fonts (warned).
  */
-export async function encodeFonts(model: SceneModel, files: FontFiles, codecs: FontCodecs): Promise<{ model: SceneModel; warnings: string[]; report: FontReport[] }> {
+export async function encodeFonts(
+	model: SceneModel,
+	files: FontFiles,
+	codecs: FontCodecs,
+): Promise<{ model: SceneModel; warnings: string[]; report: FontReport[] }> {
 	const used = usage(model);
 	if (!used.size) return { model, warnings: [], report: [] };
 	const faces = installed(files);
@@ -288,7 +300,11 @@ export async function encodeFonts(model: SceneModel, files: FontFiles, codecs: F
 			continue;
 		}
 		const font = files.read(f!.file);
-		const sub = await codecs.subset(font, f!.index, chars.map((c) => c.codePointAt(0)!));
+		const sub = await codecs.subset(
+			font,
+			f!.index,
+			chars.map((c) => c.codePointAt(0)!),
+		);
 		const woff2 = await codecs.woff2(sub);
 		// one CSS family per face name: its styles are told apart by weight and style
 		let family = families.get(u.face);
@@ -307,7 +323,10 @@ export function createFontCodecs(load: WasmLoader, woff2: (sfnt: Uint8Array) => 
 	const instance = () =>
 		(hb ??= (async () => {
 			const bytes = await load(SUBSET_WASM);
-			const src = (await WebAssembly.instantiate((bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)) as BufferSource, {})) as WebAssembly.WebAssemblyInstantiatedSource;
+			const src = (await WebAssembly.instantiate(
+				(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)) as BufferSource,
+				{},
+			)) as WebAssembly.WebAssemblyInstantiatedSource;
 			return src.instance.exports as never;
 		})());
 	return {
@@ -346,7 +365,8 @@ export function createFontCodecs(load: WasmLoader, woff2: (sfnt: Uint8Array) => 
 
 /** The folders installed fonts live in (Windows: system and per user; macOS: system, library, user). */
 export function fontFolders(platform: string, env: Record<string, string | undefined>, home: string, join: (...p: string[]) => string): string[] {
-	if (platform === "win32") return [join(env.WINDIR ?? "C:\Windows", "Fonts"), ...(env.LOCALAPPDATA ? [join(env.LOCALAPPDATA, "Microsoft", "Windows", "Fonts")] : [])];
+	if (platform === "win32")
+		return [join(env.WINDIR ?? "C:\Windows", "Fonts"), ...(env.LOCALAPPDATA ? [join(env.LOCALAPPDATA, "Microsoft", "Windows", "Fonts")] : [])];
 	if (platform === "darwin") return ["/System/Library/Fonts", "/System/Library/Fonts/Supplemental", "/Library/Fonts", join(home, "Library", "Fonts")];
 	return ["/usr/share/fonts", "/usr/local/share/fonts", join(home, ".fonts"), join(home, ".local", "share", "fonts")];
 }

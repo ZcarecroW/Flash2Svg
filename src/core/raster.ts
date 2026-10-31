@@ -29,7 +29,13 @@ export const MAX_RASTER_FRAMES = 1500;
  * The first pass, frame by frame. Loops when the timeline loops ("auto": a frame script jumps
  * back, or no stop(); "always"/"never" as set).
  */
-export async function rasterFrames(model: SceneModel, files: FileSource, s: ExportSettings, rasterize: Rasterize, warn: (m: string) => void): Promise<{ frames: RasterFrame[]; loop: boolean }> {
+export async function rasterFrames(
+	model: SceneModel,
+	files: FileSource,
+	s: ExportSettings,
+	rasterize: Rasterize,
+	warn: (m: string) => void,
+): Promise<{ frames: RasterFrame[]; loop: boolean }> {
 	const ctx = createContext(model, files, { smooth: true, includeHiddenLayers: s.includeHiddenLayers, includeGuides: s.includeGuides, digits: s.digits });
 	const rootId = model.roots[0]!;
 	const prog = ctx.programs[rootId]!;
@@ -46,7 +52,14 @@ export async function rasterFrames(model: SceneModel, files: FileSource, s: Expo
 	const ms = 1000 / frameRate;
 	const frames: RasterFrame[] = [];
 	for (let t = 0; t < pass.length; t++) {
-		const svg = renderStatic(ctx, rootId, { frame: pass[t]!, ticks: t, movieClips: "play", includeBackground: s.includeBackground, embedImages: true, textAsOutlines: true }).svg;
+		const svg = renderStatic(ctx, rootId, {
+			frame: pass[t]!,
+			ticks: t,
+			movieClips: "play",
+			includeBackground: s.includeBackground,
+			embedImages: true,
+			textAsOutlines: true,
+		}).svg;
 		const pixels = await rasterize(svg, W, H);
 		const prev = frames[frames.length - 1];
 		if (prev && same(prev.pixels.data, pixels.data)) prev.ms += ms;
@@ -97,7 +110,14 @@ export function encodeGif(frames: RasterFrame[], loop: boolean): Uint8Array {
 		const index = applyPalette(data, palette, format);
 		const t = alpha ? palette.findIndex((c: number[]) => c[3] === 0) : -1;
 		// transparent frames clear what was there (disposal 2), opaque ones simply cover it
-		gif.writeFrame(index, width, height, { palette, delay: cs[i]! * 10, repeat: loop ? 0 : -1, transparent: t >= 0, transparentIndex: Math.max(0, t), dispose: alpha ? 2 : 1 });
+		gif.writeFrame(index, width, height, {
+			palette,
+			delay: cs[i]! * 10,
+			repeat: loop ? 0 : -1,
+			transparent: t >= 0,
+			transparentIndex: Math.max(0, t),
+			dispose: alpha ? 2 : 1,
+		});
 	});
 	gif.finish();
 	return gif.bytes();
@@ -161,7 +181,7 @@ export async function encodeAnimatedWebp(frames: RasterFrame[], loop: boolean, c
 /** The image chunks (ALPH, VP8, VP8L) of a still WebP file. */
 function frameChunks(webp: Uint8Array): Uint8Array[] {
 	const out: Uint8Array[] = [];
-	for (let o = 12; o + 8 <= webp.length; ) {
+	for (let o = 12; o + 8 <= webp.length;) {
 		const tag = String.fromCharCode(...webp.subarray(o, o + 4));
 		const size = webp[o + 4]! | (webp[o + 5]! << 8) | (webp[o + 6]! << 16) | (webp[o + 7]! << 24);
 		const end = o + 8 + size + (size & 1);
@@ -193,7 +213,13 @@ function concat(parts: Uint8Array[]): Uint8Array {
  * Format "gif" or "webp" (animated): the frames rasterised and encoded (lossy WebP at the image
  * quality, default 80). The output counts as images in the size overview.
  */
-export async function exportRaster(model: SceneModel, files: FileSource, partial: Partial<ExportSettings>, rasterize: Rasterize, codecs: Codecs | null): Promise<CompileOutput> {
+export async function exportRaster(
+	model: SceneModel,
+	files: FileSource,
+	partial: Partial<ExportSettings>,
+	rasterize: Rasterize,
+	codecs: Codecs | null,
+): Promise<CompileOutput> {
 	const s: ExportSettings = { ...DEFAULT_SETTINGS, ...partial };
 	const warnings: string[] = [];
 	if (Object.keys(model.sounds).length) warnings.push("Sounds aren't part of a GIF or WebP animation");
@@ -208,7 +234,13 @@ export async function exportRaster(model: SceneModel, files: FileSource, partial
 		files: [{ suffix: "", svg: "", ext: gif ? ".gif" : ".webp", bytes }],
 		assets: [],
 		warnings,
-		stats: { durationSeconds: ms / 1000, frames: Math.round((ms / 1000) * model.doc.frameRate), bytes: bytes.length, parts: { drawing: 0, animation: 0, images: bytes.length, sounds: 0, runtime: 0, fonts: 0 }, drawings: [] },
+		stats: {
+			durationSeconds: ms / 1000,
+			frames: Math.round((ms / 1000) * model.doc.frameRate),
+			bytes: bytes.length,
+			parts: { drawing: 0, animation: 0, images: bytes.length, sounds: 0, runtime: 0, fonts: 0 },
+			drawings: [],
+		},
 	};
 }
 

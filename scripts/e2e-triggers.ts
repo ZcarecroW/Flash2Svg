@@ -31,7 +31,9 @@ const server = createServer((req, res) => {
 	requested.add(decodeURIComponent((req.url ?? "/").split("?")[0]!.slice(1)));
 	const file = join(dir, decodeURIComponent((req.url ?? "/").split("?")[0]!.slice(1)));
 	if (!file.startsWith(dir) || !existsSync(file)) return void res.writeHead(404).end();
-	res.writeHead(200, { "content-type": file.endsWith(".svg") ? "image/svg+xml" : file.endsWith(".js") ? "text/javascript" : "text/html; charset=utf-8" }).end(readFileSync(file));
+	res
+		.writeHead(200, { "content-type": file.endsWith(".svg") ? "image/svg+xml" : file.endsWith(".js") ? "text/javascript" : "text/html; charset=utf-8" })
+		.end(readFileSync(file));
 });
 await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
 const base = `http://127.0.0.1:${(server.address() as { port: number }).port}/`;
@@ -39,7 +41,12 @@ const base = `http://127.0.0.1:${(server.address() as { port: number }).port}/`;
 const engine = opt("browser", "msedge");
 const browser =
 	engine === "firefox"
-		? await firefox.launch({ channel: "moz-firefox", headless: true, firefoxUserPrefs: { "security.sandbox.content.level": 0 }, env: { ...process.env, MOZ_DISABLE_CONTENT_SANDBOX: "1" } })
+		? await firefox.launch({
+				channel: "moz-firefox",
+				headless: true,
+				firefoxUserPrefs: { "security.sandbox.content.level": 0 },
+				env: { ...process.env, MOZ_DISABLE_CONTENT_SANDBOX: "1" },
+			})
 		: engine === "webkit"
 			? await webkit.launch({ headless: true })
 			: await chromium.launch({ channel: engine, headless: true });
@@ -56,9 +63,12 @@ const frameOf = async (p: Page, file: string, w: number, h: number) => {
 	return PNG.sync.read(await p.screenshot({ clip: { x: 0, y: 0, width: w, height: h } }));
 };
 const diff = (a: PNG, b: PNG) => pixelmatch(a.data, b.data, null, a.width, a.height, { threshold: 0.15, includeAA: false }) / (a.width * a.height);
-const html = (body: string) => `<!doctype html><html><body style="margin:0;background:#fff"><div style="height:${TOP}px"></div>${body}<div style="height:3000px"></div></body></html>`;
+const html = (body: string) =>
+	`<!doctype html><html><body style="margin:0;background:#fff"><div style="height:${TOP}px"></div>${body}<div style="height:3000px"></div></body></html>`;
 const embed = (how: string, file: string, svg: string, w: number, h: number) =>
-	how === "inline" ? svg.replace(/^<\?xml[^>]*>\s*/, "").replace("<svg ", '<svg style="display:block" ') : `<object data="${file}" type="image/svg+xml" width="${w}" height="${h}" style="display:block"></object>`;
+	how === "inline"
+		? svg.replace(/^<\?xml[^>]*>\s*/, "").replace("<svg ", '<svg style="display:block" ')
+		: `<object data="${file}" type="image/svg+xml" width="${w}" height="${h}" style="display:block"></object>`;
 
 for (const name of names) {
 	const modelDir = join(out, name, "model");
@@ -95,10 +105,13 @@ for (const name of names) {
 				await page.evaluate((y) => scrollTo(0, y), Math.round(TOP - (1 - p) * (VIEW - Hh)));
 				await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r)))));
 				// (a clip of the page: Firefox over BiDi waits forever for an <object> element screenshot)
-				const box = await page.evaluate((sel) => {
-					const r = document.querySelector(sel)!.getBoundingClientRect();
-					return { x: r.left, y: r.top, width: r.width, height: r.height };
-				}, how === "inline" ? "svg" : "object");
+				const box = await page.evaluate(
+					(sel) => {
+						const r = document.querySelector(sel)!.getBoundingClientRect();
+						return { x: r.left, y: r.top, width: r.width, height: r.height };
+					},
+					how === "inline" ? "svg" : "object",
+				);
 				const got = PNG.sync.read(await page.screenshot({ clip: box }));
 				const ratio = got.width === ref.width && got.height === ref.height ? diff(ref, got) : 1;
 				n++;
@@ -107,7 +120,9 @@ for (const name of names) {
 				if (ratio > worst) [worst, worstFrame] = [ratio, f + 1];
 			}
 			if (ok < n) failures++;
-			console.log(`${name.padEnd(16)} ${format.padEnd(6)} scroll ${how.padEnd(6)} ${ok}/${n} frames ok, worst frame ${worstFrame}: ${(worst * 100).toFixed(2)}%`);
+			console.log(
+				`${name.padEnd(16)} ${format.padEnd(6)} scroll ${how.padEnd(6)} ${ok}/${n} frames ok, worst frame ${worstFrame}: ${(worst * 100).toFixed(2)}%`,
+			);
 		}
 
 		// visible: held below the fold, running once half on screen
@@ -139,7 +154,9 @@ for (const name of names) {
 			const moved = format === "player" ? after * 1000 >= 0.4 * fps : after >= 0.4;
 			const held = before < 0.05 || (format === "player" && before === 0);
 			if (!held || !moved) failures++;
-			console.log(`${name.padEnd(16)} ${format.padEnd(6)} visible ${how.padEnd(6)} ${held && moved ? "ok" : "FAIL"} (below the fold ${before.toFixed(3)}, in view ${after.toFixed(3)}${format === "player" ? " frames/1000" : " s"})`);
+			console.log(
+				`${name.padEnd(16)} ${format.padEnd(6)} visible ${how.padEnd(6)} ${held && moved ? "ok" : "FAIL"} (below the fold ${before.toFixed(3)}, in view ${after.toFixed(3)}${format === "player" ? " frames/1000" : " s"})`,
+			);
 		}
 	}
 }
@@ -185,10 +202,15 @@ for (const name of names) {
 	const model: SceneModel = JSON.parse(readFileSync(join(modelDir, "scene.json"), "utf8"));
 	const files = { readText: (rel: string) => readFileSync(join(modelDir, rel), "utf8"), readBinary: (rel: string) => readFileSync(join(modelDir, rel)) };
 	writeFileSync(join(dir, "wc-player.svg"), compileScene(model, files, { format: "player", includeBackground: true }).files[0]!.svg);
-	writeFileSync(join(dir, "wc-scroll.svg"), compileScene(model, files, { format: "css", includeBackground: true, begin: "scroll", scrollRange: "crossing" }).files[0]!.svg);
+	writeFileSync(
+		join(dir, "wc-scroll.svg"),
+		compileScene(model, files, { format: "css", includeBackground: true, begin: "scroll", scrollRange: "crossing" }).files[0]!.svg,
+	);
 	writeFileSync(
 		join(dir, "wc.html"),
-		html(`<script type="module" src="flash2svg-player.js"></script><flash2svg-player id="p" src="wc-player.svg"></flash2svg-player><div style="height:1500px"></div><flash2svg-player id="c" src="wc-scroll.svg" loading="eager"></flash2svg-player>`),
+		html(
+			`<script type="module" src="flash2svg-player.js"></script><flash2svg-player id="p" src="wc-player.svg"></flash2svg-player><div style="height:1500px"></div><flash2svg-player id="c" src="wc-scroll.svg" loading="eager"></flash2svg-player>`,
+		),
 	);
 	requested.clear();
 	await page.goto(base + "wc.html");

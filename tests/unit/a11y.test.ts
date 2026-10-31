@@ -14,7 +14,9 @@ describe("accessibility (Animate's Accessibility panel)", () => {
 	it("names and describes the document; a group when parts are accessible", () => {
 		for (const format of ["smil", "css", "player", "static"] as const) {
 			const svg = compile("f48-accessibility", { format });
-			expect(svg, format).toMatch(/<svg [^>]*role="group"[^>]*><title>Moving box demo<\/title><desc>A blue box moves to the right; the Play button starts it again\.<\/desc>/);
+			expect(svg, format).toMatch(
+				/<svg [^>]*role="group"[^>]*><title>Moving box demo<\/title><desc>A blue box moves to the right; the Play button starts it again\.<\/desc>/,
+			);
 		}
 	});
 
@@ -45,7 +47,9 @@ describe("video components", () => {
 		const model: SceneModel = JSON.parse(readFileSync(new URL("../fixtures/models/f52-video-canvas.json", import.meta.url), "utf8"));
 		const files = { readText: () => `<svg xmlns="http://www.w3.org/2000/svg"><rect width="5" height="5"/></svg>`, readBinary: () => new Uint8Array() };
 		const out = compileScene(model, files, { format: "smil" });
-		expect(out.files[0]!.svg).toMatch(/<foreignObject x="40" y="40\.05" width="239\.4" height="179\.4"><video xmlns="http:\/\/www\.w3\.org\/1999\/xhtml" src="videos\/clip\.webm" autoplay="autoplay" muted="muted" loop="loop" playsinline="playsinline"[^>]*><\/video><\/foreignObject>/);
+		expect(out.files[0]!.svg).toMatch(
+			/<foreignObject x="40" y="40\.05" width="239\.4" height="179\.4"><video xmlns="http:\/\/www\.w3\.org\/1999\/xhtml" src="videos\/clip\.webm" autoplay="autoplay" muted="muted" loop="loop" playsinline="playsinline"[^>]*><\/video><\/foreignObject>/,
+		);
 		expect(out.assets).toEqual([{ path: "videos/clip.webm", source: "videos/clip.webm" }]);
 		// still frames don't play it
 		expect(compileScene(model, files, { format: "static" }).files[0]!.svg).not.toMatch(/autoplay/);

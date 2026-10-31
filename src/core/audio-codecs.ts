@@ -37,7 +37,15 @@ export function createAudioCodecs(load: WasmLoader): AudioCodecs {
 		},
 		async opus(pcm, kbps) {
 			const channels = pcm.data.length > 1 ? 2 : 1;
-			const enc = await createOpusEncoder({ sampleRate: 48000, channels, application: Application.Audio, signal: Signal.Music, bitrate: kbps * 1000, complexity: 10, vbr: true });
+			const enc = await createOpusEncoder({
+				sampleRate: 48000,
+				channels,
+				application: Application.Audio,
+				signal: Signal.Music,
+				bitrate: kbps * 1000,
+				complexity: 10,
+				vbr: true,
+			});
 			try {
 				const preSkip = enc.getLookahead();
 				const frame = enc.frameSize;

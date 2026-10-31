@@ -146,7 +146,9 @@ export interface CompileOutput {
  */
 function chooseFormat(model: SceneModel, files: FileSource, partial: Partial<ExportSettings>, rootIndex: number, hooks: CompileHooks): CompileOutput {
 	const sounds = Object.keys(model.sounds).length > 0;
-	const handlers = Object.values(model.timelines).some((t) => t.layers.some((l) => l.keyframes.some((k) => k.script && /addEventListener|\.on\s*\(/.test(k.script))));
+	const handlers = Object.values(model.timelines).some((t) =>
+		t.layers.some((l) => l.keyframes.some((k) => k.script && /addEventListener|\.on\s*\(/.test(k.script))),
+	);
 	if (sounds || handlers) {
 		const out = compileScene(model, files, { ...partial, format: "player" }, rootIndex, hooks);
 		// handlers that are only web links work in SMIL/CSS too: the player's program tells
@@ -201,7 +203,13 @@ export interface CompileHooks {
 	gzip?(data: Uint8Array): Uint8Array;
 }
 
-export function compileScene(model: SceneModel, files: FileSource, partial: Partial<ExportSettings> = {}, rootIndex = 0, hooks: CompileHooks = {}): CompileOutput {
+export function compileScene(
+	model: SceneModel,
+	files: FileSource,
+	partial: Partial<ExportSettings> = {},
+	rootIndex = 0,
+	hooks: CompileHooks = {},
+): CompileOutput {
 	if (partial.format === "auto") return chooseFormat(model, files, partial, rootIndex, hooks);
 	model = joinScenes(model);
 	const s: ExportSettings = { ...DEFAULT_SETTINGS, ...partial };
@@ -235,7 +243,8 @@ export function compileScene(model: SceneModel, files: FileSource, partial: Part
 	const lottie = s.format === "lottie" || s.format === "dotlottie";
 	if (lottie && (s.begin === "visible" || s.begin === "scroll"))
 		out.warnings.push(`Start "${s.begin === "visible" ? "when visible" : "on scroll"}" is up to the page that shows a Lottie animation: it plays when loaded`);
-	if (s.format !== "player" && !lottie && Object.keys(model.sounds).length) out.warnings.push("Sounds play only in the JS player format (SMIL, CSS and still frames have no sound)");
+	if (s.format !== "player" && !lottie && Object.keys(model.sounds).length)
+		out.warnings.push("Sounds play only in the JS player format (SMIL, CSS and still frames have no sound)");
 	// buttons from code snippets in a .lottie: labels as states, clicks as transitions (interactive.ts)
 	const interactive = s.format === "dotlottie" && hasRootInteractions(prog);
 	if (s.format !== "player" && !interactive) {
@@ -252,7 +261,12 @@ export function compileScene(model: SceneModel, files: FileSource, partial: Part
 	if (lottie) {
 		const dot = s.format === "dotlottie";
 		// interactive: the whole root timeline, in order (the state machine follows its scripts)
-		const r = renderLottie(ctx, rootId, interactive ? { ...s, startFrame: 0, endFrame: prog.frameCount, loop: "never" } : s, dot ? "dotlottie" : s.embedImages ? "embed" : "link");
+		const r = renderLottie(
+			ctx,
+			rootId,
+			interactive ? { ...s, startFrame: 0, endFrame: prog.frameCount, loop: "never" } : s,
+			dot ? "dotlottie" : s.embedImages ? "embed" : "link",
+		);
 		const plan = interactive ? interactiveStateMachine(prog, dotLottieId(String(r.animation.nm || "animation"))) : null;
 		if (plan) {
 			r.animation.markers = [...((r.animation.markers as unknown[]) ?? []), ...plan.markers];

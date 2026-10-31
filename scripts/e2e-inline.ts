@@ -17,7 +17,9 @@ const args = process.argv.slice(2);
 const opt = (k: string, d: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d;
 const list = args.find((a) => !a.startsWith("--"));
 // fixtures with overlapping ids: artwork, gradients, filters, masks, nested symbols
-const names = (list ?? "f01-shapes,f02-eases,f04-nested,f07-mask,f08-filters,f12-labels").split(",").filter((n) => existsSync(join(out, n, "model", "scene.json")));
+const names = (list ?? "f01-shapes,f02-eases,f04-nested,f07-mask,f08-filters,f12-labels")
+	.split(",")
+	.filter((n) => existsSync(join(out, n, "model", "scene.json")));
 const formats: OutputFormat[] = ["static", "smil", "css", "player"];
 const time = 0.55;
 

@@ -55,7 +55,14 @@ export function joinScenes(model: SceneModel): SceneModel {
 		}
 	});
 	if (camera) camera.length = total;
-	const joined: TimelineData = { id: ALL_SCENES, name: scenes[0]?.name ?? "Scene 1", kind: "scene", frameCount: total, layers, ...(camera ? { camera: fillCamera(camera) } : {}) };
+	const joined: TimelineData = {
+		id: ALL_SCENES,
+		name: scenes[0]?.name ?? "Scene 1",
+		kind: "scene",
+		frameCount: total,
+		layers,
+		...(camera ? { camera: fillCamera(camera) } : {}),
+	};
 	if (scenes.filter((t) => t.layers.some((l) => l.type === "camera")).length > 1)
 		model.warnings.push("Several scenes use the camera: in all scenes in a row only the first scene's camera moves the view");
 	// (the scenes themselves are only parts of it now)
@@ -75,7 +82,10 @@ function fillCamera(c: CameraFrame[]): CameraFrame[] {
 }
 
 /** A frame script with frame numbers on the joined timeline (see joinScenes). */
-function rewrite(script: string, o: { scene: string; offsets: Map<string, number>; label: (scene: string, name: string) => string; zeroBased: boolean; next?: string; prev?: string }): string {
+function rewrite(
+	script: string,
+	o: { scene: string; offsets: Map<string, number>; label: (scene: string, name: string) => string; zeroBased: boolean; next?: string; prev?: string },
+): string {
 	const first = (scene: string) => o.offsets.get(scene)! + (o.zeroBased ? 0 : 1);
 	return script
 		.replace(/\b(gotoAndPlay|gotoAndStop)\s*\(\s*(\d+|"[^"]*"|'[^']*')\s*(?:,\s*("[^"]*"|'[^']*')\s*)?\)/g, (m, fn: string, arg: string, sceneArg?: string) => {

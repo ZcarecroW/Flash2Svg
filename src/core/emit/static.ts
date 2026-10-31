@@ -5,7 +5,17 @@
 import type { Context } from "../context.ts";
 import { fmt, fmtMatrix } from "../geom.ts";
 import type { Mat } from "../model.ts";
-import { COLOR_PROPS, fromProps, TRANSFORM_PROPS, type ColorProp, type InstanceItem, type Item, type Program, type ProgramLayer, type TransformProp } from "../program.ts";
+import {
+	COLOR_PROPS,
+	fromProps,
+	TRANSFORM_PROPS,
+	type ColorProp,
+	type InstanceItem,
+	type Item,
+	type Program,
+	type ProgramLayer,
+	type TransformProp,
+} from "../program.ts";
 import { valueAt } from "../tracks.ts";
 import { clone, el, type XmlNode } from "../xml.ts";
 import { OutputDoc, svgRoot, withAcc } from "./document.ts";
@@ -32,7 +42,11 @@ export interface StaticOptions {
 	idPrefix?: string;
 }
 
-export function renderStatic(ctx: Context, rootId: string, opts: StaticOptions): { svg: string; assets: OutputDoc["assets"]; drawingBytes: OutputDoc["drawingBytes"] } {
+export function renderStatic(
+	ctx: Context,
+	rootId: string,
+	opts: StaticOptions,
+): { svg: string; assets: OutputDoc["assets"]; drawingBytes: OutputDoc["drawingBytes"] } {
 	const doc = new OutputDoc(ctx, { embedImages: opts.embedImages, idPrefix: opts.idPrefix ?? "" });
 	const root = svgRoot(ctx);
 	if (opts.includeBackground) {
@@ -149,8 +163,19 @@ export class StaticRenderer {
 			case "video":
 				return this.doc.video(item.element, false);
 			case "text": {
-				const node = this.opts.textAsOutlines || item.element.textType === "static" ? (item.art ? outlineText(item.element, this.doc.useArt(item.art)) : null) : textNode(item.element, this.ctx.precision.space(prog.id), this.doc.fonts);
-				return textField(item.element, node, this.ctx.precision.space(prog.id), (fs, size) => this.doc.filter(fs, null, { x: 1, y: 1 }, this.warn, size), this.warn);
+				const node =
+					this.opts.textAsOutlines || item.element.textType === "static"
+						? item.art
+							? outlineText(item.element, this.doc.useArt(item.art))
+							: null
+						: textNode(item.element, this.ctx.precision.space(prog.id), this.doc.fonts);
+				return textField(
+					item.element,
+					node,
+					this.ctx.precision.space(prog.id),
+					(fs, size) => this.doc.filter(fs, null, { x: 1, y: 1 }, this.warn, size),
+					this.warn,
+				);
 			}
 			case "instance": {
 				const node = this.instance(prog, item, frame, ticks, depth);

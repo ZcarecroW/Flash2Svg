@@ -86,7 +86,27 @@ interface Scan {
 }
 
 const COLOR_ATTRS = new Set(["fill", "stroke", "stop-color", "flood-color"]);
-const NUM_ATTRS = new Set(["x", "y", "x1", "y1", "x2", "y2", "cx", "cy", "fx", "fy", "r", "width", "height", "stroke-width", "offset", "stop-opacity", "fill-opacity", "stroke-opacity", "opacity"]);
+const NUM_ATTRS = new Set([
+	"x",
+	"y",
+	"x1",
+	"y1",
+	"x2",
+	"y2",
+	"cx",
+	"cy",
+	"fx",
+	"fy",
+	"r",
+	"width",
+	"height",
+	"stroke-width",
+	"offset",
+	"stop-opacity",
+	"fill-opacity",
+	"stroke-opacity",
+	"opacity",
+]);
 const MATRIX_ATTRS = new Set(["transform", "gradientTransform", "patternTransform"]);
 const OPACITY_ATTRS = new Set(["stop-opacity", "fill-opacity", "stroke-opacity", "opacity"]);
 const NUM_RE = /^-?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?$/;
@@ -120,11 +140,17 @@ export function buildMorph(arts: (Artwork | null)[], ratios: number[], ratio: Tr
 			if (b - part >= MIN_FRAMES) fit(part, b);
 		} else if (part) parts.push(part);
 		// not a blend over all of them: try the runs of equal edge counts
-		else runs(a, b, (s) => s.fine, (c, d) => {
-			if (c === a && d === b) return;
-			const p = fitRun(arts as Artwork[], scans as Scan[], ratios, c, d, start, digits, log);
-			if (p && typeof p !== "number") parts.push(p);
-		});
+		else
+			runs(
+				a,
+				b,
+				(s) => s.fine,
+				(c, d) => {
+					if (c === a && d === b) return;
+					const p = fitRun(arts as Artwork[], scans as Scan[], ratios, c, d, start, digits, log);
+					if (p && typeof p !== "number") parts.push(p);
+				},
+			);
 	};
 	// The keyframe is often written with fewer edges than the morph has (a rectangle's 4 lines vs
 	// the in-betweens' 11 curves): it is checked against the part's start shape afterwards.
@@ -168,7 +194,14 @@ function scan(a: Artwork): Scan {
 					kind = "d";
 					v = subs;
 					const cyc = subs.filter((s) => s.cyclic).length;
-					add(` d~${cyc}z${subs.length - cyc}`, ` d~${subs.map((s) => s.pts.length + (s.cyclic ? "z" : "")).sort().join(",")}`, " d");
+					add(
+						` d~${cyc}z${subs.length - cyc}`,
+						` d~${subs
+							.map((s) => s.pts.length + (s.cyclic ? "z" : ""))
+							.sort()
+							.join(",")}`,
+						" d",
+					);
 					slots.push({ node, attr: k, kind });
 					values.push(v);
 					continue;
@@ -579,7 +612,16 @@ function fitLinear(rows: number[][], r: number[], tol: (i: number, v: number) =>
 }
 
 /** The part for frames [from, to), null if they are no blend, or the frame to split the run at. */
-function fitRun(arts: Artwork[], scans: Scan[], ratios: number[], from: number, to: number, start: number, digits: number, log?: (m: string) => void): MorphPart | number | null {
+function fitRun(
+	arts: Artwork[],
+	scans: Scan[],
+	ratios: number[],
+	from: number,
+	to: number,
+	start: number,
+	digits: number,
+	log?: (m: string) => void,
+): MorphPart | number | null {
 	const first = scans[from]!;
 	const rows: number[][][] = [];
 	const shapes: Sub[][] = [];
@@ -966,7 +1008,10 @@ export function channelText(ch: MorphChannel, v: number[], digits: number): stri
 			return out;
 		}
 		case "color": {
-			const hex = (x: number) => Math.max(0, Math.min(255, Math.round(x))).toString(16).padStart(2, "0");
+			const hex = (x: number) =>
+				Math.max(0, Math.min(255, Math.round(x)))
+					.toString(16)
+					.padStart(2, "0");
 			const a = Math.round(v[3]!);
 			return "#" + hex(v[0]!) + hex(v[1]!) + hex(v[2]!) + (a < 255 ? hex(a) : "");
 		}

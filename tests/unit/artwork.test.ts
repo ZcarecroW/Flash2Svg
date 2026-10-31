@@ -34,8 +34,20 @@ describe("bitmap fills", () => {
 	});
 
 	it("resolves the image when the document is written (embedded or linked)", () => {
-		const model = { doc: { width: 300, height: 200, frameRate: 24, backgroundColor: "#FFFFFF" }, roots: [], timelines: {}, atlas: {}, sounds: {}, warnings: [], bitmaps: { bmppic_png: { name: "pic.png", file: "bitmaps/bmppic_png.png", width: 64, height: 48, smoothing: false } } } as unknown as SceneModel;
-		const ctx = createContext(model, { readText: () => "", readBinary: () => new Uint8Array([1, 2, 3]) }, { smooth: true, includeHiddenLayers: true, includeGuides: false, digits: 2 });
+		const model = {
+			doc: { width: 300, height: 200, frameRate: 24, backgroundColor: "#FFFFFF" },
+			roots: [],
+			timelines: {},
+			atlas: {},
+			sounds: {},
+			warnings: [],
+			bitmaps: { bmppic_png: { name: "pic.png", file: "bitmaps/bmppic_png.png", width: 64, height: 48, smoothing: false } },
+		} as unknown as SceneModel;
+		const ctx = createContext(
+			model,
+			{ readText: () => "", readBinary: () => new Uint8Array([1, 2, 3]) },
+			{ smooth: true, includeHiddenLayers: true, includeGuides: false, digits: 2 },
+		);
 		const a = importArtwork(BITMAP_FILL, "s1", { digits: 2, bitmapFills: [{ bitmap: "bmppic_png", name: "pic.png", clipped: false }] });
 		for (const embedImages of [true, false]) {
 			const doc = new OutputDoc(ctx, { embedImages, idPrefix: "" });

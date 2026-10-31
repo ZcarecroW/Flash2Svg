@@ -95,7 +95,19 @@ async function edgeStrips(root: XmlNode, render: ReturnType<typeof instances>, c
 				crop = "data:image/png;base64," + Buffer.from(await render(cut, w, true)).toString("base64");
 				crops.set(key, crop);
 			}
-			n.children[i] = { name: "image", attrs: { x: c.attrs.x ?? "0", y: c.attrs.y ?? "0", width: c.attrs.width!, height: c.attrs.height!, preserveAspectRatio: "none", "image-rendering": "optimizeSpeed", "xlink:href": crop }, children: [] };
+			n.children[i] = {
+				name: "image",
+				attrs: {
+					x: c.attrs.x ?? "0",
+					y: c.attrs.y ?? "0",
+					width: c.attrs.width!,
+					height: c.attrs.height!,
+					preserveAspectRatio: "none",
+					"image-rendering": "optimizeSpeed",
+					"xlink:href": crop,
+				},
+				children: [],
+			};
 		}
 	};
 	await visit(root);

@@ -5,7 +5,17 @@ import { textNode } from "../../src/core/emit/text.ts";
 import { serialize } from "../../src/core/xml.ts";
 
 // every character 0.5 em wide; ascent 0.8 em, descent 0.2 em
-const font: EmbeddedFont = { face: "Test", bold: false, italic: false, family: "p_f2s-Test", woff2: "", upm: 1000, ascent: 800, descent: 200, widths: new Proxy({}, { get: () => 500 }) as Record<string, number> };
+const font: EmbeddedFont = {
+	face: "Test",
+	bold: false,
+	italic: false,
+	family: "p_f2s-Test",
+	woff2: "",
+	upm: 1000,
+	ascent: 800,
+	descent: 200,
+	widths: new Proxy({}, { get: () => 500 }) as Record<string, number>,
+};
 const fonts = { get: (face: string) => (face === "Test" ? font : undefined) };
 const field = (text: string, width: number, multiline: boolean): TextElement => ({
 	kind: "text",
@@ -26,7 +36,9 @@ describe("dynamic text with embedded fonts", () => {
 	it("wraps multiline fields at the field's width, baselines from ascent, descent and leading", () => {
 		// 5 px a character, 50 px inside the gutters: "aaaa bbbb" fits, "cccc" goes on
 		const svg = serialize(textNode(field("aaaa bbbb cccc", 54, true), 2, fonts));
-		expect(svg).toMatch(/<tspan x="0" y="8"><tspan font-family="'p_f2s-Test', 'Test', sans-serif"[^>]*>aaaa bbbb<\/tspan><\/tspan><tspan x="0" y="20"><tspan [^>]*>cccc<\/tspan>/);
+		expect(svg).toMatch(
+			/<tspan x="0" y="8"><tspan font-family="'p_f2s-Test', 'Test', sans-serif"[^>]*>aaaa bbbb<\/tspan><\/tspan><tspan x="0" y="20"><tspan [^>]*>cccc<\/tspan>/,
+		);
 	});
 
 	it("single-line fields don't wrap; without the font the old approximation stays", () => {

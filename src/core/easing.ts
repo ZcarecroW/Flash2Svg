@@ -224,7 +224,11 @@ export function evalBezier(b: readonly [number, number, number, number], x: numb
  * its own box. Returns the new timing function and the progress values at u0 and u1, so that
  * value(t) = v0 + (v1 - v0) * (p0 + (p1 - p0) * sub(t')) stays exactly the same curve.
  */
-export function subBezier(b: readonly [number, number, number, number], u0: number, u1: number): { bezier: [number, number, number, number]; p0: number; p1: number } {
+export function subBezier(
+	b: readonly [number, number, number, number],
+	u0: number,
+	u1: number,
+): { bezier: [number, number, number, number]; p0: number; p1: number } {
 	let seg: Segment = { p0: { x: 0, y: 0 }, c1: { x: b[0], y: b[1] }, c2: { x: b[2], y: b[3] }, p1: { x: 1, y: 1 } };
 	if (u1 < 1) {
 		const s1 = solveX(seg, u1);

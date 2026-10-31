@@ -59,7 +59,8 @@ const problems = [];
 
 // ------------------------------------------------------------------ icons (Nucleo, see theme/icons.txt)
 const ICONS = {};
-for (const f of readdirSync(join(GUIDE, "theme", "icons"))) ICONS[f.replace(/\.svg$/, "")] = readFileSync(join(GUIDE, "theme", "icons", f), "utf8").replace(/<svg /, '<svg class="i" aria-hidden="true" ');
+for (const f of readdirSync(join(GUIDE, "theme", "icons")))
+	ICONS[f.replace(/\.svg$/, "")] = readFileSync(join(GUIDE, "theme", "icons", f), "utf8").replace(/<svg /, '<svg class="i" aria-hidden="true" ');
 const icon = (n) => ICONS[n] ?? "";
 
 // ------------------------------------------------------------------ demos, compiled now
@@ -68,7 +69,17 @@ const codecs = createCodecs(loader);
 let audio, fonts;
 const demoCache = new Map();
 const EXT = { smil: ".svg", css: ".svg", player: ".svg", auto: ".svg", static: ".svg", lottie: ".json", dotlottie: ".lottie", gif: ".gif", webp: ".webp" };
-const LABEL = { smil: "SMIL", css: "CSS", player: "JS player", auto: "Automatic", lottie: "Lottie", dotlottie: ".lottie", gif: "GIF", webp: "WebP", static: "Still" };
+const LABEL = {
+	smil: "SMIL",
+	css: "CSS",
+	player: "JS player",
+	auto: "Automatic",
+	lottie: "Lottie",
+	dotlottie: ".lottie",
+	gif: "GIF",
+	webp: "WebP",
+	static: "Still",
+};
 
 async function demo(name, format) {
 	const key = `${name}.${format}`;
@@ -87,12 +98,24 @@ async function demo(name, format) {
 		fonts ??= createFontCodecs(loader, (await import("woff2-encoder")).compress);
 		({ model } = await encodeFonts(model, nodeFontFiles(), fonts));
 	}
-	const out = format === "gif" || format === "webp" ? await exportRaster(model, files, s, nodeRasterizer(loader), codecs) : compileScene(model, files, s, 0, { gzip: (d) => gzipSync(d, { level: 9 }) });
+	const out =
+		format === "gif" || format === "webp"
+			? await exportRaster(model, files, s, nodeRasterizer(loader), codecs)
+			: compileScene(model, files, s, 0, { gzip: (d) => gzipSync(d, { level: 9 }) });
 	const f = out.files[0];
 	const bytes = f.bytes ?? Buffer.from(f.svg, "utf8");
 	const file = `demos/${name}.${format}${EXT[format]}`;
 	writeFileSync(join(OUT, file), bytes);
-	const r = { file, bytes: bytes.length, gzip: /gif|webp|lottie$/.test(format) && format !== "lottie" ? bytes.length : gzipSync(bytes, { level: 9 }).length, width: Math.round(model.doc.width), height: Math.round(model.doc.height), format: out.stats.format ?? format, warnings: out.warnings, svg: f.svg };
+	const r = {
+		file,
+		bytes: bytes.length,
+		gzip: /gif|webp|lottie$/.test(format) && format !== "lottie" ? bytes.length : gzipSync(bytes, { level: 9 }).length,
+		width: Math.round(model.doc.width),
+		height: Math.round(model.doc.height),
+		format: out.stats.format ?? format,
+		warnings: out.warnings,
+		svg: f.svg,
+	};
 	demoCache.set(key, r);
 	return r;
 }
@@ -107,7 +130,10 @@ async function demoBlock(args) {
 	for (const f of formats) made.push([f, await demo(name, f)]);
 	const [first, d] = made[0];
 	const tabs = made
-		.map(([f, x], i) => `<button type="button" role="tab" aria-selected="${i === 0}" data-format="${f}" data-src="${x.file}" title="${kb(x.bytes)}${x.gzip !== x.bytes ? `, ${kb(x.gzip)} gzipped` : ""}">${LABEL[f]} <small>${kb(x.gzip)}</small></button>`)
+		.map(
+			([f, x], i) =>
+				`<button type="button" role="tab" aria-selected="${i === 0}" data-format="${f}" data-src="${x.file}" title="${kb(x.bytes)}${x.gzip !== x.bytes ? `, ${kb(x.gzip)} gzipped` : ""}">${LABEL[f]} <small>${kb(x.gzip)}</small></button>`,
+		)
 		.join("");
 	const alt = caption || `${name} demo`;
 	// inline: the SVG markup itself in the page (scroll-driven CSS needs it)
@@ -126,10 +152,20 @@ function stageFor(format, d, alt) {
 }
 
 // ------------------------------------------------------------------ Markdown
-const highlighter = await createHighlighter({ themes: ["github-light-default", "github-dark-default"], langs: ["html", "js", "ts", "bash", "powershell", "json", "xml", "css", "nginx", "apache", "actionscript-3"] });
+const highlighter = await createHighlighter({
+	themes: ["github-light-default", "github-dark-default"],
+	langs: ["html", "js", "ts", "bash", "powershell", "json", "xml", "css", "nginx", "apache", "actionscript-3"],
+});
 const ALIAS = { sh: "bash", shell: "bash", javascript: "js", typescript: "ts", ps1: "powershell", svg: "xml", as3: "actionscript-3" };
 const escapeHtml = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-const slug = (s) => s.toLowerCase().replace(/<[^>]+>/g, "").replace(/&[a-z]+;/g, "").replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-");
+const slug = (s) =>
+	s
+		.toLowerCase()
+		.replace(/<[^>]+>/g, "")
+		.replace(/&[a-z]+;/g, "")
+		.replace(/[^\w\s-]/g, "")
+		.trim()
+		.replace(/\s+/g, "-");
 
 let headings = [];
 let usedSlugs = new Set();
@@ -277,7 +313,10 @@ const search = [];
 for (const [i, p] of pages.entries()) {
 	const prev = pages[i - 1],
 		next = pages[i + 1];
-	const toc = p.headings.length > 2 ? `<nav class="toc" aria-label="On this page"><p class="toc__title">On this page</p><ul>${p.headings.map((h) => `<li class="d${h.depth}"><a href="#${h.id}">${h.text}</a></li>`).join("")}</ul></nav>` : "";
+	const toc =
+		p.headings.length > 2
+			? `<nav class="toc" aria-label="On this page"><p class="toc__title">On this page</p><ul>${p.headings.map((h) => `<li class="d${h.depth}"><a href="#${h.id}">${h.text}</a></li>`).join("")}</ul></nav>`
+			: "";
 	const html = `<!doctype html>
 <html lang="en">
 <head>
@@ -326,7 +365,10 @@ ${toc}
 }
 writeFileSync(join(OUT, "search.json"), JSON.stringify(search));
 writeFileSync(join(OUT, ".nojekyll"), "");
-writeFileSync(join(OUT, "404.html"), `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Not found — Flash2SVG</title><link rel="stylesheet" href="${css}"></head><body><main class="content" style="margin:auto;max-width:36rem;padding:4rem 1rem"><h1>Not found</h1><p>There is no page at this address. <a href="index.html">The Flash2SVG guide starts here.</a></p></main></body></html>`);
+writeFileSync(
+	join(OUT, "404.html"),
+	`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Not found — Flash2SVG</title><link rel="stylesheet" href="${css}"></head><body><main class="content" style="margin:auto;max-width:36rem;padding:4rem 1rem"><h1>Not found</h1><p>There is no page at this address. <a href="index.html">The Flash2SVG guide starts here.</a></p></main></body></html>`,
+);
 
 // ------------------------------------------------------------------ report
 let total = 0;
@@ -338,6 +380,8 @@ const walk = (d) => {
 	}
 };
 walk(OUT);
-console.log(`${pages.length} pages, ${demoCache.size} demo files, ${(total / 1024 / 1024).toFixed(2)} MB in ${((performance.now() - t0) / 1000).toFixed(1)} s → ${OUT}`);
+console.log(
+	`${pages.length} pages, ${demoCache.size} demo files, ${(total / 1024 / 1024).toFixed(2)} MB in ${((performance.now() - t0) / 1000).toFixed(1)} s → ${OUT}`,
+);
 const warned = [...demoCache.entries()].filter(([, d]) => d.warnings.length);
 for (const [k, d] of warned) console.log(`  ${k}: ${d.warnings.join(" | ")}`);

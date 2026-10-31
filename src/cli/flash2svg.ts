@@ -240,7 +240,15 @@ async function main(argv: string[]) {
 	}
 	const raster = s.format === "gif" || s.format === "webp";
 	const rasterWarnings = new Set<string>();
-	const result = raster ? await exportRaster(model, files, s, nodeRasterizer(loader, (m) => rasterWarnings.add(m)), createCodecs(loader)) : compileScene(model, files, s, 0, { gzip: (d) => gzipSync(d, { level: 9 }) });
+	const result = raster
+		? await exportRaster(
+				model,
+				files,
+				s,
+				nodeRasterizer(loader, (m) => rasterWarnings.add(m)),
+				createCodecs(loader),
+			)
+		: compileScene(model, files, s, 0, { gzip: (d) => gzipSync(d, { level: 9 }) });
 	result.warnings.unshift(...warnings);
 	result.warnings.push(...rasterWarnings);
 	const defaultExt = result.files[0]?.ext ?? ".svg";
@@ -262,7 +270,10 @@ async function main(argv: string[]) {
 	}
 	for (const w of result.warnings) process.stderr.write(`warning: ${w}\n`);
 	const kb = (n: number) => (n / 1024).toFixed(1);
-	const written = result.files.length > 1 ? `${stem + result.files[0]!.suffix + ext} … ${result.files[result.files.length - 1]!.suffix + ext}` : stem + (result.files[0]?.suffix ?? "") + ext;
+	const written =
+		result.files.length > 1
+			? `${stem + result.files[0]!.suffix + ext} … ${result.files[result.files.length - 1]!.suffix + ext}`
+			: stem + (result.files[0]?.suffix ?? "") + ext;
 	process.stdout.write(`${result.files.length} file(s), ${kb(result.stats.bytes)} KB, ${result.stats.durationSeconds.toFixed(2)}s -> ${written}\n`);
 	// what the size is made of
 	const parts = Object.entries(result.stats.parts).filter(([, n]) => n > 0);

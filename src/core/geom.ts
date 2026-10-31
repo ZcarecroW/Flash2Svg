@@ -6,14 +6,7 @@ export const IDENTITY: Mat = [1, 0, 0, 1, 0, 0];
 export function concat(first: Mat, then: Mat): Mat {
 	const [a1, b1, c1, d1, x1, y1] = first;
 	const [a2, b2, c2, d2, x2, y2] = then;
-	return [
-		a2 * a1 + c2 * b1,
-		b2 * a1 + d2 * b1,
-		a2 * c1 + c2 * d1,
-		b2 * c1 + d2 * d1,
-		a2 * x1 + c2 * y1 + x2,
-		b2 * x1 + d2 * y1 + y2,
-	];
+	return [a2 * a1 + c2 * b1, b2 * a1 + d2 * b1, a2 * c1 + c2 * d1, b2 * c1 + d2 * d1, a2 * x1 + c2 * y1 + x2, b2 * x1 + d2 * y1 + y2];
 }
 
 export function invert(m: Mat): Mat {
@@ -32,14 +25,7 @@ export function apply(m: Mat, p: Point): Point {
 }
 
 export function isIdentity(m: Mat, eps = 1e-9): boolean {
-	return (
-		Math.abs(m[0] - 1) < eps &&
-		Math.abs(m[1]) < eps &&
-		Math.abs(m[2]) < eps &&
-		Math.abs(m[3] - 1) < eps &&
-		Math.abs(m[4]) < eps &&
-		Math.abs(m[5]) < eps
-	);
+	return Math.abs(m[0] - 1) < eps && Math.abs(m[1]) < eps && Math.abs(m[2]) < eps && Math.abs(m[3] - 1) < eps && Math.abs(m[4]) < eps && Math.abs(m[5]) < eps;
 }
 
 export function matEquals(a: Mat, b: Mat, eps = 1e-6): boolean {
@@ -123,7 +109,10 @@ export function parseTransform(s: string | undefined): Mat {
 	const re = /(matrix|translate|scale|rotate|skewX|skewY)\s*\(([^)]*)\)/g;
 	let r: RegExpExecArray | null;
 	while ((r = re.exec(s))) {
-		const v = r[2]!.split(/[\s,]+/).filter(Boolean).map(Number);
+		const v = r[2]!
+			.split(/[\s,]+/)
+			.filter(Boolean)
+			.map(Number);
 		let t: Mat;
 		switch (r[1]) {
 			case "matrix":

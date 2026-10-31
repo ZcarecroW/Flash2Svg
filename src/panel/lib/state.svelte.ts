@@ -100,7 +100,13 @@ export function deletePreset(name: string) {
 }
 
 export function applyPreset(p: Partial<ExportSettings>) {
-	Object.assign(panel.export, { ...DEFAULT_SETTINGS, ...p, imageModes: panel.export.imageModes, imageFullSize: panel.export.imageFullSize, soundModes: panel.export.soundModes });
+	Object.assign(panel.export, {
+		...DEFAULT_SETTINGS,
+		...p,
+		imageModes: panel.export.imageModes,
+		imageFullSize: panel.export.imageFullSize,
+		soundModes: panel.export.soundModes,
+	});
 }
 
 export function resetSettings() {

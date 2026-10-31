@@ -64,7 +64,14 @@ body {
 	margin: 0;
 	background: var(--bg);
 	color: var(--fg);
-	font: 16px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+	font:
+		16px/1.65 system-ui,
+		-apple-system,
+		"Segoe UI",
+		Roboto,
+		"Helvetica Neue",
+		Arial,
+		sans-serif;
 }
 a {
 	color: var(--link);
@@ -404,14 +411,22 @@ li + li {
 	color: var(--muted);
 }
 code {
-	font: 0.88em/1.5 ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace;
+	font:
+		0.88em/1.5 ui-monospace,
+		"Cascadia Code",
+		"SF Mono",
+		Consolas,
+		monospace;
 	background: var(--bg-soft);
 	border: 1px solid var(--line);
 	border-radius: 5px;
 	padding: 0.05em 0.3em;
 }
 kbd {
-	font: 0.85em ui-monospace, Consolas, monospace;
+	font:
+		0.85em ui-monospace,
+		Consolas,
+		monospace;
 	border: 1px solid var(--line);
 	border-bottom-width: 2px;
 	border-radius: 5px;
@@ -460,7 +475,12 @@ hr {
 	border: 1px solid var(--line);
 	border-radius: var(--radius);
 	background: var(--bg-code) !important;
-	font: 0.86rem/1.6 ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace;
+	font:
+		0.86rem/1.6 ui-monospace,
+		"Cascadia Code",
+		"SF Mono",
+		Consolas,
+		monospace;
 }
 .code code {
 	background: none;

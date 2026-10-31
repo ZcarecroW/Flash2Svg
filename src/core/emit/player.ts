@@ -31,7 +31,11 @@ function actionCode(a: HandlerAction): (number | string)[] {
 	return [{ stop: 0, play: 1, next: 3, prev: 4 }[a.type], a.target];
 }
 
-export function renderPlayer(ctx: Context, rootId: string, s: ExportSettings): { svg: string; assets: OutputDoc["assets"]; drawingBytes: OutputDoc["drawingBytes"] } {
+export function renderPlayer(
+	ctx: Context,
+	rootId: string,
+	s: ExportSettings,
+): { svg: string; assets: OutputDoc["assets"]; drawingBytes: OutputDoc["drawingBytes"] } {
 	const doc = new OutputDoc(ctx, { embedImages: s.embedImages, idPrefix: s.idPrefix ?? "" });
 	const svgId = doc.uid("player");
 	const d = ctx.model.doc;
@@ -104,7 +108,11 @@ export function renderPlayer(ctx: Context, rootId: string, s: ExportSettings): {
 						const at = copy.defs.length ? 1 : 0;
 						for (const ch of p.channels) {
 							// the first frame's values in the drawing; what changes in the program
-							copy.nodes[ch.node]!.attrs[ch.attr] = channelText(ch, channelNumbers(ch, p.ratio ? 0 : valueAt(morph.ratio, it.start + p.from), 0), ctx.precision.space(space));
+							copy.nodes[ch.node]!.attrs[ch.attr] = channelText(
+								ch,
+								channelNumbers(ch, p.ratio ? 0 : valueAt(morph.ratio, it.start + p.from), 0),
+								ctx.precision.space(space),
+							);
 							if (channelVaries(ch)) c.push(channel(ch, ch.node + at));
 						}
 						const m: PMorph = { a: p.from, b: p.to, r: doc.morphTemplate(p.art.id, copy.defs, copy.body), c };
@@ -127,7 +135,8 @@ export function renderPlayer(ctx: Context, rootId: string, s: ExportSettings): {
 				// markup the runtime puts in with innerHTML: in an .svg file that is XML, where the root's
 				// xlink prefix isn't known (SVG 2's plain href is)
 				const raw = (n: XmlNode | null) => serialize(n!).replaceAll(' xlink:href="', ' href="');
-				const field = (n: XmlNode | null) => textField(it.element, n, ctx.precision.space(space), (fs, size) => doc.filter(fs, null, { x: 1, y: 1 }, warn, size), warn);
+				const field = (n: XmlNode | null) =>
+					textField(it.element, n, ctx.precision.space(space), (fs, size) => doc.filter(fs, null, { x: 1, y: 1 }, warn, size), warn);
 				if (s.textAsOutlines || it.element.textType === "static") {
 					const a = it.art ? ctx.art(it.art) : null;
 					if (!a) return null;
@@ -254,7 +263,15 @@ export function renderPlayer(ctx: Context, rootId: string, s: ExportSettings): {
 			!!prog &&
 			prog.layers.some((l) =>
 				l.items.some((it) =>
-					it.kind === "art" ? hasHairline(it.art) : it.kind === "artSeq" ? it.arts.some(hasHairline) : it.kind === "text" ? !!it.art && hasHairline(it.art) : it.kind === "instance" ? drawsHairlines(it.symbol) : false,
+					it.kind === "art"
+						? hasHairline(it.art)
+						: it.kind === "artSeq"
+							? it.arts.some(hasHairline)
+							: it.kind === "text"
+								? !!it.art && hasHairline(it.art)
+								: it.kind === "instance"
+									? drawsHairlines(it.symbol)
+									: false,
 				),
 			);
 		hairlines.set(id, r);

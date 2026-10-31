@@ -69,19 +69,23 @@ export class OutputDoc {
 		// (XHTML: a boolean attribute has its own name as its value)
 		const flag = (on: boolean, name: string) => (on ? name : undefined);
 		return el("foreignObject", { x: fmt(b.left, 2), y: fmt(b.top, 2), width: fmt(b.width, 2), height: fmt(b.height, 2) }, [
-			el("video", {
-				xmlns: "http://www.w3.org/1999/xhtml",
-				src: e.file ?? e.src,
-				poster: e.poster,
-				autoplay: flag(autoplay, "autoplay"),
-				muted: flag(autoplay || e.muted, "muted"),
-				loop: flag(e.loop, "loop"),
-				controls: flag(e.controls, "controls"),
-				playsinline: "playsinline",
-				preload: autoplay ? "auto" : "metadata",
-				style: "display:block;width:100%;height:100%;object-fit:contain",
-				// an end tag, not "/>": inlined in an HTML page the parser would leave <video/> open
-			}, [""]),
+			el(
+				"video",
+				{
+					xmlns: "http://www.w3.org/1999/xhtml",
+					src: e.file ?? e.src,
+					poster: e.poster,
+					autoplay: flag(autoplay, "autoplay"),
+					muted: flag(autoplay || e.muted, "muted"),
+					loop: flag(e.loop, "loop"),
+					controls: flag(e.controls, "controls"),
+					playsinline: "playsinline",
+					preload: autoplay ? "auto" : "metadata",
+					style: "display:block;width:100%;height:100%;object-fit:contain",
+					// an end tag, not "/>": inlined in an HTML page the parser would leave <video/> open
+				},
+				[""],
+			),
 		]);
 	}
 
@@ -238,7 +242,10 @@ export class OutputDoc {
 		if (!id) return null;
 		// the linear part maps pixels: as precise as the bitmap's width spans
 		const w = this.ctx.model.bitmaps[bitmapId]?.width ?? 100;
-		return el("use", { "xlink:href": "#" + id, transform: fmtMatrix(matrix, digits, Math.max(4, digits + Math.ceil(Math.log10(Math.max(1, w))))) || undefined });
+		return el("use", {
+			"xlink:href": "#" + id,
+			transform: fmtMatrix(matrix, digits, Math.max(4, digits + Math.ceil(Math.log10(Math.max(1, w))))) || undefined,
+		});
 	}
 
 	/** Filter for Animate filters + colour transform; returns url(#id) or null. */
@@ -301,7 +308,9 @@ export class OutputDoc {
 			id = this.uid(key);
 			const v = black ? "0" : "1";
 			this.defs.push(
-				el("filter", { id, "color-interpolation-filters": "sRGB" }, [el("feColorMatrix", { type: "matrix", values: `0 0 0 0 ${v} 0 0 0 0 ${v} 0 0 0 0 ${v} 0 0 0 ${solid ? 255 : 1} 0` })]),
+				el("filter", { id, "color-interpolation-filters": "sRGB" }, [
+					el("feColorMatrix", { type: "matrix", values: `0 0 0 0 ${v} 0 0 0 0 ${v} 0 0 0 0 ${v} 0 0 0 ${solid ? 255 : 1} 0` }),
+				]),
 			);
 			this.solidFilters.set(key, id);
 		}
@@ -310,7 +319,13 @@ export class OutputDoc {
 
 	/** A <mask> showing `content` as a mask layer (Animate: shape only), or by its alpha. */
 	/** `own`: the mask sits inside an instance whose alpha the shapes inherit; masks ignore it. */
-	maskElement(id: string, content: XmlNode[], mode?: "alpha" | "erase", box?: { left: number; top: number; width: number; height: number }, own?: boolean): XmlNode {
+	maskElement(
+		id: string,
+		content: XmlNode[],
+		mode?: "alpha" | "erase",
+		box?: { left: number; top: number; width: number; height: number },
+		own?: boolean,
+	): XmlNode {
 		if (own) content = [el("g", { "fill-opacity": "1", "stroke-opacity": "1" }, content)];
 		if (!mode) return el("mask", { id }, [el("g", { filter: this.maskFilter() }, content)]);
 		const area = { x: -1e5, y: -1e5, width: 2e5, height: 2e5 };
@@ -326,7 +341,8 @@ export class OutputDoc {
 	toString(root: XmlNode, opts: { pretty?: boolean; xmlDeclaration?: boolean; shareStops?: boolean } = {}): string {
 		const children: XmlNode[] = [];
 		const faces = [...this.usedFonts].map(
-			(f) => `@font-face{font-family:"${f.family}";src:url(data:font/woff2;base64,${f.woff2}) format("woff2");font-weight:${f.bold ? 700 : 400};font-style:${f.italic ? "italic" : "normal"}}`,
+			(f) =>
+				`@font-face{font-family:"${f.family}";src:url(data:font/woff2;base64,${f.woff2}) format("woff2");font-weight:${f.bold ? 700 : 400};font-style:${f.italic ? "italic" : "normal"}}`,
 		);
 		if (faces.length || this.styles.length) children.push(el("style", {}, [cdata([...faces, ...this.styles].join("\n"))]));
 		if (this.defs.length) {
@@ -409,7 +425,9 @@ export function svgRoot(ctx: Context, attrs: Record<string, string | number> = {
 	const acc = d.acc;
 	if (acc?.silent) svg.attrs["aria-hidden"] = "true";
 	else if (acc?.name || acc?.description) {
-		const parts = Object.values(ctx.model.timelines).some((t) => t.layers.some((l) => l.keyframes.some((k) => k.elements.some((e) => e.kind === "instance" && (e.acc?.name || e.symbolType === "button")))));
+		const parts = Object.values(ctx.model.timelines).some((t) =>
+			t.layers.some((l) => l.keyframes.some((k) => k.elements.some((e) => e.kind === "instance" && (e.acc?.name || e.symbolType === "button")))),
+		);
 		svg.attrs.role = parts ? "group" : "img";
 		if (acc.name) svg.children.push(el("title", {}, [acc.name]));
 		if (acc.description) svg.children.push(el("desc", {}, [acc.description]));

@@ -106,7 +106,6 @@ const SMALL = 32 * 1024;
 
 const EXT: Record<LossyFormat | LosslessFormat, string> = { jpeg: "jpg", png: "png", webp: "webp", avif: "avif" };
 
-
 function modeOf(b: BitmapData, s: ImageSettings): "lossy" | "lossless" {
 	const own = s.imageModes[b.name];
 	if (own) return own;

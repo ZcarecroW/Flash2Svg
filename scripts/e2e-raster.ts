@@ -56,7 +56,14 @@ for (const name of names) {
 			ok = 0,
 			n = 0;
 		for (let t = 0; t < pass.length; t += every) {
-			const ref = renderStatic(ctx, rootId, { frame: pass[t]!, ticks: t, movieClips: "play", includeBackground: true, embedImages: true, textAsOutlines: true }).svg;
+			const ref = renderStatic(ctx, rootId, {
+				frame: pass[t]!,
+				ticks: t,
+				movieClips: "play",
+				includeBackground: true,
+				embedImages: true,
+				textAsOutlines: true,
+			}).svg;
 			const [a, b] = await page.evaluate(
 				async ({ ref, data, type, at, W, H }) => {
 					const draw = async (src: CanvasImageSource) => {
@@ -95,7 +102,9 @@ for (const name of names) {
 			if (bad > worst) [worst, worstTick] = [bad, t];
 		}
 		if (ok < n) failures++;
-		console.log(`${name.padEnd(16)} ${format.padEnd(5)} ${ok}/${n} frames ok, worst tick ${worstTick}: ${(worst * 100).toFixed(2)}%  (${(bytes.length / 1024).toFixed(1)} KB, ${r.stats.durationSeconds.toFixed(2)} s, exported in ${ms.toFixed(0)} ms)`);
+		console.log(
+			`${name.padEnd(16)} ${format.padEnd(5)} ${ok}/${n} frames ok, worst tick ${worstTick}: ${(worst * 100).toFixed(2)}%  (${(bytes.length / 1024).toFixed(1)} KB, ${r.stats.durationSeconds.toFixed(2)} s, exported in ${ms.toFixed(0)} ms)`,
+		);
 	}
 }
 await browser.close();

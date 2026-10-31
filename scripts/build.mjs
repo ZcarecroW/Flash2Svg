@@ -131,7 +131,10 @@ function copyStatic() {
 	writeFileSync(join(ext, "CSXS/manifest.xml"), manifest);
 	// --debug-port=N: CEP's remote debugging (the guide's screenshot tool drives the panel through it)
 	const port = process.argv.find((a) => a.startsWith("--debug-port="))?.slice(13);
-	if (port) writeFileSync(join(ext, ".debug"), `<?xml version="1.0" encoding="UTF-8"?>
+	if (port)
+		writeFileSync(
+			join(ext, ".debug"),
+			`<?xml version="1.0" encoding="UTF-8"?>
 <ExtensionList>
 	<Extension Id="org.flash2svg.panel">
 		<HostList>
@@ -139,7 +142,8 @@ function copyStatic() {
 		</HostList>
 	</Extension>
 </ExtensionList>
-`);
+`,
+		);
 	else rmSync(join(ext, ".debug"), { force: true });
 	cpSync(join(repo, "LICENSE"), join(ext, "LICENSE"));
 	writeIcons(join(ext, "icons"));
@@ -153,8 +157,11 @@ function copyStatic() {
 			// resvg for the GIF/WebP fallbacks: its WebAssembly and its glue (src/cli/raster-node.ts loads it again after a panic)
 			copyFileSync(join(repo, "node_modules/@resvg/resvg-wasm/index_bg.wasm"), join(dir, "resvg.wasm"));
 			const glue = readFileSync(join(repo, "node_modules/@resvg/resvg-wasm/index.mjs"), "utf8");
-			writeFileSync(join(dir, "resvg.mjs"), `// @resvg/resvg-wasm ${JSON.parse(readFileSync(join(repo, "node_modules/@resvg/resvg-wasm/package.json"), "utf8")).version}, MPL-2.0, https://github.com/thx/resvg-js
-` + glue);
+			writeFileSync(
+				join(dir, "resvg.mjs"),
+				`// @resvg/resvg-wasm ${JSON.parse(readFileSync(join(repo, "node_modules/@resvg/resvg-wasm/package.json"), "utf8")).version}, MPL-2.0, https://github.com/thx/resvg-js
+` + glue,
+			);
 		}
 	}
 	// the panel's dotLottie preview

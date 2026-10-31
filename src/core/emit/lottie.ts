@@ -599,7 +599,9 @@ class DrawingBuilder {
 			const ident = (n: XmlNode): string => {
 				const href = n.name === "use" ? (n.attrs["xlink:href"] ?? n.attrs.href ?? "").slice(1) : "";
 				const d = href ? this.defs.get(href) : undefined;
-				return d ? `${JSON.stringify({ ...n.attrs, "xlink:href": "", href: "" })}{${ident(d)}}` : serialize({ ...n, attrs: { ...n.attrs, id: "" }, children: [] }) + n.children.map((c) => (isNode(c) ? ident(c) : String(c))).join("");
+				return d
+					? `${JSON.stringify({ ...n.attrs, "xlink:href": "", href: "" })}{${ident(d)}}`
+					: serialize({ ...n, attrs: { ...n.attrs, id: "" }, children: [] }) + n.children.map((c) => (isNode(c) ? ident(c) : String(c))).join("");
 			};
 			const key = `tiles|${tiles.map(ident).join("")}|${pw},${ph}|${JSON.stringify(this.o)}|${i0},${i1},${j0},${j1}`;
 			const ref = this.w.precomp(key, "", () => {
@@ -611,7 +613,12 @@ class DrawingBuilder {
 				return [...b.layers].reverse();
 			});
 			const M = concat(P, m);
-			content = [{ json: { ty: 0, refId: ref.id, w: ref.w, h: ref.h, ks: { ...matrixProps(M, Math.max(this.digits, 3)), a: st([ref.ox, ref.oy]) } }, box: transformBox(ref.box, M) }];
+			content = [
+				{
+					json: { ty: 0, refId: ref.id, w: ref.w, h: ref.h, ks: { ...matrixProps(M, Math.max(this.digits, 3)), a: st([ref.ox, ref.oy]) } },
+					box: transformBox(ref.box, M),
+				},
+			];
 		}
 		const matte = {
 			ty: "gr",
@@ -688,7 +695,8 @@ class DrawingBuilder {
 		// a tint or brightness recolours the bitmap by a Fill effect; other colour effects: its alpha only
 		const paint = this.o.matte ? null : this.o.paint;
 		const tint = paint && tintsColour(paint) ? tintOf(paint) : null;
-		if (paint && tintsColour(paint) && !tint) this.w.warn("Colour effects on bitmaps other than tint and brightness can't be shown in Lottie: only their alpha");
+		if (paint && tintsColour(paint) && !tint)
+			this.w.warn("Colour effects on bitmaps other than tint and brightness can't be shown in Lottie: only their alpha");
 		const a = this.o.matte ? 1 : opacity * applyCT(paint, [0, 0, 0, 1])[3];
 		if (a < 1 || this.o.matte) ks.o = st(round(a * 100, 2));
 		const json: Json = { ty: 2, refId: img.id, ks };
@@ -1180,7 +1188,8 @@ class LottieWriter {
 						// tint and brightness: a Fill effect (keyed like the paint)
 						const ef = p.values.some(tintsColour) ? paintFill(p, a, e) : null;
 						if (ef) json.ef = [ef];
-						else if (p.values.some(tintsColour)) this.warn("Colour effects on bitmaps other than tint and brightness can't be shown in Lottie: only their alpha");
+						else if (p.values.some(tintsColour))
+							this.warn("Colour effects on bitmaps other than tint and brightness can't be shown in Lottie: only their alpha");
 						ks.o = paintOpacity(p, a, e);
 					}
 					return { json, box };
@@ -2236,10 +2245,7 @@ function paintFill(p: Paint, s: number, e: number): Json | null {
 						return kf;
 					}),
 				};
-	return fill(
-		keyed(cols.map((c) => [...c, 1])),
-		keyed(amounts),
-	);
+	return fill(keyed(cols.map((c) => [...c, 1])), keyed(amounts));
 }
 
 /** Tritone: grey levels 1, 1/2 and 0 to colours (straight in between, in sRGB values; all three players). */
@@ -2612,7 +2618,8 @@ export function renderLottie(ctx: Context, rootId: string, s: ExportSettings, im
 				`${horizon.intro ? "The timeline loops back to a frame after its first (a goto)" : "The root timeline stops (stop()) while movie clips keep running"}: play the marker "${segments.intro}" once, then "${segments.tail}" in a loop (a .lottie file's state machine does that)`,
 			);
 	}
-	if (images === "dotlottie" && (s.begin === "click" || s.begin === "hover" || s.begin === "manual") && H > 1) segments.poster = add("poster", s.posterFrame === "last" ? H - 1 : 0, 1);
+	if (images === "dotlottie" && (s.begin === "click" || s.begin === "hover" || s.begin === "manual") && H > 1)
+		segments.poster = add("poster", s.posterFrame === "last" ? H - 1 : 0, 1);
 	if (markers.length) animation.markers = markers;
 	return { animation, images: w.files, horizon, segments };
 }

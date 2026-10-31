@@ -10,10 +10,7 @@ export function findAnimate() {
 	if (process.env.FLASH2SVG_ANIMATE && existsSync(process.env.FLASH2SVG_ANIMATE)) {
 		return process.env.FLASH2SVG_ANIMATE;
 	}
-	const roots =
-		process.platform === "win32"
-			? ["C:\\Program Files\\Adobe"]
-			: ["/Applications"];
+	const roots = process.platform === "win32" ? ["C:\\Program Files\\Adobe"] : ["/Applications"];
 	for (const root of roots) {
 		if (!existsSync(root)) continue;
 		const dirs = readdirSync(root)
@@ -21,10 +18,7 @@ export function findAnimate() {
 			.sort()
 			.reverse();
 		for (const d of dirs) {
-			const exe =
-				process.platform === "win32"
-					? join(root, d, "Animate.exe")
-					: join(root, d, `${d}.app`, "Contents", "MacOS", "Adobe Animate");
+			const exe = process.platform === "win32" ? join(root, d, "Animate.exe") : join(root, d, `${d}.app`, "Contents", "MacOS", "Adobe Animate");
 			if (existsSync(exe)) return exe;
 		}
 	}
@@ -116,7 +110,11 @@ export function runJsfl(jsflPath, { timeoutMs = 10 * 60 * 1000, quiet = false } 
  */
 const HANG_SECONDS = 90;
 function watch(pid, dialogs, fail, quiet) {
-	const ps = spawn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", join(dirname(fileURLToPath(import.meta.url)), "watch-animate.ps1"), "-AnimatePid", String(pid)], { stdio: ["ignore", "pipe", "ignore"], windowsHide: true });
+	const ps = spawn(
+		"powershell.exe",
+		["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", join(dirname(fileURLToPath(import.meta.url)), "watch-animate.ps1"), "-AnimatePid", String(pid)],
+		{ stdio: ["ignore", "pipe", "ignore"], windowsHide: true },
+	);
 	let cpu = -1;
 	let idleSince = Date.now();
 	let buf = "";
@@ -151,4 +149,3 @@ function watch(pid, dialogs, fail, quiet) {
 	});
 	return ps;
 }
-

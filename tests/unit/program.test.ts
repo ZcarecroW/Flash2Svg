@@ -115,7 +115,9 @@ describe("frame actions: conditions", () => {
 	it("understands the 'play N times' banner idioms", () => {
 		// CreateJS (Animate's HTML5 banner snippet)
 		expect(pass("if (!this.looped) this.looped = 1;\nif (this.looped++ == 3) this.stop();", true)).toEqual([{ type: "stop", passes: { from: 3, before: 4 } }]);
-		expect(pass("this.loops = (this.loops || 0) + 1;\nif (this.loops >= 3) { this.stop(); }", true)).toEqual([{ type: "stop", passes: { from: 3, before: 0 } }]);
+		expect(pass("this.loops = (this.loops || 0) + 1;\nif (this.loops >= 3) { this.stop(); }", true)).toEqual([
+			{ type: "stop", passes: { from: 3, before: 0 } },
+		]);
 		// AS3
 		expect(pass("var loops:int; loops++;\nif (loops == 2) stop();")).toEqual([{ type: "stop", passes: { from: 2, before: 3 } }]);
 		// if / else with a goto
@@ -138,7 +140,11 @@ describe("frame actions: conditions", () => {
 	});
 
 	it("simulates passes: the frame with a goto is not shown, the stop comes on the third pass", () => {
-		const prog = { frameCount: 4, labels: [], actions: { 3: pass("if (!this.n) this.n = 1; else this.n++;\nif (this.n < 3) this.gotoAndPlay(0); else this.stop();", true) } } as unknown as Program;
+		const prog = {
+			frameCount: 4,
+			labels: [],
+			actions: { 3: pass("if (!this.n) this.n = 1; else this.n++;\nif (this.n < 3) this.gotoAndPlay(0); else this.stop();", true) },
+		} as unknown as Program;
 		const p = playhead(prog);
 		expect(p.cycle).toEqual([]);
 		expect(p.prefix).toEqual([0, 1, 2, 0, 1, 2, 0, 1, 2, 3]);
@@ -176,11 +182,30 @@ describe("instance alpha", () => {
 	const color = (a: number) => ({ rP: track(100), gP: track(100), bP: track(100), aP: track(a), rA: track(0), gA: track(0), bA: track(0), aA: track(0) });
 	const inst = (symbol: string, alpha: number | null, extra: Partial<InstanceItem> = {}): InstanceItem =>
 		({
-			kind: "instance", start: 0, end: 1, symbol, symbolType: "movie clip", name: "", transform: {} as InstanceItem["transform"],
-			color: alpha === null ? null : color(alpha), filters: [], blendMode: "normal", visible: true, cacheAsBitmap: false,
-			bounds: { left: 0, top: 0, width: 1, height: 1 }, ...extra,
+			kind: "instance",
+			start: 0,
+			end: 1,
+			symbol,
+			symbolType: "movie clip",
+			name: "",
+			transform: {} as InstanceItem["transform"],
+			color: alpha === null ? null : color(alpha),
+			filters: [],
+			blendMode: "normal",
+			visible: true,
+			cacheAsBitmap: false,
+			bounds: { left: 0, top: 0, width: 1, height: 1 },
+			...extra,
 		}) as InstanceItem;
-	const prog = (id: string, items: Program["layers"][number]["items"]): Program => ({ id, name: id, kind: "movie clip", frameCount: 1, layers: [{ index: 0, name: "l", type: "normal", maskedBy: -1, items }], labels: [], actions: {} });
+	const prog = (id: string, items: Program["layers"][number]["items"]): Program => ({
+		id,
+		name: id,
+		kind: "movie clip",
+		frameCount: 1,
+		layers: [{ index: 0, name: "l", type: "normal", maskedBy: -1, items }],
+		labels: [],
+		actions: {},
+	});
 
 	it("applies to each shape like Flash, except where shapes cannot inherit it", () => {
 		const outer = inst("sym:a", 50);

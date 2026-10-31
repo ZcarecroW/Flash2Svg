@@ -26,9 +26,7 @@ rmSync(target, { recursive: true, force: true });
 const zxpArg = process.argv.find((a) => a.startsWith("--zxp"));
 if (zxpArg) {
 	// Install a signed package: a ZXP is a zip with META-INF/signatures.xml; CEP checks it on load
-	const zxp = zxpArg.includes("=")
-		? zxpArg.slice(6)
-		: join(repo, "dist", readdirSync(join(repo, "dist")).find((f) => f.endsWith(".zxp")) ?? "missing.zxp");
+	const zxp = zxpArg.includes("=") ? zxpArg.slice(6) : join(repo, "dist", readdirSync(join(repo, "dist")).find((f) => f.endsWith(".zxp")) ?? "missing.zxp");
 	if (!existsSync(zxp)) {
 		console.error("No signed .zxp found: npm run package");
 		process.exit(1);
@@ -59,7 +57,10 @@ for (const v of versions) {
 	let on = false;
 	try {
 		if (process.platform === "win32") {
-			const out = execFileSync("reg", ["query", `HKCU\\Software\\Adobe\\CSXS.${v}`, "/v", "PlayerDebugMode"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+			const out = execFileSync("reg", ["query", `HKCU\\Software\\Adobe\\CSXS.${v}`, "/v", "PlayerDebugMode"], {
+				encoding: "utf8",
+				stdio: ["ignore", "pipe", "ignore"],
+			});
 			on = /PlayerDebugMode\s+REG_SZ\s+1/.test(out);
 		} else {
 			const out = execFileSync("defaults", ["read", `com.adobe.CSXS.${v}`, "PlayerDebugMode"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });

@@ -105,7 +105,15 @@ export async function encodeSounds(
 			sounds[id] = snd;
 			continue;
 		}
-		const keep = (rel: string, bytes: Uint8Array, format: SoundReport["format"], extra: Partial<SoundData>, seconds: number, channels: number, kbps?: number) => {
+		const keep = (
+			rel: string,
+			bytes: Uint8Array,
+			format: SoundReport["format"],
+			extra: Partial<SoundData>,
+			seconds: number,
+			channels: number,
+			kbps?: number,
+		) => {
 			made.set(rel, bytes);
 			sounds[id] = { ...snd, file: rel, ...extra };
 			report.push({ name: snd.name, mode, format, bytes: bytes.byteLength, sourceBytes: source.byteLength, seconds, channels, kbps });
@@ -120,7 +128,15 @@ export async function encodeSounds(
 		// an imported MP3 at its own quality: as it is (cutting it would mean encoding it again)
 		if (mp3In && mode === "lossy" && s.soundFormat === "mp3" && !(s.soundBitrate > 0) && (snd.compression === "default" || snd.importedQuality)) {
 			const seconds = (snd.samples ?? 0) / 44100;
-			keep(snd.file, source, "original", { trim: 0, lead: 0, seconds }, seconds, mp3Channels(source), seconds ? Math.round((source.byteLength * 8) / seconds / 1000) : undefined);
+			keep(
+				snd.file,
+				source,
+				"original",
+				{ trim: 0, lead: 0, seconds },
+				seconds,
+				mp3Channels(source),
+				seconds ? Math.round((source.byteLength * 8) / seconds / 1000) : undefined,
+			);
 			continue;
 		}
 
@@ -211,7 +227,7 @@ export function readWav(bytes: Uint8Array): Pcm {
 		channels = 0,
 		rate = 0,
 		bits = 0;
-	for (let o = 12; o + 8 <= bytes.byteLength; ) {
+	for (let o = 12; o + 8 <= bytes.byteLength;) {
 		const id = tag(o),
 			size = v.getUint32(o + 4, true),
 			p = o + 8;
@@ -238,7 +254,7 @@ export function readWav(bytes: Uint8Array): Pcm {
 								: bits === 16
 									? v.getInt16(q, true) / 32768
 									: bits === 24
-										? ((bytes[q]! | (bytes[q + 1]! << 8) | (v.getInt8(q + 2) << 16)) / 8388608)
+										? (bytes[q]! | (bytes[q + 1]! << 8) | (v.getInt8(q + 2) << 16)) / 8388608
 										: v.getInt32(q, true) / 2147483648;
 			return { rate, data };
 		}

@@ -5,13 +5,38 @@ import type { ElementData, Keyframe, LayerData, Mat, SceneModel, TimelineData } 
 const box = { left: 0, top: 0, width: 1, height: 1 };
 const bitmap = (id: string, matrix: Mat): ElementData => ({ kind: "bitmap", bitmap: id, matrix, bounds: box });
 const instance = (symbol: string, matrix: Mat, extra: object = {}): ElementData =>
-	({ kind: "instance", symbol, symbolType: "movie clip", name: "", matrix, transformPoint: { x: 0, y: 0 }, color: null, filters: [], blendMode: "normal", visible: true, cacheAsBitmap: false, bounds: box, ...extra }) as ElementData;
+	({
+		kind: "instance",
+		symbol,
+		symbolType: "movie clip",
+		name: "",
+		matrix,
+		transformPoint: { x: 0, y: 0 },
+		color: null,
+		filters: [],
+		blendMode: "normal",
+		visible: true,
+		cacheAsBitmap: false,
+		bounds: box,
+		...extra,
+	}) as ElementData;
 const kf = (elements: ElementData[], extra: Partial<Keyframe> = {}): Keyframe => ({ index: 0, duration: 1, elements, ...extra });
-const layer = (keyframes: Keyframe[], extra: Partial<LayerData> = {}): LayerData => ({ name: "l", type: "normal", visible: true, parent: -1, frameCount: 1, keyframes, ...extra });
+const layer = (keyframes: Keyframe[], extra: Partial<LayerData> = {}): LayerData => ({
+	name: "l",
+	type: "normal",
+	visible: true,
+	parent: -1,
+	frameCount: 1,
+	keyframes,
+	...extra,
+});
 const timeline = (id: string, layers: LayerData[], kind: TimelineData["kind"] = "movie clip"): TimelineData => ({ id, name: id, kind, frameCount: 1, layers });
 const scale = (s: number, r = 0): Mat => [s * Math.cos(r), s * Math.sin(r), -s * Math.sin(r), s * Math.cos(r), 5, 7];
 
-function model(timelines: TimelineData[], atlas: Record<string, string> = {}): { m: SceneModel; files: { readText(r: string): string; readBinary(): Uint8Array } } {
+function model(
+	timelines: TimelineData[],
+	atlas: Record<string, string> = {},
+): { m: SceneModel; files: { readText(r: string): string; readBinary(): Uint8Array } } {
 	const m = {
 		roots: [timelines[0]!.id],
 		timelines: Object.fromEntries(timelines.map((t) => [t.id, t])),
@@ -51,7 +76,18 @@ describe("largest displayed size of bitmaps", () => {
 
 	it("covers every frame of a tween, layer parenting and 3D", () => {
 		const samples = [0.1, 0.3, 0.6, 0.2].map((v) => ({ matrix: scale(v), color: null }));
-		const tween = { type: "classic", easing: 0, rotate: "none", rotateTimes: 0, orientToPath: false, scale: true, snap: false, sync: false, guided: false, samples } as Keyframe["tween"];
+		const tween = {
+			type: "classic",
+			easing: 0,
+			rotate: "none",
+			rotateTimes: 0,
+			orientToPath: false,
+			scale: true,
+			snap: false,
+			sync: false,
+			guided: false,
+			samples,
+		} as Keyframe["tween"];
 		const { m, files } = model([
 			timeline(
 				"root",
@@ -92,7 +128,11 @@ describe("largest displayed size of bitmaps", () => {
 	it("magnifies by the camera's zoom (the view is the inverse of the camera)", () => {
 		const cam = (z: number): Mat => [1 / z, 0, 0, 1 / z, 0, 0];
 		const { m, files } = model([
-			timeline("root", [layer([kf([instance("cam", cam(1)), instance("cam", cam(2.5))])], { type: "camera" }), layer([kf([bitmap("a", scale(0.2))])])], "scene"),
+			timeline(
+				"root",
+				[layer([kf([instance("cam", cam(1)), instance("cam", cam(2.5))])], { type: "camera" }), layer([kf([bitmap("a", scale(0.2))])])],
+				"scene",
+			),
 			timeline("cam", []),
 		]);
 		near(bitmapScales(m, files).get("a")?.x, 0.5);
@@ -105,15 +145,24 @@ describe("largest displayed size of bitmaps", () => {
 ${fills}
 <g id="F"><path fill="url(#P1)" d="M 0 0 L 10 10 Z"/></g></defs>
 <g transform="matrix( 1, 0, 0, 1, 0,0) "><use xlink:href="#F"/></g></svg>`;
-		const one = svg(`<pattern id="P1" patternUnits="userSpaceOnUse" patternTransform="matrix( 0.25, 0, 0, 0.5, 130,220) " width="240" height="160"><use xlink:href="#photo_jpg"/></pattern>
+		const one =
+			svg(`<pattern id="P1" patternUnits="userSpaceOnUse" patternTransform="matrix( 0.25, 0, 0, 0.5, 130,220) " width="240" height="160"><use xlink:href="#photo_jpg"/></pattern>
 <pattern id="P2" patternUnits="userSpaceOnUse" patternTransform="matrix( 3, 0, 0, 3, 0,0) " width="8" height="8"><use xlink:href="#pattern_png"/></pattern>`);
-		const shape = (atlas: string, fills: { bitmap: string; name: string; clipped: boolean }[]): ElementData => ({ kind: "shape", atlas, bitmapFills: fills, bounds: box });
+		const shape = (atlas: string, fills: { bitmap: string; name: string; clipped: boolean }[]): ElementData => ({
+			kind: "shape",
+			atlas,
+			bitmapFills: fills,
+			bounds: box,
+		});
 		const fills = [
 			{ bitmap: "photo", name: "photo.jpg", clipped: true },
 			{ bitmap: "tile", name: "pattern.png", clipped: false },
 		];
 		const { m, files } = model(
-			[timeline("root", [layer([kf([shape("s1", fills), shape("missing", [{ bitmap: "lost", name: "lost.png", clipped: true }])])])], "scene"), timeline("x", [])],
+			[
+				timeline("root", [layer([kf([shape("s1", fills), shape("missing", [{ bitmap: "lost", name: "lost.png", clipped: true }])])])], "scene"),
+				timeline("x", []),
+			],
 			{ s1: one, missing: svg("") },
 		);
 		const s = bitmapScales(m, files);
@@ -129,12 +178,26 @@ ${fills}
 		const frame = (sx: number) =>
 			`<svg><defs><image id="i" width="10" height="10" xlink:href="./images/a_png.png"/><pattern id="P" patternTransform="matrix(${sx},0,0,${sx},0,0)" width="10" height="10"><use xlink:href="#i"/></pattern></defs></svg>`;
 		const fill = { bitmap: "a", name: "a.png", clipped: true };
-		const tween = { type: "shape", easing: 0, rotate: "none", rotateTimes: 0, orientToPath: false, scale: true, snap: false, sync: false, guided: false, shapeFrames: ["f0", "f1", "f2"] } as Keyframe["tween"];
-		const { m, files } = model([timeline("root", [layer([kf([{ kind: "shape", atlas: "f0", bitmapFills: [fill], bounds: box }], { tween, duration: 3 })])], "scene")], {
-			f0: frame(0.1),
-			f1: frame(0.7),
-			f2: frame(0.3),
-		});
+		const tween = {
+			type: "shape",
+			easing: 0,
+			rotate: "none",
+			rotateTimes: 0,
+			orientToPath: false,
+			scale: true,
+			snap: false,
+			sync: false,
+			guided: false,
+			shapeFrames: ["f0", "f1", "f2"],
+		} as Keyframe["tween"];
+		const { m, files } = model(
+			[timeline("root", [layer([kf([{ kind: "shape", atlas: "f0", bitmapFills: [fill], bounds: box }], { tween, duration: 3 })])], "scene")],
+			{
+				f0: frame(0.1),
+				f1: frame(0.7),
+				f2: frame(0.3),
+			},
+		);
 		near(bitmapScales(m, files).get("a")?.x, 0.7);
 	});
 });

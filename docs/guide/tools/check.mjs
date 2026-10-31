@@ -18,7 +18,19 @@ if (!existsSync(join(dist, "index.html"))) {
 	console.error("Build the guide first: node docs/guide/build.mjs");
 	process.exit(1);
 }
-const TYPES = { ".html": "text/html", ".css": "text/css", ".js": "text/javascript", ".json": "application/json", ".svg": "image/svg+xml", ".webp": "image/webp", ".gif": "image/gif", ".lottie": "application/zip", ".png": "image/png", ".mp3": "audio/mpeg", ".woff2": "font/woff2" };
+const TYPES = {
+	".html": "text/html",
+	".css": "text/css",
+	".js": "text/javascript",
+	".json": "application/json",
+	".svg": "image/svg+xml",
+	".webp": "image/webp",
+	".gif": "image/gif",
+	".lottie": "application/zip",
+	".png": "image/png",
+	".mp3": "audio/mpeg",
+	".woff2": "font/woff2",
+};
 const server = createServer((req, res) => {
 	const path = normalize(join(dist, decodeURIComponent(new URL(req.url, "http://x").pathname)));
 	const file = path.startsWith(dist) && existsSync(path) && statSync(path).isDirectory() ? join(path, "index.html") : path;
@@ -39,7 +51,10 @@ const browser = await chromium.launch({ channel: "msedge" });
 let tabs = 0;
 const t0 = Date.now();
 try {
-	for (const [label, viewport] of [["desktop", { width: 1280, height: 800 }], ["phone", { width: 390, height: 844 }]]) {
+	for (const [label, viewport] of [
+		["desktop", { width: 1280, height: 800 }],
+		["phone", { width: 390, height: 844 }],
+	]) {
 		const ctx = await browser.newContext({ viewport, deviceScaleFactor: 1 });
 		for (const name of pages) {
 			const page = await ctx.newPage();
@@ -61,8 +76,13 @@ try {
 				const w = document.documentElement.clientWidth;
 				if (document.documentElement.scrollWidth <= w) return null;
 				// the widest element that sticks out (not inside something that scrolls itself)
-				const out = [...document.querySelectorAll("body *")].filter((e) => e.getBoundingClientRect().right > w + 1 && !e.closest("pre, .table, table, [style*=overflow]"));
-				return `${document.documentElement.scrollWidth}px > ${w}px: ${out.slice(0, 3).map((e) => e.tagName.toLowerCase() + (e.className ? "." + e.className : "")).join(", ")}`;
+				const out = [...document.querySelectorAll("body *")].filter(
+					(e) => e.getBoundingClientRect().right > w + 1 && !e.closest("pre, .table, table, [style*=overflow]"),
+				);
+				return `${document.documentElement.scrollWidth}px > ${w}px: ${out
+					.slice(0, 3)
+					.map((e) => e.tagName.toLowerCase() + (e.className ? "." + e.className : ""))
+					.join(", ")}`;
 			});
 			if (wide) fail(where, `scrolls sideways, ${wide}`);
 			// every demo: every format tab (once, at desktop width)
@@ -79,28 +99,25 @@ try {
 						tabs++;
 						const what = `${where} demo ${(await fig.getAttribute("data-demo")) ?? d} ${format}`;
 						const ok = await fig
-							.evaluate(
-								async (f, format) => {
-									const until = async (fn, ms = 15000) => {
-										for (const t = Date.now(); Date.now() - t < ms; await new Promise((r) => setTimeout(r, 50))) if (await fn()) return true;
-										return false;
-									};
-									const stage = f.querySelector(".demo__stage");
-									if (format === "dotlottie") {
-										const a = stage.querySelector("a[download]");
-										// a zip archive
-										const b = a && new Uint8Array(await (await fetch(a.href)).arrayBuffer());
-										return !!b && b[0] === 0x50 && b[1] === 0x4b;
-									}
-									if (format === "lottie") return until(() => stage.querySelector(".demo__lottie svg g") && stage.querySelector(".demo__lottie")._anim?.isLoaded);
-									if (format === "player") return until(() => stage.querySelector("object")?.contentDocument?.documentElement?.flash2svg);
-									return until(() => {
-										const i = stage.querySelector("img");
-										return i && i.complete && i.naturalWidth > 0;
-									});
-								},
-								format,
-							)
+							.evaluate(async (f, format) => {
+								const until = async (fn, ms = 15000) => {
+									for (const t = Date.now(); Date.now() - t < ms; await new Promise((r) => setTimeout(r, 50))) if (await fn()) return true;
+									return false;
+								};
+								const stage = f.querySelector(".demo__stage");
+								if (format === "dotlottie") {
+									const a = stage.querySelector("a[download]");
+									// a zip archive
+									const b = a && new Uint8Array(await (await fetch(a.href)).arrayBuffer());
+									return !!b && b[0] === 0x50 && b[1] === 0x4b;
+								}
+								if (format === "lottie") return until(() => stage.querySelector(".demo__lottie svg g") && stage.querySelector(".demo__lottie")._anim?.isLoaded);
+								if (format === "player") return until(() => stage.querySelector("object")?.contentDocument?.documentElement?.flash2svg);
+								return until(() => {
+									const i = stage.querySelector("img");
+									return i && i.complete && i.naturalWidth > 0;
+								});
+							}, format)
 							.catch((e) => e.message);
 						if (ok !== true) fail(what, `doesn't show (${ok})`);
 						if (!(await fig.locator(".demo__get").getAttribute("href"))?.length) fail(what, "no download link");
@@ -109,7 +126,8 @@ try {
 				// search finds pages; the theme switch flips the theme
 				if (name === "index.html") {
 					await page.fill("#q", "lottie");
-					if (!(await page.waitForSelector(".search__hits:not([hidden]) a", { timeout: 5000 }).catch(() => null))) fail(where, "search shows no hits for 'lottie'");
+					if (!(await page.waitForSelector(".search__hits:not([hidden]) a", { timeout: 5000 }).catch(() => null)))
+						fail(where, "search shows no hits for 'lottie'");
 					const before = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
 					await page.click(".top__theme");
 					const after = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);

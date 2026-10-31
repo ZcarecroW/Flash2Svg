@@ -45,7 +45,12 @@ mkdirSync(assets, { recursive: true });
 		for (let x = 0; x < w; x++) {
 			const i = (y * w + x) * 4;
 			const q = (x < w / 2 ? 0 : 1) + (y < h / 2 ? 0 : 2);
-			const c = [[230, 40, 40], [40, 180, 60], [40, 80, 220], [240, 200, 30]][q];
+			const c = [
+				[230, 40, 40],
+				[40, 180, 60],
+				[40, 80, 220],
+				[240, 200, 30],
+			][q];
 			png.data[i] = c[0];
 			png.data[i + 1] = c[1];
 			png.data[i + 2] = c[2];
@@ -59,8 +64,7 @@ mkdirSync(assets, { recursive: true });
 {
 	const make = (w, h, fn) => {
 		const p = new PNG({ width: w, height: h });
-		for (let y = 0; y < h; y++)
-			for (let x = 0; x < w; x++) p.data.set(fn(x, y), (y * w + x) * 4);
+		for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) p.data.set(fn(x, y), (y * w + x) * 4);
 		return p;
 	};
 	// deterministic noise so the files stay the same between runs
@@ -103,7 +107,11 @@ mkdirSync(assets, { recursive: true });
 	const make = (w, h, fn) => {
 		const p = new PNG({ width: w, height: h });
 		for (let y = 0; y < h; y++)
-			for (let x = 0; x < w; x++) p.data.set(fn(x / w, y / h, x, y).map((v) => Math.max(0, Math.min(255, Math.round(v)))), (y * w + x) * 4);
+			for (let x = 0; x < w; x++)
+				p.data.set(
+					fn(x / w, y / h, x, y).map((v) => Math.max(0, Math.min(255, Math.round(v)))),
+					(y * w + x) * 4,
+				);
 		return PNG.sync.write(p);
 	};
 	writeFileSync(
@@ -129,9 +137,18 @@ mkdirSync(assets, { recursive: true });
 			return [128 + 120 * Math.cos(r * 18), 128 + 120 * Math.sin(u * 5), 128 + 120 * Math.cos(v * 4), 255];
 		}),
 	);
-	writeFileSync(join(assets, "tile.png"), make(64, 64, (u, v) => [200 + 50 * Math.cos(u * 2 * Math.PI), 120 + 80 * Math.sin(v * 2 * Math.PI), 60, 255]));
-	writeFileSync(join(assets, "pixels.png"), make(64, 64, (u, v, x, y) => (((x >> 3) + (y >> 3)) % 2 ? [30, 30, 120, 255] : [240, 240, 240, 255])));
-	writeFileSync(join(assets, "wide.png"), make(400, 200, (u, v) => [255 * u, 90 + 100 * Math.sin(v * Math.PI), 255 * (1 - u), 255]));
+	writeFileSync(
+		join(assets, "tile.png"),
+		make(64, 64, (u, v) => [200 + 50 * Math.cos(u * 2 * Math.PI), 120 + 80 * Math.sin(v * 2 * Math.PI), 60, 255]),
+	);
+	writeFileSync(
+		join(assets, "pixels.png"),
+		make(64, 64, (u, v, x, y) => (((x >> 3) + (y >> 3)) % 2 ? [30, 30, 120, 255] : [240, 240, 240, 255])),
+	);
+	writeFileSync(
+		join(assets, "wide.png"),
+		make(400, 200, (u, v) => [255 * u, 90 + 100 * Math.sin(v * Math.PI), 255 * (1 - u), 255]),
+	);
 }
 
 // Sounds for the sound fixture (f43): a stereo chord (44.1 kHz WAV, a different chord left and

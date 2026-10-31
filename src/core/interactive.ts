@@ -78,7 +78,8 @@ export function interactiveStateMachine(prog: Program, animation: string): Inter
 				const to = entry(t, a.play);
 				pending.push(to);
 				clicks.push({ layer: i.on, action: { type: "Fire", inputName: `go_${to}` } });
-			} else warnings.push(`${a.type}() in the click handler on ${i.on} isn't part of the .lottie state machine (jumps of the root timeline and web pages are)`);
+			} else
+				warnings.push(`${a.type}() in the click handler on ${i.on} isn't part of the .lottie state machine (jumps of the root timeline and web pages are)`);
 		}
 	}
 	for (let k = 0; k < pending.length; k++) {
@@ -103,7 +104,16 @@ export function interactiveStateMachine(prog: Program, animation: string): Inter
 		}
 		// a segment of one frame is a still (dotLottie would play the whole animation for it)
 		const plays = play && seg.end > frame;
-		return { name, type: "PlaybackState", animation, segment: marker, autoplay: plays, loop: false, entryActions: [{ type: "SetFrame", value: frame }], transitions };
+		return {
+			name,
+			type: "PlaybackState",
+			animation,
+			segment: marker,
+			autoplay: plays,
+			loop: false,
+			entryActions: [{ type: "SetFrame", value: frame }],
+			transitions,
+		};
 	});
 	for (const c of clicks) interactions.push({ type: "Click", layerName: c.layer, actions: [c.action] });
 	return { markers, stateMachine: { initial: first, states, inputs, interactions }, warnings };

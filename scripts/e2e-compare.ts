@@ -38,7 +38,16 @@ const list = args.find((a) => !a.startsWith("--"));
 // f56: Animate's outlines of a single-line dynamic field with CJK text wrap where its render
 // doesn't (fallback font metrics; our live text doesn't wrap), it underlines links as in authoring
 // (Flash Player doesn't) and its field border sits a pixel off (1.54 %).
-const TOLERANCE: Record<string, number> = { "f22-layers": 0.006, "f31-text2": 0.008, "f35-edge": 0.005, "f40-strokes": 0.004, "f45-morph": 0.012, "f49-fonts": 0.02, "f55-strokes2": 0.008, "f56-text3": 0.016 };
+const TOLERANCE: Record<string, number> = {
+	"f22-layers": 0.006,
+	"f31-text2": 0.008,
+	"f35-edge": 0.005,
+	"f40-strokes": 0.004,
+	"f45-morph": 0.012,
+	"f49-fonts": 0.02,
+	"f55-strokes2": 0.008,
+	"f56-text3": 0.016,
+};
 const imagesOpt = opt("images", "");
 const images: Partial<ImageSettings> | null = !imagesOpt ? null : imagesOpt === "lossless" ? {} : { imageLossy: imagesOpt as ImageSettings["imageLossy"] };
 const codecs = createCodecs(nodeWasmLoader());
@@ -174,7 +183,9 @@ for (const [name, rs] of byName) {
 	const done = rs.filter((r) => !Number.isNaN(r.resvg));
 	const resvgNote = done.length ? `${(Math.max(...done.map((r) => r.resvg)) * 100).toFixed(2)}%` : "n/a";
 	const na = rs.length - done.length;
-	console.log(`${name.padEnd(20)} ${okCount}/${rs.length} frames ok, worst frame ${worst.frame}: ${(worst.diff * 100).toFixed(2)}% pixels differ (resvg ${resvgNote}${done.length && na ? `, ${na} frame(s) n/a` : ""})`);
+	console.log(
+		`${name.padEnd(20)} ${okCount}/${rs.length} frames ok, worst frame ${worst.frame}: ${(worst.diff * 100).toFixed(2)}% pixels differ (resvg ${resvgNote}${done.length && na ? `, ${na} frame(s) n/a` : ""})`,
+	);
 }
 await browser.close();
 (worker as ChildProcess | null)?.kill();

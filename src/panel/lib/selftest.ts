@@ -105,7 +105,12 @@ export async function runSelfTestIfRequested(): Promise<boolean> {
 	const outFile = cfg.result.replace(/\.json$/i, "") + "-output.txt";
 	const animateOutput = async () => {
 		await evalScript(`fl.outputPanel.save(${JSON.stringify(toFileUri(outFile))}, false); fl.outputPanel.clear(); "ok"`).catch(() => "");
-		const text = node!.fs.existsSync(outFile) ? node!.fs.readFileSync(outFile, "utf8").replace(/^\uFEFF/, "").trim() : "";
+		const text = node!.fs.existsSync(outFile)
+			? node!.fs
+					.readFileSync(outFile, "utf8")
+					.replace(/^\uFEFF/, "")
+					.trim()
+			: "";
 		return text || undefined;
 	};
 	await animateOutput();
@@ -142,8 +147,24 @@ export async function runSelfTestIfRequested(): Promise<boolean> {
 				},
 				() => false,
 			);
-			const preview = job.preview && (res.format === "lottie" || res.format === "dotlottie") ? await checkPreview(res.files[0]!, res.format, job.preview) : undefined;
-			await log({ fla: job.fla, ok: true, format: res.format, files: res.files, bytes: res.output.reduce((n, o) => n + o.stats.bytes, 0), warnings: res.warnings, seconds: res.seconds, steps: progress.length, docType: info.type, images: res.images.map((i) => [i.name, i.width, i.height]), parts: res.output.map((o) => o.stats.parts), drawings: res.output.flatMap((o) => o.stats.drawings), linkedBytes: res.linkedBytes, preview });
+			const preview =
+				job.preview && (res.format === "lottie" || res.format === "dotlottie") ? await checkPreview(res.files[0]!, res.format, job.preview) : undefined;
+			await log({
+				fla: job.fla,
+				ok: true,
+				format: res.format,
+				files: res.files,
+				bytes: res.output.reduce((n, o) => n + o.stats.bytes, 0),
+				warnings: res.warnings,
+				seconds: res.seconds,
+				steps: progress.length,
+				docType: info.type,
+				images: res.images.map((i) => [i.name, i.width, i.height]),
+				parts: res.output.map((o) => o.stats.parts),
+				drawings: res.output.flatMap((o) => o.stats.drawings),
+				linkedBytes: res.linkedBytes,
+				preview,
+			});
 		} catch (e) {
 			await log({ fla: job.fla, ok: false, error: (e as Error).message, seconds: (Date.now() - t0) / 1000 });
 		}

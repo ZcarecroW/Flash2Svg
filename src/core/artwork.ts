@@ -71,7 +71,11 @@ function expandLinearRGB(g: XmlNode) {
 		for (let s = 1; s < STEPS; s++) {
 			const u = s / STEPS;
 			const hex = a.rgb
-				.map((c, k) => Math.round(linearToSrgb(c + (b.rgb[k]! - c) * u) * 255).toString(16).padStart(2, "0"))
+				.map((c, k) =>
+					Math.round(linearToSrgb(c + (b.rgb[k]! - c) * u) * 255)
+						.toString(16)
+						.padStart(2, "0"),
+				)
 				.join("");
 			const alpha = a.a + (b.a - a.a) * u;
 			out.push(el("stop", { offset: fmt(a.off + (b.off - a.off) * u, 4), "stop-color": "#" + hex, "stop-opacity": alpha < 1 ? fmt(alpha, 3) : undefined }));
@@ -297,7 +301,8 @@ function linkBitmapFills(defs: XmlNode[], body: XmlNode, fills: BitmapFill[]) {
 			const h = n.attrs["xlink:href"] ?? n.attrs.href ?? "";
 			if (n.name === "use" && h.startsWith("#") && images.get(h.slice(1))?.clipped) img = h.slice(1);
 		});
-		if (img) clipped.set(d.attrs.id, { img, w: parseFloat(d.attrs.width ?? "0"), h: parseFloat(d.attrs.height ?? "0"), m: parseTransform(d.attrs.patternTransform) });
+		if (img)
+			clipped.set(d.attrs.id, { img, w: parseFloat(d.attrs.width ?? "0"), h: parseFloat(d.attrs.height ?? "0"), m: parseTransform(d.attrs.patternTransform) });
 	}
 	if (!clipped.size) return;
 	let n = 0;
@@ -332,7 +337,12 @@ function clampedImage(img: string, w: number, h: number, box: { x0: number; y0: 
 	const use = () => el("use", { "xlink:href": "#" + img });
 	if (!box) return [use()];
 	const inv = invert(m);
-	const pts = [apply(inv, { x: box.x0, y: box.y0 }), apply(inv, { x: box.x1, y: box.y0 }), apply(inv, { x: box.x0, y: box.y1 }), apply(inv, { x: box.x1, y: box.y1 })];
+	const pts = [
+		apply(inv, { x: box.x0, y: box.y0 }),
+		apply(inv, { x: box.x1, y: box.y0 }),
+		apply(inv, { x: box.x0, y: box.y1 }),
+		apply(inv, { x: box.x1, y: box.y1 }),
+	];
 	// Extend only the sides the shape reaches past, by at least 2 px (resvg crashes on sub-pixel pieces).
 	const min = 2 / Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]) || 1);
 	const ext = (v: number) => (v > 1e-3 ? Math.max(v, min) + 0.5 : 0);
@@ -343,7 +353,20 @@ function clampedImage(img: string, w: number, h: number, box: { x0: number; y0: 
 	// A sliver around a pixel centre, stretched; pieces overlap the bitmap by half a pixel (no seams).
 	const out: XmlNode[] = [];
 	const piece = (x: number, y: number, pw: number, ph: number, vx: number, vy: number, vw: number, vh: number) =>
-		out.push(el("svg", { x: fmt(x, 3), y: fmt(y, 3), width: fmt(pw, 3), height: fmt(ph, 3), viewBox: `${fmt(vx, 3)} ${fmt(vy, 3)} ${fmt(vw, 3)} ${fmt(vh, 3)}`, preserveAspectRatio: "none" }, [use()]));
+		out.push(
+			el(
+				"svg",
+				{
+					x: fmt(x, 3),
+					y: fmt(y, 3),
+					width: fmt(pw, 3),
+					height: fmt(ph, 3),
+					viewBox: `${fmt(vx, 3)} ${fmt(vy, 3)} ${fmt(vw, 3)} ${fmt(vh, 3)}`,
+					preserveAspectRatio: "none",
+				},
+				[use()],
+			),
+		);
 	const s = 0.02,
 		lo = 0.5 - s / 2,
 		hiX = w - 0.5 - s / 2,
@@ -400,7 +423,19 @@ function collapse(node: XmlNode): XmlNode {
 function hasDrawing(node: XmlNode): boolean {
 	let found = false;
 	walk(node, (n) => {
-		if (n.name === "path" || n.name === "use" || n.name === "image" || n.name === "rect" || n.name === "circle" || n.name === "ellipse" || n.name === "polygon" || n.name === "polyline" || n.name === "line" || n.name === "text") found = true;
+		if (
+			n.name === "path" ||
+			n.name === "use" ||
+			n.name === "image" ||
+			n.name === "rect" ||
+			n.name === "circle" ||
+			n.name === "ellipse" ||
+			n.name === "polygon" ||
+			n.name === "polyline" ||
+			n.name === "line" ||
+			n.name === "text"
+		)
+			found = true;
 	});
 	return found;
 }

@@ -23,7 +23,9 @@ interface Piece {
  * them: approximations.
  */
 export function textNode(t: TextElement, digits: number, fonts?: FontSet): XmlNode {
-	const runs: TextRun[] = t.runs.length ? t.runs : [{ text: t.text, face: "sans-serif", size: 12, fillColor: "#000000", bold: false, italic: false, alignment: "left", letterSpacing: 0, lineSpacing: 2 }];
+	const runs: TextRun[] = t.runs.length
+		? t.runs
+		: [{ text: t.text, face: "sans-serif", size: 12, fillColor: "#000000", bold: false, italic: false, alignment: "left", letterSpacing: 0, lineSpacing: 2 }];
 	const first = runs[0]!;
 	const anchor = first.alignment === "center" ? "middle" : first.alignment === "right" ? "end" : "start";
 	const inner = t.width - 2 * GUTTER;
@@ -126,12 +128,26 @@ export function textNode(t: TextElement, digits: number, fonts?: FontSet): XmlNo
  * only as a whole: one per field) and its filters, in the parent's orientation as a symbol's.
  * `filter` makes the filter reference (OutputDoc.filter).
  */
-export function textField(t: TextElement, node: XmlNode | null, digits: number, filter: (fs: FilterData[], size: { w: number; h: number }) => string | null, warn: (m: string) => void): XmlNode | null {
+export function textField(
+	t: TextElement,
+	node: XmlNode | null,
+	digits: number,
+	filter: (fs: FilterData[], size: { w: number; h: number }) => string | null,
+	warn: (m: string) => void,
+): XmlNode | null {
 	if (!node) return node;
 	let out = node;
 	if (t.border) {
 		// the outline on the field's edge pixels (the matrix points inside the gutter)
-		const box = el("rect", { transform: fmtMatrix(t.matrix, digits) || undefined, x: fmt(0.5 - GUTTER, 2), y: fmt(0.5 - GUTTER, 2), width: fmt(t.width - 1, 2), height: fmt(t.height - 1, 2), fill: "#FFFFFF", stroke: "#000000" });
+		const box = el("rect", {
+			transform: fmtMatrix(t.matrix, digits) || undefined,
+			x: fmt(0.5 - GUTTER, 2),
+			y: fmt(0.5 - GUTTER, 2),
+			width: fmt(t.width - 1, 2),
+			height: fmt(t.height - 1, 2),
+			fill: "#FFFFFF",
+			stroke: "#000000",
+		});
 		out = el("g", {}, [box, out]);
 	}
 	const urls = [...new Set(t.runs.map((r) => r.url).filter((u): u is string => !!u))];

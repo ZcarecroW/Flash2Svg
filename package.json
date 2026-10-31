@@ -21,7 +21,7 @@
     "e2e:panel": "node scripts/e2e-panel.mjs",
     "package": "node scripts/package-zxp.mjs",
     "dev:install": "node scripts/dev-install.mjs",
-    "format": "prettier --write \"src/**/*.{ts,svelte,css}\" \"scripts/**/*.{mjs,ts}\" \"tests/**/*.ts\""
+    "format": "prettier --write \"src/**/*.{ts,svelte,css}\" \"scripts/**/*.{mjs,ts}\" \"tests/**/*.ts\" \"docs/guide/**/*.{mjs,js,css}\""
   },
   "devDependencies": {
     "@jsquash/avif": "^2.1.1",

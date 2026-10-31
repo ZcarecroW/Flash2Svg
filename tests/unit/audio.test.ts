@@ -9,7 +9,8 @@ import type { PProgram } from "../../src/player/format.ts";
 
 const codecs = createAudioCodecs(nodeWasmLoader());
 const asset = (name: string) => new Uint8Array(readFileSync(new URL(`../fixtures/assets/${name}`, import.meta.url)));
-const sine = (rate: number, hz: number, seconds: number, amp = 0.5) => Float32Array.from({ length: Math.round(rate * seconds) }, (_, i) => Math.sin((2 * Math.PI * hz * i) / rate) * amp);
+const sine = (rate: number, hz: number, seconds: number, amp = 0.5) =>
+	Float32Array.from({ length: Math.round(rate * seconds) }, (_, i) => Math.sin((2 * Math.PI * hz * i) / rate) * amp);
 
 /** What Animate exports: the WAV padded with silence to several times its length. */
 function padded(pcm: Pcm, total: number): Uint8Array {
@@ -21,14 +22,45 @@ const FILES: Record<string, Uint8Array> = {
 	"sounds/melody.mp3": asset("melody.mp3"),
 };
 const files = { readText: () => "", readBinary: (rel: string) => FILES[rel]! };
-const snd = (name: string, file: string, extra: Partial<SoundData> = {}): SoundData => ({ name, file, original: file.endsWith(".mp3") ? "mp3" : "raw", compression: "default", samples: 66150, ...extra });
-const frame = (sound: string, extra: Partial<FrameSound> = {}): FrameSound => ({ sound, sync: "event", loopMode: "repeat", loops: 1, effect: "none", ...extra });
+const snd = (name: string, file: string, extra: Partial<SoundData> = {}): SoundData => ({
+	name,
+	file,
+	original: file.endsWith(".mp3") ? "mp3" : "raw",
+	compression: "default",
+	samples: 66150,
+	...extra,
+});
+const frame = (sound: string, extra: Partial<FrameSound> = {}): FrameSound => ({
+	sound,
+	sync: "event",
+	loopMode: "repeat",
+	loops: 1,
+	effect: "none",
+	...extra,
+});
 function model(sounds: Record<string, SoundData>, uses: FrameSound[]): SceneModel {
 	return {
 		version: 1,
 		doc: { name: "t.fla", width: 100, height: 100, frameRate: 24, backgroundColor: "#ffffff" },
 		roots: ["scene:0"],
-		timelines: { "scene:0": { id: "scene:0", name: "Scene 1", kind: "scene", frameCount: 24, layers: [{ name: "a", type: "normal", visible: true, parent: -1, frameCount: 24, keyframes: uses.map((s, i) => ({ index: i, duration: 1, elements: [], sound: s })) }] } },
+		timelines: {
+			"scene:0": {
+				id: "scene:0",
+				name: "Scene 1",
+				kind: "scene",
+				frameCount: 24,
+				layers: [
+					{
+						name: "a",
+						type: "normal",
+						visible: true,
+						parent: -1,
+						frameCount: 24,
+						keyframes: uses.map((s, i) => ({ index: i, duration: 1, elements: [], sound: s })),
+					},
+				],
+			},
+		},
 		atlas: {},
 		bitmaps: {},
 		sounds,
@@ -89,7 +121,7 @@ describe("Ogg Opus", () => {
 		const packets = Array.from({ length: 120 }, (_, i) => new Uint8Array(100 + (i % 7) * 60).fill(i));
 		const ogg = oggOpus(packets, 2, 312, 44100, 114000);
 		const pages: { flags: number; granule: number; body: Uint8Array }[] = [];
-		for (let o = 0; o < ogg.length; ) {
+		for (let o = 0; o < ogg.length;) {
 			expect(String.fromCharCode(...ogg.subarray(o, o + 4))).toBe("OggS");
 			const v = new DataView(ogg.buffer, ogg.byteOffset + o);
 			const n = ogg[o + 26]!;
@@ -150,7 +182,10 @@ describe("sound encoding", () => {
 	});
 
 	it("writes Opus at half the bit rate, WAV per sound, and only the part the frames play", async () => {
-		const m = model({ chord: snd("chord.wav", "sounds/chord.wav") }, [frame("chord", { limits: { start: 22050, end: 44100 } }), frame("chord", { limits: { start: 11025, end: 33075 } })]);
+		const m = model({ chord: snd("chord.wav", "sounds/chord.wav") }, [
+			frame("chord", { limits: { start: 22050, end: 44100 } }),
+			frame("chord", { limits: { start: 11025, end: 33075 } }),
+		]);
 		const r = await encodeSounds(m, files, { soundFormat: "opus", soundBitrate: 96 }, codecs);
 		expect(r.report[0]).toMatchObject({ format: "opus", kbps: 48, seconds: 0.75 });
 		expect(r.model.sounds.chord).toMatchObject({ trim: 11025, seconds: 0.75, lead: 0 });
@@ -172,7 +207,10 @@ describe("sound encoding", () => {
 	it("scales the default bit rate down for low sample rates, not set ones", async () => {
 		const low = { rate: 22050, data: [sine(22050, 440, 1)] };
 		const lf = { readText: () => "", readBinary: () => writeWav(low) };
-		const m = model({ a: snd("a.wav", "sounds/a.wav", { samples: 44100 }), b: snd("b.wav", "sounds/b.wav", { samples: 44100, compression: "mp3", bitRate: 96 }) }, [frame("a"), frame("b")]);
+		const m = model(
+			{ a: snd("a.wav", "sounds/a.wav", { samples: 44100 }), b: snd("b.wav", "sounds/b.wav", { samples: 44100, compression: "mp3", bitRate: 96 }) },
+			[frame("a"), frame("b")],
+		);
 		const r = await encodeSounds(m, lf, {}, codecs);
 		expect(r.report.map((x) => x.kbps)).toEqual([32, 96]);
 		const o = await encodeSounds(m, lf, { soundFormat: "opus", soundBitrate: 64 }, codecs);

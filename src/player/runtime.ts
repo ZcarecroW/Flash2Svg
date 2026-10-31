@@ -139,7 +139,10 @@ class Clip {
 				if (l.mm === 2 || l.mx) mask.appendChild(el("rect", { ...area, fill: "#fff" }));
 				if (l.mx) mask.appendChild(el("rect", { x: "" + l.mx[0], y: "" + l.mx[1], width: "" + l.mx[2], height: "" + l.mx[3] }));
 				// inside an instance whose shapes inherit its alpha: the mask must not
-				const inner = el("g", { filter: `url(#${l.mm === 1 ? this.P.wf : l.mm === 2 ? this.P.bf : this.P.mf})`, ...(tl.ia ? { "fill-opacity": "1", "stroke-opacity": "1" } : {}) }) as SVGGElement;
+				const inner = el("g", {
+					filter: `url(#${l.mm === 1 ? this.P.wf : l.mm === 2 ? this.P.bf : this.P.mf})`,
+					...(tl.ia ? { "fill-opacity": "1", "stroke-opacity": "1" } : {}),
+				}) as SVGGElement;
 				mask.appendChild(inner);
 				this.node.appendChild(mask);
 				this.maskIds[i] = id;
@@ -602,7 +605,28 @@ class Inst {
 					this.owner.player.defs.appendChild(f);
 					this.colorWrap(id);
 				}
-				const v = [cv[0]! / 100, 0, 0, 0, cv[4]! / 255, 0, cv[1]! / 100, 0, 0, cv[5]! / 255, 0, 0, cv[2]! / 100, 0, cv[6]! / 255, 0, 0, 0, cv[3]! / 100, cv[7]! / 255];
+				const v = [
+					cv[0]! / 100,
+					0,
+					0,
+					0,
+					cv[4]! / 255,
+					0,
+					cv[1]! / 100,
+					0,
+					0,
+					cv[5]! / 255,
+					0,
+					0,
+					cv[2]! / 100,
+					0,
+					cv[6]! / 255,
+					0,
+					0,
+					0,
+					cv[3]! / 100,
+					cv[7]! / 255,
+				];
 				this.cm.setAttribute("values", v.map(r4).join(" "));
 			}
 		}
@@ -1530,7 +1554,18 @@ function alone(svg: Element): boolean {
 			const r = box.getBoundingClientRect();
 			const v = w.innerHeight;
 			const k = v - r.height;
-			const p = m === 2 ? w.scrollY / Math.max(1, w.document.documentElement.scrollHeight - v) : m === 1 ? (v - r.top) / (v + r.height) : k > 0 ? (k - r.top) / k : k < 0 ? r.top / k : r.top > 0 ? 0 : 1;
+			const p =
+				m === 2
+					? w.scrollY / Math.max(1, w.document.documentElement.scrollHeight - v)
+					: m === 1
+						? (v - r.top) / (v + r.height)
+						: k > 0
+							? (k - r.top) / k
+							: k < 0
+								? r.top / k
+								: r.top > 0
+									? 0
+									: 1;
 			scrub(player, Math.min(1, Math.max(0, p)) * dur);
 		};
 		const later = () => void (q ||= requestAnimationFrame(update));

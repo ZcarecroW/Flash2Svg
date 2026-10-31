@@ -57,11 +57,7 @@ function matricesOf(kf: Keyframe, own: Mat): Mat[] {
 	return s?.length ? [own, ...s.map((x) => x.matrix)] : [own];
 }
 
-export function bitmapScales(
-	model: SceneModel,
-	files: FileSource,
-	opts: { includeHiddenLayers?: boolean; includeGuides?: boolean } = {},
-): Scales {
+export function bitmapScales(model: SceneModel, files: FileSource, opts: { includeHiddenLayers?: boolean; includeGuides?: boolean } = {}): Scales {
 	const include = { includeHiddenLayers: opts.includeHiddenLayers ?? true, includeGuides: opts.includeGuides ?? false };
 	const memo = new Map<string, Scales>();
 	const fills = new Map<string, Scales>();

@@ -49,12 +49,36 @@ const linear = (n: number): Track => [
 
 /** A square (straight edges, some split) into a curved diamond. */
 const square: Contour = {
-	p: [[0, 0], [50, 0], [100, 0], [100, 100], [0, 100]],
-	c: [[25, 0], [75, 0], [100, 50], [50, 100], [0, 50]],
+	p: [
+		[0, 0],
+		[50, 0],
+		[100, 0],
+		[100, 100],
+		[0, 100],
+	],
+	c: [
+		[25, 0],
+		[75, 0],
+		[100, 50],
+		[50, 100],
+		[0, 50],
+	],
 };
 const diamond: Contour = {
-	p: [[50, -20], [90, 10], [120, 50], [50, 120], [-20, 50]],
-	c: [[75, -10], [110, 25], [95, 95], [5, 95], [10, 10]],
+	p: [
+		[50, -20],
+		[90, 10],
+		[120, 50],
+		[50, 120],
+		[-20, 50],
+	],
+	c: [
+		[75, -10],
+		[110, 25],
+		[95, 95],
+		[5, 95],
+		[10, 10],
+	],
 };
 
 /** Each frame's drawing as Animate writes it, with its own start point and direction. */
@@ -127,7 +151,22 @@ describe("shape tweens as morphs", () => {
 
 	it("keeps up when Animate leaves out an edge that is growing from nothing", () => {
 		// the square's split point grows into an edge of the diamond
-		const sq: Contour = { p: [[0, 0], [100, 0], [100, 0], [100, 100], [0, 100]], c: [[50, 0], [100, 0], [100, 50], [50, 100], [0, 50]] };
+		const sq: Contour = {
+			p: [
+				[0, 0],
+				[100, 0],
+				[100, 0],
+				[100, 100],
+				[0, 100],
+			],
+			c: [
+				[50, 0],
+				[100, 0],
+				[100, 50],
+				[50, 100],
+				[0, 50],
+			],
+		};
 		const n = 20;
 		const ratios = Array.from({ length: n }, (_, k) => (k / n) ** 3);
 		const arts = Array.from({ length: n }, (_, k) => art(`<path fill="#336699" d="${pathOf(blend(sq, diamond, ratios[k]!), k % 3)}"/>`));
@@ -199,7 +238,10 @@ describe("shape tweens as morphs", () => {
 	it("tells holes from their outline (same centre)", () => {
 		const n = 8;
 		const ratios = Array.from({ length: n }, (_, k) => k / n);
-		const shrink = (ct: Contour, s: number): Contour => ({ p: ct.p.map(([x, y]) => [50 + (x! - 50) * s, 50 + (y! - 50) * s]), c: ct.c.map(([x, y]) => [50 + (x! - 50) * s, 50 + (y! - 50) * s]) });
+		const shrink = (ct: Contour, s: number): Contour => ({
+			p: ct.p.map(([x, y]) => [50 + (x! - 50) * s, 50 + (y! - 50) * s]),
+			c: ct.c.map(([x, y]) => [50 + (x! - 50) * s, 50 + (y! - 50) * s]),
+		});
 		const ring = (r: number, k: number) => {
 			const outer = blend(square, diamond, r);
 			const hole = blend(shrink(square, 0.3), shrink(diamond, 0.5), r);

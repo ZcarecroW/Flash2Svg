@@ -25,7 +25,12 @@ await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
 const base = `http://127.0.0.1:${(server.address() as { port: number }).port}/`;
 const browser =
 	engine === "firefox"
-		? await firefox.launch({ channel: "moz-firefox", headless: true, firefoxUserPrefs: { "security.sandbox.content.level": 0, "media.autoplay.default": 0 }, env: { ...process.env, MOZ_DISABLE_CONTENT_SANDBOX: "1" } })
+		? await firefox.launch({
+				channel: "moz-firefox",
+				headless: true,
+				firefoxUserPrefs: { "security.sandbox.content.level": 0, "media.autoplay.default": 0 },
+				env: { ...process.env, MOZ_DISABLE_CONTENT_SANDBOX: "1" },
+			})
 		: engine === "webkit"
 			? await webkit.launch({ headless: true })
 			: await chromium.launch({ channel: engine, headless: true });
@@ -50,7 +55,8 @@ for (const name of ["f51-video", "f52-video-canvas"]) {
 		const file = `${name}-${format}.svg`;
 		writeFileSync(join(dir, file), r.files[0]!.svg);
 		for (const how of ["inline", "object"]) {
-			const body = how === "inline" ? r.files[0]!.svg.replace(/^<\?xml[^>]*>\s*/, "") : `<object data="${file}" type="image/svg+xml" width="400" height="300"></object>`;
+			const body =
+				how === "inline" ? r.files[0]!.svg.replace(/^<\?xml[^>]*>\s*/, "") : `<object data="${file}" type="image/svg+xml" width="400" height="300"></object>`;
 			writeFileSync(join(dir, "page.html"), `<!doctype html><body style="margin:0">${body}</body>`);
 			await page.goto(base + "page.html", { waitUntil: "domcontentloaded" });
 			await page.waitForTimeout(1500);

@@ -34,7 +34,13 @@ const model = (): SceneModel =>
 		sceneOrder: ["scene:0", "scene:1"],
 		timelines: {
 			"scene:0": scene("scene:0", "Scene 1", 10, { 9: 'gotoAndPlay(3, "Scene 2");' }, { 0: "intro" }),
-			"scene:1": scene("scene:1", "Scene 2", 5, { 4: "stop(); btn.addEventListener(MouseEvent.CLICK, f); function f(e:MouseEvent):void { prevScene(); }", 0: 'gotoAndStop("intro")' }, { 0: "intro" }),
+			"scene:1": scene(
+				"scene:1",
+				"Scene 2",
+				5,
+				{ 4: "stop(); btn.addEventListener(MouseEvent.CLICK, f); function f(e:MouseEvent):void { prevScene(); }", 0: 'gotoAndStop("intro")' },
+				{ 0: "intro" },
+			),
 		},
 		atlas: {},
 		bitmaps: {},

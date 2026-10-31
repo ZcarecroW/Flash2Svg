@@ -38,7 +38,19 @@ const initScript = () => {
 		stop = P.stop;
 	P.start = function (this: Src, when?: number, offset?: number) {
 		const b = this.buffer;
-		this.__i = log.starts.push({ at: this.context.currentTime, offset: offset ?? 0, loop: this.loop, ls: this.loopStart, le: this.loopEnd, dur: b?.duration ?? 0, ch: b?.numberOfChannels ?? 0, rate: this.playbackRate.value, stopIn: null, stopped: false }) - 1;
+		this.__i =
+			log.starts.push({
+				at: this.context.currentTime,
+				offset: offset ?? 0,
+				loop: this.loop,
+				ls: this.loopStart,
+				le: this.loopEnd,
+				dur: b?.duration ?? 0,
+				ch: b?.numberOfChannels ?? 0,
+				rate: this.playbackRate.value,
+				stopIn: null,
+				stopped: false,
+			}) - 1;
 		return start.call(this, when, offset);
 	};
 	P.stop = function (this: Src, when?: number) {
@@ -88,7 +100,18 @@ await page.addInitScript(initScript);
 
 interface SoundLog {
 	/** at: context time of the start; stopIn: scheduled stop after the start; stopped: stopped right away */
-	starts: { at: number; offset: number; loop: boolean; ls: number; le: number; dur: number; ch: number; rate: number; stopIn: number | null; stopped: boolean }[];
+	starts: {
+		at: number;
+		offset: number;
+		loop: boolean;
+		ls: number;
+		le: number;
+		dur: number;
+		ch: number;
+		rate: number;
+		stopIn: number | null;
+		stopped: boolean;
+	}[];
 	ramps: [number, number][];
 	decoded: number[];
 	failed: number;
@@ -159,8 +182,7 @@ type Api = {
 	muted: boolean;
 };
 
-const api = <T>(page: Page, fn: (a: Api) => T): Promise<T> =>
-	page.evaluate(`(${fn.toString()})(document.documentElement.flash2svg)`) as Promise<T>;
+const api = <T>(page: Page, fn: (a: Api) => T): Promise<T> => page.evaluate(`(${fn.toString()})(document.documentElement.flash2svg)`) as Promise<T>;
 const frame = () => api(page, (a) => a.currentFrame);
 const wait = (ms: number) => page.waitForTimeout(ms);
 
@@ -210,7 +232,11 @@ const near = (a: [number, number, number], b: [number, number, number]) => a.eve
 		await wait(50);
 		check("web animations: gotoAndPlay runs them again", (await states()).filter((s) => s === "running").length === n);
 		await api(page, (a) => a.stop());
-		check("web animations: stop() holds them at once", (await states()).every((s) => s !== "running"), (await states()).join(","));
+		check(
+			"web animations: stop() holds them at once",
+			(await states()).every((s) => s !== "running"),
+			(await states()).join(","),
+		);
 	}
 }
 {
@@ -243,7 +269,10 @@ const near = (a: [number, number, number], b: [number, number, number]) => a.eve
 	const b = build("f02-eases", {}, "offscreen");
 	if (b) {
 		const html = b.file.replace(/\.svg$/, ".html");
-		writeFileSync(html, `<!doctype html><body style="margin:0"><div style="height:3000px"></div>${readFileSync(b.file, "utf8").replace(/^<\?xml[^>]*>/, "")}</body>`);
+		writeFileSync(
+			html,
+			`<!doctype html><body style="margin:0"><div style="height:3000px"></div>${readFileSync(b.file, "utf8").replace(/^<\?xml[^>]*>/, "")}</body>`,
+		);
 		await page.setViewportSize({ width: 500, height: 400 });
 		await page.goto(pathToFileURL(html).href);
 		await wait(400);
@@ -498,7 +527,11 @@ const near1 = (a: number, b: number, tol: number) => Math.abs(a - b) <= tol;
 		check("sound: event sound starts on frame 1 (Web Audio)", n === 1, `${n} sounds`);
 		await api(page, (a) => (a.muted = true));
 		const l = await sndLog();
-		check("sound: muted stops playing sounds", l.starts.every((s) => s.stopped || s.stopIn !== null), JSON.stringify(l.starts));
+		check(
+			"sound: muted stops playing sounds",
+			l.starts.every((s) => s.stopped || s.stopIn !== null),
+			JSON.stringify(l.starts),
+		);
 		await wait(1200);
 		const m = (await sndLog()).starts.length;
 		check("sound: muted -> no new sounds after looping", m === n, `${m} sounds`);
@@ -517,7 +550,11 @@ for (const format of ["mp3", "opus"] as const) {
 	const chord = l.starts.find((s) => s.loop);
 	check(`${tag} looping event sound (repeat 2)`, !!chord && near1(chord.le - chord.ls, 1.5, 0.002) && near1(chord.stopIn ?? 0, 3, 0.05), JSON.stringify(chord));
 	check(`${tag} encoder delay skipped`, !!chord && chord.offset < 0.06 && near1(chord.ls, chord.offset, 0.03), JSON.stringify(chord));
-	check(`${tag} fade-in envelope ramps to full volume at 0.375 s`, l.ramps.some(([v, t]) => v === 1 && chord && near1(t - chord.at, 0.375, 0.05)), JSON.stringify(l.ramps));
+	check(
+		`${tag} fade-in envelope ramps to full volume at 0.375 s`,
+		l.ramps.some(([v, t]) => v === 1 && chord && near1(t - chord.at, 0.375, 0.05)),
+		JSON.stringify(l.ramps),
+	);
 	// the stream sound (melody, frames 1-24)
 	const melody = l.starts.find((s) => !s.loop && near1(s.dur, 2.04, 0.05));
 	check(`${tag} stream sound starts with the timeline`, !!melody && melody.offset < 0.1, JSON.stringify(l.starts));
@@ -534,7 +571,11 @@ for (const format of ["mp3", "opus"] as const) {
 	// frame 41: stop sound for the chord
 	await wait(500);
 	l = await sndLog();
-	check(`${tag} stop sound ends the chord`, !!l.starts.find((s) => s.loop && chord && s.at === chord.at)?.stopped, JSON.stringify(l.starts.filter((s) => s.loop)));
+	check(
+		`${tag} stop sound ends the chord`,
+		!!l.starts.find((s) => s.loop && chord && s.at === chord.at)?.stopped,
+		JSON.stringify(l.starts.filter((s) => s.loop)),
+	);
 	// frame 31 plays the beep, frame 37 the movie clip's: "start" sync, so not while it still plays (0.4 s)
 	const beeps = l.starts.filter((s) => s.ch === 1 && near1(s.dur, 0.4, 0.05) && s.at < 1.9);
 	check(`${tag} "start" sound (in a movie clip) not while the same sound plays`, beeps.length === 2, JSON.stringify(beeps));
@@ -549,7 +590,11 @@ for (const format of ["mp3", "opus"] as const) {
 	await api(page, (a) => a.pause());
 	l = await sndLog();
 	const held = l.starts.slice(before);
-	check(`${tag} pause holds the sounds`, held.every((s) => s.stopped || (s.stopIn !== null && s.stopIn < 0.2)), JSON.stringify(held));
+	check(
+		`${tag} pause holds the sounds`,
+		held.every((s) => s.stopped || (s.stopIn !== null && s.stopIn < 0.2)),
+		JSON.stringify(held),
+	);
 	await wait(300);
 	const n0 = l.starts.length;
 	await api(page, (a) => a.play());
@@ -560,7 +605,11 @@ for (const format of ["mp3", "opus"] as const) {
 	await api(page, (a) => (a.muted = true));
 	await wait(100);
 	l = await sndLog();
-	check(`${tag} muted stops everything`, l.starts.every((s) => s.stopped || s.stopIn !== null), JSON.stringify(l.starts.filter((s) => !s.stopped && s.stopIn === null)));
+	check(
+		`${tag} muted stops everything`,
+		l.starts.every((s) => s.stopped || s.stopIn !== null),
+		JSON.stringify(l.starts.filter((s) => !s.stopped && s.stopIn === null)),
+	);
 	// seeking doesn't play the sounds of the frames passed
 	// (unmuted, the stream sound comes back at its frame on the next tick)
 	await api(page, (a) => (a.muted = false));
@@ -675,10 +724,16 @@ for (const format of ["mp3", "opus"] as const) {
 			(document.documentElement as unknown as { flash2svg: Api }).flash2svg.gotoAndStop(1);
 			(document.querySelector('[data-name="btn_next"]') as SVGElement | null)?.focus();
 		});
-		const focused = await page.evaluate(() => (document.activeElement?.getAttribute("role") ?? "") + " " + (document.activeElement?.getAttribute("data-name") ?? ""));
+		const focused = await page.evaluate(
+			() => (document.activeElement?.getAttribute("role") ?? "") + " " + (document.activeElement?.getAttribute("data-name") ?? ""),
+		);
 		await page.keyboard.press("Enter");
 		await wait(250);
-		check("snippets: a button takes the focus, Enter clicks it", focused === "button btn_next" && (await frame()) > 2, `focus ${focused}, frame ${await frame()}`);
+		check(
+			"snippets: a button takes the focus, Enter clicks it",
+			focused === "button btn_next" && (await frame()) > 2,
+			`focus ${focused}, frame ${await frame()}`,
+		);
 	}
 }
 

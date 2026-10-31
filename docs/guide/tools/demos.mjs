@@ -31,7 +31,11 @@ if (!args.includes("--no-build")) {
 		failed = true;
 	}
 }
-const names = list ? list.split(",") : readdirSync(fla).filter((f) => f.endsWith(".fla")).map((f) => f.slice(0, -4));
+const names = list
+	? list.split(",")
+	: readdirSync(fla)
+			.filter((f) => f.endsWith(".fla"))
+			.map((f) => f.slice(0, -4));
 writeFileSync(join(fla, "extract.txt"), names.join(","));
 const r = await runJsfl(join(here, "extract-demos.jsfl"));
 const log = existsSync(join(fla, "extract-log.txt")) ? readFileSync(join(fla, "extract-log.txt"), "utf8") : "no log";

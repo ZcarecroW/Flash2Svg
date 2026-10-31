@@ -134,11 +134,7 @@ export interface ProgramLayer {
 /** Layer effects (advanced layers) are applied by wrapping the layer in a synced graphic. */
 const LAYER_FX = "#fx";
 
-export type FrameAction = (
-	| { type: "stop" }
-	| { type: "play" }
-	| { type: "goto"; target: number | string; play: boolean }
-) & {
+export type FrameAction = ({ type: "stop" } | { type: "play" } | { type: "goto"; target: number | string; play: boolean }) & {
 	/** Only on the passes over the frame (1 = first) in [from, before); 0 = open. */
 	passes?: { from: number; before: number };
 };
@@ -217,7 +213,8 @@ export function buildPrograms(model: SceneModel, opts: CompileOptions): CompileR
 	// alpha/erase only act inside a symbol placed with the "layer" blend (as in Animate)
 	const uses = new Map<string, InstanceItem[]>();
 	for (const id in programs)
-		for (const l of programs[id]!.layers) for (const it of l.items) if (it.kind === "instance") (uses.get(it.symbol) ?? uses.set(it.symbol, []).get(it.symbol)!).push(it);
+		for (const l of programs[id]!.layers)
+			for (const it of l.items) if (it.kind === "instance") (uses.get(it.symbol) ?? uses.set(it.symbol, []).get(it.symbol)!).push(it);
 	for (const id in model.timelines) {
 		wrapLayerEffects(programs, programs[id]!, model.timelines[id]!, warnings);
 		wrapRigs(programs, programs[id]!, opts);
@@ -225,7 +222,12 @@ export function buildPrograms(model: SceneModel, opts: CompileOptions): CompileR
 	for (const [id, list] of uses) {
 		const layered = list.filter((it) => it.blendMode === "layer");
 		const prog = programs[id];
-		if (!layered.length || !prog || !prog.layers.some((l) => l.items.some((it) => it.kind === "instance" && (it.blendMode === "alpha" || it.blendMode === "erase")))) continue;
+		if (
+			!layered.length ||
+			!prog ||
+			!prog.layers.some((l) => l.items.some((it) => it.kind === "instance" && (it.blendMode === "alpha" || it.blendMode === "erase")))
+		)
+			continue;
 		let target = prog;
 		if (layered.length < list.length) {
 			// also placed without "layer": those instances keep the plain symbol
@@ -262,7 +264,16 @@ export function markShapeAlpha(programs: Record<string, Program>, roots: string[
 		if (p)
 			for (const l of p.layers)
 				for (const it of l.items)
-					r |= it.kind === "bitmap" || it.kind === "video" ? 4 : it.kind === "text" ? 1 : it.kind === "art" ? paint(it.art) : it.kind === "artSeq" ? it.arts.reduce((a, x) => a | paint(x), 0) : paintsOf(it.symbol);
+					r |=
+						it.kind === "bitmap" || it.kind === "video"
+							? 4
+							: it.kind === "text"
+								? 1
+								: it.kind === "art"
+									? paint(it.art)
+									: it.kind === "artSeq"
+										? it.arts.reduce((a, x) => a | paint(x), 0)
+										: paintsOf(it.symbol);
 		known.set(id, r);
 		return r;
 	};
@@ -419,7 +430,13 @@ function wrapErase(programs: Record<string, Program>, prog: Program) {
 		programs[id] = { id, name: `${prog.name} ${pl.name}`, kind: "graphic", frameCount: prog.frameCount, layers: below, labels: [], actions: {} };
 		const maskIndex = 1e6 + n++;
 		const out: ProgramLayer[] = [
-			{ index: 1e6 + n++, name: `${pl.name} (cut)`, type: "normal", maskedBy: maskIndex, items: [syncedWrapper(prog, id, `${prog.id}|${pl.index}|${mode}${n}`, cut.bounds)] },
+			{
+				index: 1e6 + n++,
+				name: `${pl.name} (cut)`,
+				type: "normal",
+				maskedBy: maskIndex,
+				items: [syncedWrapper(prog, id, `${prog.id}|${pl.index}|${mode}${n}`, cut.bounds)],
+			},
 			{ index: maskIndex, name: pl.name, type: "mask", maskedBy: -1, maskMode: mode, maskBox: mode === "alpha" ? cut.bounds : undefined, items: [cut] },
 		];
 		if (upper.length) out.push({ ...pl, items: upper });
@@ -537,7 +554,11 @@ function buildProgram(tl: TimelineData, opts: CompileOptions, warnings: string[]
 		for (const kf of layer.keyframes) {
 			if (kf.label && kf.label.type !== "comment") prog.labels.push({ frame: kf.index, name: kf.label.name });
 			if (kf.script) {
-				const where = { zeroBased: doc.type !== "Flash", scene: tl.kind === "scene" ? tl.name : undefined, warn: (m: string) => warnings.push(`${tl.name}, frame ${kf.index + 1}: ${m}`) };
+				const where = {
+					zeroBased: doc.type !== "Flash",
+					scene: tl.kind === "scene" ? tl.name : undefined,
+					warn: (m: string) => warnings.push(`${tl.name}, frame ${kf.index + 1}: ${m}`),
+				};
 				// mouse handlers out first: their jumps aren't frame actions
 				const parts = splitScript(kf.script, { ...where, frame: kf.index });
 				const acts = parseActions(parts.frameCode, where);
@@ -826,10 +847,26 @@ function buildLayerItems(tl: TimelineData, layer: LayerData, li: number, opts: C
 					if (e.atlas) items.push({ kind: "art", uid: uid(`a${kf.index}.${slot}`), start: kf.index, end: kEnd, slot, art: e.atlas });
 					break;
 				case "bitmap":
-					items.push({ kind: "bitmap", uid: uid(`b${kf.index}.${slot}`), start: kf.index, end: kEnd, slot, bitmap: (e as BitmapElement).bitmap, matrix: (e as BitmapElement).matrix });
+					items.push({
+						kind: "bitmap",
+						uid: uid(`b${kf.index}.${slot}`),
+						start: kf.index,
+						end: kEnd,
+						slot,
+						bitmap: (e as BitmapElement).bitmap,
+						matrix: (e as BitmapElement).matrix,
+					});
 					break;
 				case "text":
-					items.push({ kind: "text", uid: uid(`t${kf.index}.${slot}`), start: kf.index, end: kEnd, slot, element: e as TextElement, art: (e as TextElement).atlas });
+					items.push({
+						kind: "text",
+						uid: uid(`t${kf.index}.${slot}`),
+						start: kf.index,
+						end: kEnd,
+						slot,
+						element: e as TextElement,
+						art: (e as TextElement).atlas,
+					});
 					break;
 				case "video":
 					items.push({ kind: "video", uid: uid(`v${kf.index}.${slot}`), start: kf.index, end: kEnd, slot, element: e as VideoElement });
@@ -925,15 +962,7 @@ export function colorProps(c: ColorTransform | null): Record<ColorProp, number> 
 		: { rP: 100, gP: 100, bP: 100, aP: 100, rA: 0, gA: 0, bA: 0, aA: 0 };
 }
 
-function finishInstance(
-	item: InstanceItem,
-	kfs: Keyframe[],
-	slot: number,
-	opts: CompileOptions,
-	warnings: string[],
-	tl: TimelineData,
-	layer: LayerData,
-) {
+function finishInstance(item: InstanceItem, kfs: Keyframe[], slot: number, opts: CompileOptions, warnings: string[], tl: TimelineData, layer: LayerData) {
 	// Per-frame truth over the span
 	const n = item.end - item.start;
 	const truth: FrameTruth[] = new Array(n);
@@ -1012,9 +1041,9 @@ function finishInstance(
 		}
 
 		for (const group of ["position", "rotation", "scale", "color"] as const) {
-			const props = (group === "color" ? COLOR_PROPS : TRANSFORM_PROPS).filter(
-				(p) => GROUP_OF[p] === group && p !== "tpx" && p !== "tpy",
-			) as (TransformProp | ColorProp)[];
+			const props = (group === "color" ? COLOR_PROPS : TRANSFORM_PROPS).filter((p) => GROUP_OF[p] === group && p !== "tpx" && p !== "tpy") as (
+				TransformProp | ColorProp
+			)[];
 			const values = (p: TransformProp | ColorProp) => (group === "color" ? cv.map((c) => c[p as ColorProp]) : tv.map((t) => t[p as TransformProp]));
 			const tracks = (p: TransformProp | ColorProp) => (group === "color" ? color[p as ColorProp] : transform[p as TransformProp]);
 			const endOf = (p: TransformProp | ColorProp) => (group === "color" ? endC?.[p as ColorProp] : endT?.[p as TransformProp]);
@@ -1101,7 +1130,11 @@ function shapeRatio(tw: TweenData, start: number, dur: number): Track {
 	const custom = ce ? ((ce.all ?? Object.values(ce)[0]) as EaseCurve | undefined) : undefined;
 	const curve = custom && custom.length >= 4 ? custom : classicEase(tw.easing);
 	const end = start + dur;
-	if (isLinear(curve)) return [{ t: start, v: 0, ease: "linear" }, { t: end, v: 1, ease: "hold" }];
+	if (isLinear(curve))
+		return [
+			{ t: start, v: 0, ease: "linear" },
+			{ t: end, v: 1, ease: "hold" },
+		];
 	const keys: Track = easePieces(curve, { clampY: true }).map((p) => ({ t: start + p.x0 * dur, v: p.y0, ease: p.bezier }));
 	keys.push({ t: end, v: 1, ease: "hold" });
 	return keys;

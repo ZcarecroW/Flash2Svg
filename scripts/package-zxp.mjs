@@ -80,7 +80,12 @@ const n = zipDir(ext, zipOut);
 console.log(`zip: ${zipOut} (${n} files)`);
 
 // ---------------------------------------------------------------- signed ZXP
-const candidates = [process.env.ZXPSIGNCMD, join(repo, "tools", "zxpsign", "ZXPSignCmd.exe"), join(repo, "tools", "ZXPSignCmd.exe"), join(repo, "tools", "ZXPSignCmd")].filter(Boolean);
+const candidates = [
+	process.env.ZXPSIGNCMD,
+	join(repo, "tools", "zxpsign", "ZXPSignCmd.exe"),
+	join(repo, "tools", "ZXPSignCmd.exe"),
+	join(repo, "tools", "ZXPSignCmd"),
+].filter(Boolean);
 const signer = candidates.find((c) => existsSync(c));
 if (!signer) {
 	console.log("ZXPSignCmd not found: skipping the signed .zxp (set ZXPSIGNCMD to build it).");

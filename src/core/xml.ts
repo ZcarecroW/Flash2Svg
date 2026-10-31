@@ -160,7 +160,14 @@ export function serialize(node: XmlChild, opts: SerializeOptions = {}, depth = 0
 	if (typeof node === "string") return escapeText(node);
 	// already serialized markup (see OutputDoc.toString)
 	if (node.name === "#raw") return String(node.children[0] ?? "");
-	if (node.name === "#cdata") return "<![CDATA[" + xmlChars(String(node.children[0] ?? "")).split("]]>").join("]]]]><![CDATA[>") + "]]>";
+	if (node.name === "#cdata")
+		return (
+			"<![CDATA[" +
+			xmlChars(String(node.children[0] ?? ""))
+				.split("]]>")
+				.join("]]]]><![CDATA[>") +
+			"]]>"
+		);
 	const ind = opts.pretty ? "\n" + "  ".repeat(depth) : "";
 	let s = ind + "<" + node.name;
 	for (const k in node.attrs) s += " " + k + '="' + escapeAttr(node.attrs[k]!) + '"';

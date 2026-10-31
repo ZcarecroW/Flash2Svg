@@ -198,7 +198,8 @@ export function bake(ctx: Context, rootId: string, opts: BakeOptions): BakeResul
 	const rootFrames = new Int32Array(H);
 	const cycle = frames.length - intro;
 	for (let t = 0; t < H; t++)
-		rootFrames[t] = t < frames.length ? frames[t]! : intro ? frames[intro + ((t - intro) % cycle)]! : loop ? frames[t % frames.length]! : frames[frames.length - 1]!;
+		rootFrames[t] =
+			t < frames.length ? frames[t]! : intro ? frames[intro + ((t - intro) % cycle)]! : loop ? frames[t % frames.length]! : frames[frames.length - 1]!;
 
 	const baker = new Baker(ctx, opts.smooth, H, opts.morph, opts.turning);
 	const root = baker.timeline(prog, rootFrames, 0);
@@ -376,9 +377,7 @@ class Baker {
 				}
 				const node: BakedInstance = { kind: "instance", item, vis, uid: item.uid, transform, color, filters, child };
 				if (item.symbolType === "button" && childProg && childProg.frameCount > 1) {
-					node.states = [1, 2]
-						.filter((f) => f < childProg.frameCount)
-						.map((f) => this.timeline(childProg, new Int32Array(this.H).fill(f), depth + 1));
+					node.states = [1, 2].filter((f) => f < childProg.frameCount).map((f) => this.timeline(childProg, new Int32Array(this.H).fill(f), depth + 1));
 				}
 				bl.nodes.push(node);
 				return;

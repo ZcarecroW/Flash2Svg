@@ -66,8 +66,10 @@ try {
 	ws.onmessage = (m) => {
 		const msg = JSON.parse(m.data);
 		// the panel's own console and uncaught errors, for the log
-		if (msg.method === "Runtime.exceptionThrown") console.log("panel exception:", msg.params.exceptionDetails.exception?.description ?? msg.params.exceptionDetails.text);
-		if (msg.method === "Runtime.consoleAPICalled" && /error|warn/.test(msg.params.type)) console.log(`panel console.${msg.params.type}:`, msg.params.args.map((a) => a.value ?? a.description).join(" "));
+		if (msg.method === "Runtime.exceptionThrown")
+			console.log("panel exception:", msg.params.exceptionDetails.exception?.description ?? msg.params.exceptionDetails.text);
+		if (msg.method === "Runtime.consoleAPICalled" && /error|warn/.test(msg.params.type))
+			console.log(`panel console.${msg.params.type}:`, msg.params.args.map((a) => a.value ?? a.description).join(" "));
 		const w = waiting.get(msg.id);
 		if (w) {
 			waiting.delete(msg.id);
@@ -126,14 +128,20 @@ try {
 		console.log(`panel: ${name}`);
 	};
 	// opens a demo (the panel follows Animate's document events)
-	const docOpen = (n) => js(`await new Promise((r) => window.__adobe_cep__.evalScript(${JSON.stringify(`fl.closeAll(false); fl.openDocument(${JSON.stringify(uri(demo(n)))}); "ok"`)}, r)); await new Promise((r) => setTimeout(r, 1500)); return true;`);
+	const docOpen = (n) =>
+		js(
+			`await new Promise((r) => window.__adobe_cep__.evalScript(${JSON.stringify(`fl.closeAll(false); fl.openDocument(${JSON.stringify(uri(demo(n)))}); "ok"`)}, r)); await new Promise((r) => setTimeout(r, 1500)); return true;`,
+		);
 	const exportNow = async () => {
 		const r = await js(
 			`const resultHead = () => [...document.querySelectorAll("section h2 button")].find((x) => x.textContent.includes("Result")); try { await __shot.until(() => { const b = document.querySelector("button.primary"); return b && !b.disabled; }, 20000); } catch { return "Export stays disabled: " + document.querySelector("header").innerText; } await __shot.click("button.primary", "Export"); try { await __shot.until(() => document.querySelector(".progress") || resultHead() || document.querySelector(".error"), 5000); } catch { return "the click didn't start an export: " + document.querySelector("header").innerText; } try { await __shot.until(() => !document.querySelector(".progress") && (resultHead() || document.querySelector(".error")), 90000); } catch { return "no result after 90 s; the panel shows: " + document.querySelector("main").innerText.replace(/\\s+/g, " ").slice(0, 400); } if (document.querySelector(".error")) return document.querySelector(".error").textContent; await __shot.section("Result", true); return "";`,
 		);
 		if (r) {
 			// what Animate shows (a dialog would hold the panel's scripts)
-			spawnSync("powershell", ["-NoProfile", "-File", join(repo, "scripts", "lib", "watch-animate.ps1"), String(animate.pid)], { encoding: "utf8", timeout: 6000 });
+			spawnSync("powershell", ["-NoProfile", "-File", join(repo, "scripts", "lib", "watch-animate.ps1"), String(animate.pid)], {
+				encoding: "utf8",
+				timeout: 6000,
+			});
 			throw new Error(`The export failed in the panel: ${r} (pictures of Animate's dialogs, if any: %TEMP%\\flash2svg-dialogs)`);
 		}
 	};
@@ -142,7 +150,15 @@ try {
 	await docOpen("hero");
 
 	// 1. as it opens: Output and Animation
-	for (const [s, o] of [["Output", true], ["Animation", true], ["Graphics", false], ["Images", false], ["Sounds", false], ["Advanced", false]]) await js(`await __shot.section(${JSON.stringify(s)}, ${o}); return true;`);
+	for (const [s, o] of [
+		["Output", true],
+		["Animation", true],
+		["Graphics", false],
+		["Images", false],
+		["Sounds", false],
+		["Advanced", false],
+	])
+		await js(`await __shot.section(${JSON.stringify(s)}, ${o}); return true;`);
 	await js(`await __shot.click("button[role=radio]", "SMIL"); return true;`);
 	await shot("panel");
 	// 2. after an export: the result with its preview and size overview
@@ -159,17 +175,23 @@ try {
 	await shot("panel-advanced");
 	await js(`await __shot.section("Graphics", false); await __shot.section("Advanced", false); return true;`);
 	await docOpen("photo");
-	await js(`await __shot.section("Output", true); await __shot.click("button[role=radio]", "CSS"); await __shot.section("Images", true); const b = [...document.querySelectorAll("button.link")].find((x) => x.textContent.includes("Reload list")); if (b) b.click(); return true;`);
+	await js(
+		`await __shot.section("Output", true); await __shot.click("button[role=radio]", "CSS"); await __shot.section("Images", true); const b = [...document.querySelectorAll("button.link")].find((x) => x.textContent.includes("Reload list")); if (b) b.click(); return true;`,
+	);
 	await sleep(1500);
 	await shot("panel-images");
 	await js(`await __shot.section("Images", false); await __shot.section("Output", false); return true;`);
 	await docOpen("sound");
-	await js(`await __shot.section("Output", true); await __shot.click("button[role=radio]", "JS player"); await __shot.section("Sounds", true); const b = [...document.querySelectorAll("button.link")].find((x) => x.textContent.includes("Reload list")); if (b) b.click(); return true;`);
+	await js(
+		`await __shot.section("Output", true); await __shot.click("button[role=radio]", "JS player"); await __shot.section("Sounds", true); const b = [...document.querySelectorAll("button.link")].find((x) => x.textContent.includes("Reload list")); if (b) b.click(); return true;`,
+	);
 	await sleep(1500);
 	await shot("panel-sounds");
 	await js(`await __shot.section("Sounds", false); return true;`);
 	// 5. start modes: On scroll shows its range
-	await js(`await __shot.section("Output", true); await __shot.click("button[role=radio]", "CSS"); await __shot.section("Animation", true); await __shot.select("Start", "scroll"); return true;`);
+	await js(
+		`await __shot.section("Output", true); await __shot.click("button[role=radio]", "CSS"); await __shot.section("Animation", true); await __shot.select("Start", "scroll"); return true;`,
+	);
 	await shot("panel-scroll");
 	await js(`await __shot.select("Start", "auto"); return true;`);
 
@@ -198,11 +220,16 @@ $bmp.Save(${JSON.stringify(join(raw, "animate.png"))}, [System.Drawing.Imaging.I
 		{ encoding: "utf8" },
 	);
 	console.log(`animate window: ${ps.stdout.trim() || ps.stderr.trim()}`);
-
 } finally {
 	// quit: the panel closes itself first (also after an error half-way)
 	if (ws?.readyState === 1) {
-		ws.send(JSON.stringify({ id: 1e6, method: "Runtime.evaluate", params: { expression: `window.__adobe_cep__.evalScript("fl.closeAll(false); fl.quit(false)", () => {}); window.__adobe_cep__.closeExtension(); true` } }));
+		ws.send(
+			JSON.stringify({
+				id: 1e6,
+				method: "Runtime.evaluate",
+				params: { expression: `window.__adobe_cep__.evalScript("fl.closeAll(false); fl.quit(false)", () => {}); window.__adobe_cep__.closeExtension(); true` },
+			}),
+		);
 		await new Promise((r) => {
 			const t = setTimeout(r, 30000);
 			animate.on("exit", () => (clearTimeout(t), r()));

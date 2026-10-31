@@ -177,7 +177,11 @@ for (const name of ["f27-stop", "f28-onestop", "f30-banner"]) {
 	await p.wait(300);
 	const c = await p.samples();
 	const stopped = c[c.length - 1]?.s === "still19" && c[c.length - 1]?.f === 18;
-	check("f47-snippets: buttons switch the states", held && played && stopped, `held ${held} (${[...new Set(a.map((x) => x.s + ":" + x.f))].join(" ")}), played ${played} (last ${b[b.length - 1]?.s} ${b[b.length - 1]?.f}), stopped ${stopped} (${c[c.length - 1]?.s} ${c[c.length - 1]?.f})`);
+	check(
+		"f47-snippets: buttons switch the states",
+		held && played && stopped,
+		`held ${held} (${[...new Set(a.map((x) => x.s + ":" + x.f))].join(" ")}), played ${played} (last ${b[b.length - 1]?.s} ${b[b.length - 1]?.f}), stopped ${stopped} (${c[c.length - 1]?.s} ${c[c.length - 1]?.f})`,
+	);
 }
 
 await browser.close();

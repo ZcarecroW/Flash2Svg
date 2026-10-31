@@ -78,7 +78,8 @@ describe("scale modes", () => {
 		expect(root({ scale: "stretch" })).toMatch(/preserveAspectRatio="none"/);
 		// with the stage colour: the letterbox too
 		expect(root({ scale: "fit", includeBackground: true })).toMatch(/style="background:#[0-9A-Fa-f]{6}"/);
-		for (const format of ["css", "player", "static"] as const) expect(/<svg [^>]*>/.exec(compile("f03-transforms", { format, scale: "fill" }).files[0]!.svg)![0], format).toMatch(/slice/);
+		for (const format of ["css", "player", "static"] as const)
+			expect(/<svg [^>]*>/.exec(compile("f03-transforms", { format, scale: "fill" }).files[0]!.svg)![0], format).toMatch(/slice/);
 	});
 });
 

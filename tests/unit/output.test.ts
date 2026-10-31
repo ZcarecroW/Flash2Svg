@@ -14,7 +14,10 @@ function compile(name: string, settings: Partial<ExportSettings>) {
 describe("CSS output", () => {
 	it("gives every @keyframes an explicit end when it does not repeat", () => {
 		// f12-labels ends on stop(); f02-eases is forced to play once
-		for (const [name, loop] of [["f12-labels", "auto"], ["f02-eases", "never"]] as const) {
+		for (const [name, loop] of [
+			["f12-labels", "auto"],
+			["f02-eases", "never"],
+		] as const) {
 			const svg = compile(name, { format: "css", loop }).files[0]!.svg;
 			const blocks = svg.match(/@keyframes [^{]+\{(?:[^{}]*\{[^}]*\})*\}/g) ?? [];
 			expect(blocks.length).toBeGreaterThan(0);
@@ -200,7 +203,9 @@ describe("shared gradient stops", () => {
 	it("leaves gradients with different stops alone", () => {
 		for (const format of ["smil", "static"] as const) {
 			let n = 0;
-			const svg = build(format, (file) => art(`<stop offset="0" stop-color="#${(n++).toString(16).padStart(6, "0")}"/><stop offset="1" stop-color="#FFFFFF"/>`)(file));
+			const svg = build(format, (file) =>
+				art(`<stop offset="0" stop-color="#${(n++).toString(16).padStart(6, "0")}"/><stop offset="1" stop-color="#FFFFFF"/>`)(file),
+			);
 			expect(svg, format).not.toMatch(/<linearGradient[^>]*xlink:href/);
 		}
 	});

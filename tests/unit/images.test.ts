@@ -17,7 +17,15 @@ const FILES: Record<string, Uint8Array> = {
 	"bitmaps/pattern.png": asset("pattern.png"),
 };
 const files = { readText: () => "", readBinary: (rel: string) => FILES[rel]! };
-const bmp = (name: string, file: string, extra: Partial<BitmapData> = {}): BitmapData => ({ name, file, width: 1, height: 1, smoothing: true, compression: "lossless", ...extra });
+const bmp = (name: string, file: string, extra: Partial<BitmapData> = {}): BitmapData => ({
+	name,
+	file,
+	width: 1,
+	height: 1,
+	smoothing: true,
+	compression: "lossless",
+	...extra,
+});
 /** A one-frame scene showing the bitmaps with these matrices (default: at their own size). */
 const sceneOf = (bitmaps: Record<string, BitmapData>, matrices: Record<string, Mat> = {}) =>
 	({
@@ -42,7 +50,12 @@ const sceneOf = (bitmaps: Record<string, BitmapData>, matrices: Record<string, M
 							{
 								index: 0,
 								duration: 1,
-								elements: Object.keys(bitmaps).map((id) => ({ kind: "bitmap", bitmap: id, matrix: matrices[id] ?? [1, 0, 0, 1, 0, 0], bounds: { left: 0, top: 0, width: 1, height: 1 } })),
+								elements: Object.keys(bitmaps).map((id) => ({
+									kind: "bitmap",
+									bitmap: id,
+									matrix: matrices[id] ?? [1, 0, 0, 1, 0, 0],
+									bounds: { left: 0, top: 0, width: 1, height: 1 },
+								})),
 							},
 						],
 					},
@@ -63,7 +76,15 @@ const model = sceneOf({
 
 const pixels = async (png: Uint8Array) => Array.from((await codecs.decodePng(png)).data);
 const magic = (b: Uint8Array) =>
-	b[0] === 0x89 && b[1] === 0x50 ? "png" : b[0] === 0xff && b[1] === 0xd8 ? "jpeg" : String.fromCharCode(...b.slice(8, 12)) === "WEBP" ? "webp" : String.fromCharCode(...b.slice(4, 12)) === "ftypavif" ? "avif" : "?";
+	b[0] === 0x89 && b[1] === 0x50
+		? "png"
+		: b[0] === 0xff && b[1] === 0xd8
+			? "jpeg"
+			: String.fromCharCode(...b.slice(8, 12)) === "WEBP"
+				? "webp"
+				: String.fromCharCode(...b.slice(4, 12)) === "ftypavif"
+					? "avif"
+					: "?";
 
 describe("bitmap encoding", () => {
 	it("follows Animate's settings: photos as its JPEG (imported JPEGs unchanged), the rest exact", async () => {
@@ -81,7 +102,12 @@ describe("bitmap encoding", () => {
 	});
 
 	it("writes the chosen formats, and per-bitmap modes override Animate's", async () => {
-		const r = await encodeImages(model, files, { imageLossy: "avif", imageLossless: "webp", imageModes: { "photo.jpg": "lossless", "glow.png": "lossless" } }, codecs);
+		const r = await encodeImages(
+			model,
+			files,
+			{ imageLossy: "avif", imageLossless: "webp", imageModes: { "photo.jpg": "lossless", "glow.png": "lossless" } },
+			codecs,
+		);
 		const fmt = (id: string) => magic(r.files.readBinary(r.model.bitmaps[id]!.file));
 		expect(fmt("photo")).toBe("webp"); // lossless now
 		expect(fmt("icon")).toBe("webp");
