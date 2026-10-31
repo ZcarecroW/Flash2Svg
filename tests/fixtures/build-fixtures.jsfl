@@ -2192,6 +2192,28 @@
 		extendAll(24);
 	});
 
+	// ---------------------------------------------------------------- f50: colour effects on bitmaps (Lottie: Fill effect)
+	build("f50-bitmap-tint", function () {
+		newDoc("timeline", 480, 240, 24);
+		doc.importFile(root + "/assets/checker.png", true);
+		var item = null;
+		for (var i = 0; i < lib.items.length; i++) if (lib.items[i].itemType == "bitmap") item = lib.items[i];
+		if (!item) throw new Error("bitmap import failed");
+		symbol("pic", "movie clip", function () { lib.addItemToDocument({ x: 0, y: 0 }, item.name); });
+		function colour(e, mode, fn) { e.colorMode = mode; fn(e); }
+		layer("tint");
+		colour(place("pic", 60, 60, 0), "tint", function (e) { e.tintColor = "#FF0000"; e.tintPercent = 60; });
+		layer("brighter");
+		colour(place("pic", 180, 60, 0), "brightness", function (e) { e.brightness = 50; });
+		layer("darker");
+		colour(place("pic", 300, 60, 0), "brightness", function (e) { e.brightness = -60; });
+		layer("advanced");
+		colour(place("pic", 420, 60, 0), "advanced", function (e) { e.colorRedPercent = 30; e.colorGreenPercent = 100; e.colorBlueAmount = 80; });
+		layer("tween");
+		classicTween("pic", 60, 170, 23, function (e) { e.x = 300; e.colorMode = "tint"; e.tintColor = "#0033FF"; e.tintPercent = 100; });
+		extendAll(24);
+	});
+
 	FLfile.write(outDir + "/build-log.txt", log.join("\n"));
 	fl.closeAll(false);
 	fl.quit(false);

@@ -83,7 +83,16 @@ const { url, server } = await startServer(repo);
 const browser = await chromium.launch({ channel: browserArg, headless: true });
 const page = await openHarness(browser, url);
 
-// a stop() while movie clips keep running: the intro once, then the tail, never past the last frame
+// Time from one wrap of the playhead to the next (ms), or NaN with fewer than two wraps.
+function wrapPeriod(s: Sample[], state?: string): number {
+	const at = s.filter((x, i) => i && (!state || (x.s === state && s[i - 1]!.s === state)) && x.f < s[i - 1]!.f).map((x) => x.t);
+	return at.length >= 2 ? (at[at.length - 1]! - at[0]!) / (at.length - 1) : NaN;
+}
+// within 5 %: a loop a frame short (dotLottie plays [0, op − 1]) is 2–4 % off at 24–48 frames
+const near = (ms: number, want: number) => !Number.isFinite(ms) || Math.abs(ms - want) <= want * 0.05;
+
+// a stop() while movie clips keep running: the intro once, then the tail, each frame its full
+// time (the .lottie holds the last frame once more: frame `frames` is shown at the wrap)
 for (const name of ["f27-stop", "f28-onestop", "f30-banner"]) {
 	const e = exportLottie(name, {});
 	const p = await run(page, e.bytes, e.w, e.h);
@@ -100,11 +109,12 @@ for (const name of ["f27-stop", "f28-onestop", "f30-banner"]) {
 		first === "intro" &&
 			!!tailSpan &&
 			!!introSpan &&
-			introSpan[1] < e.tail &&
+			introSpan[1] <= e.tail + 1e-6 &&
 			tailSpan[0] >= e.tail - 0.01 &&
-			tailSpan[1] <= e.frames - 1 + 1e-6 &&
-			(period > 2000 || wraps > 0),
-		`intro ${introSpan?.join("..")} tail ${tailSpan?.join("..")} of ${e.frames} frames (tail from ${e.tail}), ${wraps} wrap(s)`,
+			tailSpan[1] <= e.frames + 1e-6 &&
+			(period > 2000 || wraps > 0) &&
+			near(wrapPeriod(s, "tail"), period),
+		`intro ${introSpan?.join("..")} tail ${tailSpan?.join("..")} of ${e.frames} frames (tail from ${e.tail}), ${wraps} wrap(s), loop ${wrapPeriod(s, "tail").toFixed(0)} of ${period.toFixed(0)} ms`,
 	);
 }
 
@@ -130,13 +140,13 @@ for (const name of ["f27-stop", "f28-onestop", "f30-banner"]) {
 {
 	const e = exportLottie("f02-eases", { loop: "always" });
 	const p = await run(page, e.bytes, e.w, e.h);
-	await p.wait((e.frames / e.fps) * 1000 * 1.6);
+	await p.wait((e.frames / e.fps) * 1000 * 3.2);
 	const s = await p.samples();
 	const wraps = s.filter((x, i) => i && x.f < s[i - 1]!.f).length;
 	check(
 		"f02-eases: loops",
-		s.every((x) => x.s === "play") && wraps >= 1 && Math.max(...s.map((x) => x.f)) <= e.frames - 1,
-		`${wraps} wrap(s), max frame ${Math.max(...s.map((x) => x.f))}`,
+		s.every((x) => x.s === "play") && wraps >= 1 && Math.max(...s.map((x) => x.f)) <= e.frames && near(wrapPeriod(s), (e.frames / e.fps) * 1000),
+		`${wraps} wrap(s), max frame ${Math.max(...s.map((x) => x.f))}, loop ${wrapPeriod(s).toFixed(0)} of ${((e.frames / e.fps) * 1000).toFixed(0)} ms`,
 	);
 	const once = exportLottie("f02-eases", { loop: "never" });
 	const q = await run(page, once.bytes, once.w, once.h);
@@ -145,7 +155,7 @@ for (const name of ["f27-stop", "f28-onestop", "f30-banner"]) {
 	const end = t[t.length - 1]?.f ?? -1;
 	check(
 		"f02-eases: plays once and stays on the last frame",
-		!t.some((x, i) => i && x.f < t[i - 1]!.f) && Math.abs(end - (once.frames - 1)) < 1e-6,
+		!t.some((x, i) => i && x.f < t[i - 1]!.f) && Math.abs(end - once.frames) < 1e-6,
 		`ends at ${end} of ${once.frames}`,
 	);
 }

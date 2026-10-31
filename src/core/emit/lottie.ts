@@ -671,12 +671,15 @@ class DrawingBuilder {
 			h = num(n.attrs.height, img.h);
 		const tm = concat([w / img.w, 0, 0, h / img.h, num(n.attrs.x), num(n.attrs.y)], m);
 		const ks = matrixProps(tm, Math.max(this.digits, 3));
-		// a colour transform can't recolour a bitmap in Lottie: its alpha still applies
+		// a tint or brightness recolours the bitmap by a Fill effect; other colour effects: its alpha only
 		const paint = this.o.matte ? null : this.o.paint;
-		if (paint && tintsColour(paint)) this.w.warn("Colour effects on bitmaps can't be shown in Lottie: only their alpha");
+		const tint = paint && tintsColour(paint) ? tintOf(paint) : null;
+		if (paint && tintsColour(paint) && !tint) this.w.warn("Colour effects on bitmaps other than tint and brightness can't be shown in Lottie: only their alpha");
 		const a = this.o.matte ? 1 : opacity * applyCT(paint, [0, 0, 0, 1])[3];
 		if (a < 1 || this.o.matte) ks.o = st(round(a * 100, 2));
-		this.layers.push({ json: { ty: 2, refId: img.id, ks }, box: transformBox({ x0: 0, y0: 0, x1: img.w, y1: img.h }, tm) });
+		const json: Json = { ty: 2, refId: img.id, ks };
+		if (tint) json.ef = [fill(st([...tint[0].map((v) => round(v, 4)), 1]), st(round(tint[1], 4)))];
+		this.layers.push({ json, box: transformBox({ x0: 0, y0: 0, x1: img.w, y1: img.h }, tm) });
 	}
 
 	/** A nested <svg> viewport: its content scaled from the viewBox and clipped (by a precomp). */
@@ -1154,11 +1157,15 @@ class LottieWriter {
 				return vis.map(([a, e]) => {
 					const ks = matrixProps(tm, Math.max(this.digits, 3));
 					const p = mode.opaque ? null : mode.paint;
+					const json: Json = { ty: 2, refId: img.id, ip: a, op: e, st: 0, ks };
 					if (p) {
-						if (p.values.some(tintsColour)) this.warn("Colour effects on bitmaps can't be shown in Lottie: only their alpha");
+						// tint and brightness: a Fill effect (keyed like the paint)
+						const ef = p.values.some(tintsColour) ? paintFill(p, a, e) : null;
+						if (ef) json.ef = [ef];
+						else if (p.values.some(tintsColour)) this.warn("Colour effects on bitmaps other than tint and brightness can't be shown in Lottie: only their alpha");
 						ks.o = paintOpacity(p, a, e);
 					}
-					return { json: { ty: 2, refId: img.id, ip: a, op: e, st: 0, ks }, box };
+					return { json, box };
 				});
 			}
 			case "instance":
@@ -2154,6 +2161,69 @@ function blurEffects(per: Spread[], times: number[]): Json[] {
 	return per.some((s) => Math.abs(s.sx - s.sy) > 1e-3) ? [one(2, (s) => s.sx), one(3, (s) => s.sy)] : [one(1, (s) => s.sx)];
 }
 
+/**
+ * Flash's tint (equal colour multipliers m, offsets colour × (1 − m)) and brightness (towards
+ * white or black) as [colour 0..1, amount 1 − m]; null for other colour effects. No change: amount 0.
+ */
+function tintOf(ct: CT): [number[], number] | null {
+	if (ct.length === 20) return null;
+	const m = ct[0]!;
+	if (Math.abs(ct[1]! - m) > 1e-3 || Math.abs(ct[2]! - m) > 1e-3 || m > 1 + 1e-6) return null;
+	const k = 1 - m;
+	if (k < 1e-4) return [0, 1, 2].every((i) => Math.abs(ct[i + 4]!) < 1e-4) ? [[0, 0, 0], 0] : null;
+	const c = [0, 1, 2].map((i) => ct[i + 4]! / k);
+	if (c.some((v) => v < -2e-3 || v > 1 + 2e-3)) return null;
+	return [c.map((v) => Math.min(1, Math.max(0, v))), k];
+}
+
+/** Fill: the layer's pixels in one colour, mixed in by `opacity` 0..1 (lottie-web, ThorVG, Skottie). */
+function fill(color: Json, opacity: Json): Json {
+	return {
+		ty: 21,
+		nm: "Fill",
+		en: 1,
+		ef: [
+			{ ty: 10, nm: "Fill Mask", v: st(0) },
+			{ ty: 7, nm: "All Masks", v: st(0) },
+			{ ty: 2, nm: "Color", v: color },
+			{ ty: 7, nm: "Invert", v: st(0) },
+			{ ty: 0, nm: "Horizontal Feather", v: st(0) },
+			{ ty: 0, nm: "Vertical Feather", v: st(0) },
+			{ ty: 0, nm: "Opacity", v: opacity },
+		],
+	};
+}
+
+/** A paint that only tints (or brightens) over [s, e) as a Fill effect keyed on its grid; else null. */
+function paintFill(p: Paint, s: number, e: number): Json | null {
+	const g = paintConstant(p) ? { times: [s], eases: ["hold" as Ease] } : paintGrid(p, s, e);
+	const tints = g.times.map((t) => tintOf(paintAt(p, t)));
+	if (tints.some((x) => !x) || tints.every((x) => x![1] === 0)) return null;
+	// where there is no tint (amount 0) the colour of a tinted neighbour, so it doesn't fade through black
+	let last = tints.find((x) => x![1] > 0)![0];
+	const cols = tints.map((x) => (x![1] > 0 ? (last = x![0]) : last).map((v) => round(v, 4)));
+	const amounts = tints.map((x) => round(x![1], 4));
+	const keyed = (vals: (number | number[])[]): Json =>
+		vals.every((v) => JSON.stringify(v) === JSON.stringify(vals[0]))
+			? st(vals[0])
+			: {
+					a: 1,
+					k: g.times.map((t, i) => {
+						const v = vals[i]!;
+						const kf: Json = { t: round(t, 4), s: Array.isArray(v) ? v : [v] };
+						if (i + 1 < g.times.length) {
+							if (g.eases[i] === "hold") kf.h = 1;
+							else setEase(kf, [g.eases[i]!], null);
+						}
+						return kf;
+					}),
+				};
+	return fill(
+		keyed(cols.map((c) => [...c, 1])),
+		keyed(amounts),
+	);
+}
+
 /** Tritone: grey levels 1, 1/2 and 0 to colours (straight in between, in sRGB values; all three players). */
 function tritone([hi, mid, lo]: Json[]): Json {
 	return {
@@ -2491,6 +2561,18 @@ export function renderLottie(ctx: Context, rootId: string, s: ExportSettings, im
 		assets: w.assets,
 		layers: out,
 	};
+	// dotLottie players (dotlottie-rs) play an animation over [0, op − 1] including its last frame,
+	// a marker over [tm, tm + dr]: a loop would run a frame short, its last frame shown only at the
+	// wrap. One more frame in the .lottie, holding the last one, gives every frame its full time.
+	const seam = images === "dotlottie" && H > 1;
+	if (seam) {
+		const extend = (layers: unknown) => {
+			if (Array.isArray(layers)) for (const l of layers as Json[]) if (typeof l.op === "number" && l.op >= H) l.op = H + 1;
+		};
+		extend(out);
+		for (const a of w.assets as Json[]) extend(a.layers);
+		animation.op = H + 1;
+	}
 	const markers = labelsAsMarkers(ctx, rootId, frames, H);
 	// segments for the state machine (statemachine.ts) and for players told to play markers
 	const segments: LottieResult["segments"] = {};
@@ -2502,11 +2584,10 @@ export function renderLottie(ctx: Context, rootId: string, s: ExportSettings, im
 	};
 	const tail = horizon.loop ? 0 : horizon.tail;
 	if (tail) {
-		// dotLottie players (dotlottie-rs) play a marker's last frame too, [tm, tm + dr], as they play
-		// a whole animation over [0, op - 1]; lottie-web plays [tm, tm + dr)
-		const end = images === "dotlottie" ? 1 : 0;
-		segments.intro = add("intro", 0, tail - end);
-		segments.tail = add("loop", tail, H - tail - end);
+		// lottie-web plays [tm, tm + dr); dotlottie-rs [tm, tm + dr], which with the frame added
+		// above (the tail's last frame held once more) gives the intro and each loop their full time
+		segments.intro = add("intro", 0, tail);
+		segments.tail = add("loop", tail, H - tail);
 		if (images !== "dotlottie")
 			w.warn(
 				`The root timeline stops (stop()) while movie clips keep running: play the marker "${segments.intro}" once, then "${segments.tail}" in a loop (a .lottie file's state machine does that)`,

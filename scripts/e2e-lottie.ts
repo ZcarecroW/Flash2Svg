@@ -45,6 +45,9 @@ const TOLERANCE: Record<string, number> = {
 	"f45-morph/dotlottie": 0.026,
 	// ... and filters scaled-down bitmaps a little differently
 	"f44-bitmap-sizes/dotlottie": 0.002,
+	// an advanced colour effect on a bitmap (unequal multipliers) has no Lottie effect: only its alpha
+	// (warned); tint and brightness are Fill effects and match
+	"f50-bitmap-tint": 0.014,
 };
 const limit = (name: string, player: string) => TOLERANCE[`${name}/${player}`] ?? TOLERANCE[name] ?? threshold;
 const list = args.find((a) => !a.startsWith("--"));

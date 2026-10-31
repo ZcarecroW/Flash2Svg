@@ -313,7 +313,7 @@ lottie-ios / lottie-android.
   than the others; dotLottie (ThorVG) blurs narrower (two of its three box-blur passes; bevels
   show it most), draws
   thin seams between the tiles of a repeating bitmap fill and faded edges where a clipped bitmap
-  fill stretches its edge pixels, smooths pixel art, and its loops run about a frame short.
+  fill stretches its edge pixels and smooths pixel art.
 - Size: Lottie JSON is wordier than SVG, but compresses as well — the 46 test documents take
   1462 KB as Lottie and 1086 KB as SMIL, gzipped 379 KB and 372 KB; as .lottie archives 413 KB.
 - Speed: players draw a precomposition again for each use, so built filters cost render time

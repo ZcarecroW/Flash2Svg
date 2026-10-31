@@ -191,6 +191,14 @@
   SVG compressed by the server is smaller: the 46 test documents as SMIL 1070 KB, .svgz 372 KB,
   Brotli 341 KB. Node's zlib packs it (the CLI and the panel; 3–8 % smaller and faster than the
   JavaScript fallback).
+- **Tinted bitmaps in Lottie.** Tint and brightness on a bitmap become Lottie's Fill effect (the
+  colour mixed in by the amount, keyed when it changes); lottie-web, dotLottie and Skottie draw it
+  like our SVG. Other colour effects on bitmaps (unequal multipliers) still show only their alpha
+  (warned). Test document f50.
+- **dotLottie loops keep their length.** dotLottie players play an animation over [0, op − 1]
+  including its last frame, so every loop ran a frame short (its last frame only flashed at the
+  wrap). A .lottie now holds the last frame once more and its intro / loop markers cover their
+  full length: measured, a 48-frame loop takes 2000 ms of 2000 (before: a frame less).
 - **Fonts for dynamic and input text.** The installed fonts are embedded as WOFF2 subsets of the
   characters used (`@font-face`, HarfBuzz's subsetter and a WOFF2 encoder, both WebAssembly, loaded
   only when a document has such text; no hinting: Arial for 24 characters 14.3 → 2.6 KB), so the

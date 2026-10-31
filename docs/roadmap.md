@@ -140,8 +140,8 @@ support (sources below) before starting a package.
 - ✅ dotLottie state machine (`s/playback.json`): follow the timeline (intro once, then the tail), loop or play once; start automatically, on click, on hover or from script (event `play`), poster until then, restart on the next click. Markers `intro` / `loop` also in Lottie JSON. dotlottie-rs plays marker ends inclusive: markers in .lottie end a frame earlier. `scripts/e2e-statemachine.ts`.
 - ✅ Lottie preview in the panel: lottie-web or dotLottie (separate bundles loaded on demand), state machine with clicks; checked inside Animate by the panel self-test.
 - ✅ The filters without a Lottie effect, built from track mattes, blend modes and blur / Tritone effects: inner, knockout and *hide object* shadows and glows, strong or unevenly blurred ones, bevels (exact clamped difference: lighten, then difference), gradient glows and bevels (Tritone lookup at 0, 50, 100 %); strength as a colour-dodge gain. Exact in lottie-web and Skottie except gradients with other stops.
-- ⬜ Colour effects on bitmaps: a tint (equal multipliers) is Lottie's Fill effect (colour, opacity = amount).
-- ⬜ A seamless loop seam in dotLottie (its loops run about a frame short): a closing key one frame past the end.
+- ✅ Colour effects on bitmaps: tint and brightness as Lottie's Fill effect (colour, opacity = amount, keyed), exact in all three players (f50); other colour effects alpha only (warned).
+- ✅ A seamless loop seam in dotLottie: one more frame holding the last (op + 1, layers that run to the end extended), markers over their full length; loop periods measured exact.
 - ⬜ Labels as states (package 5), buttons as state machine interactions: needs a bake of every part a handler can jump to (today Lottie follows the first pass like SMIL).
 - ⬜ Shared tile grids for frame-by-frame bitmap fills (each frame repeats its tiles today).
 
