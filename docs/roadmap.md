@@ -1,7 +1,7 @@
 # Roadmap: making Flash2SVG more powerful
 
 Master plan from the technology research of 2026-10-30 (SVG animation tools, formats and browser
-support). Status markers: ✅ done · 🚧 in progress · ⬜ open. Re-check versions and browser
+support). Status markers: ✅ done · 🚧 in progress · ⬜ open · ❌ measured, not built (the reason is given). Re-check versions and browser
 support (sources below) before starting a package.
 
 ## Findings
@@ -41,7 +41,7 @@ support (sources below) before starting a package.
 | # | Package | Benefit | Effort | Status |
 |---|---|---|---|---|
 | 1 | Media encoding settings | very high | medium | ✅ images, downscaling, audio, budget view, fonts, video components |
-| 2 | Player: compositor animations, pause off-screen, reduced motion | high | small | ✅ (canvas renderer ⬜) |
+| 2 | Player: compositor animations, pause off-screen, reduced motion | high | small | ✅ (canvas renderer measured, not needed) |
 | 3 | Shape tweens as path morphing (SMIL and player) | very high for shape tweens | medium–high | ✅ (also gradients that turn) |
 | 4 | CSS: `linear()` easing, individual transform properties | medium | small–medium | ✅ (also decimals from the displayed size, .svgz) |
 | 5 | Interactivity: triggers, scroll, label state machine | high | medium | ✅ |
@@ -92,7 +92,7 @@ support (sources below) before starting a package.
   - Heavy test scene (150 tweened instances of a detailed drawing): 1.2 fps → ~110 fps.
 - ✅ Pause automatically when not visible (IntersectionObserver, `visibilitychange`); players with sound on keep playing out of view.
 - ✅ `prefers-reduced-motion`: SMIL (still copy of the poster frame), CSS (`animation: none`), player (poster frame until a click). In `<img>` the browser applies the system setting (DevTools emulation doesn't reach images).
-- ⬜ Optional canvas renderer for very large scenes (with the compositor animations less needed).
+- ❌ Optional canvas renderer for very large scenes: measured first (Edge, frame cap off) with the stress test's layers multiplied: 40 / 320 / 1280 / 2560 tweened instances 86 / 83 / 79 / 59 fps, ~5000 at 25 fps. A canvas renderer would have to redo masks, filters, blend modes, gradients and text (a second SVG renderer in the runtime) for scenes beyond what Animate documents usually hold: not built.
 
 ### 3. Shape tweens as path morphing
 - ✅ SMIL `<animate attributeName="d">` (plus colours, gradients, stroke widths) and the player blend one drawing instead of a drawing per frame. CSS keeps frames because Safari lacks CSS `d`.
