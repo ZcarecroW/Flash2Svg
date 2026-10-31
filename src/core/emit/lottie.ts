@@ -20,7 +20,8 @@ import type { Context } from "../context.ts";
 import { evalBezier, subBezier } from "../easing.ts";
 import { apply, concat, invert, isIdentity, parseTransform } from "../geom.ts";
 import { imageMime } from "../mime.ts";
-import type { FilterData, Mat } from "../model.ts";
+import type { FilterData, Mat, TextElement } from "../model.ts";
+import { hasFieldExtras } from "./text.ts";
 import { channelNumbers, channelText, templateNodes, type MorphChannel } from "../morph.ts";
 import { fromProps, toProps, type ColorProp, type TransformProp } from "../program.ts";
 import { valueAt, type Ease, type Track } from "../tracks.ts";
@@ -1157,8 +1158,9 @@ class LottieWriter {
 			case "art":
 				return this.art(n.art, vis, mode);
 			case "text": {
-				const art = (n.item as { art?: string }).art;
-				return art ? this.art(art, vis, mode) : [];
+				const it = n.item as { art?: string; element?: TextElement };
+				if (it.element && hasFieldExtras(it.element)) this.warn("Text field borders, filters and links aren't exported to Lottie (the text is)");
+				return it.art ? this.art(it.art, vis, mode) : [];
 			}
 			case "video":
 				this.warn("Videos aren't exported to Lottie (Lottie has no video layer)");
@@ -2607,7 +2609,7 @@ export function renderLottie(ctx: Context, rootId: string, s: ExportSettings, im
 		segments.tail = add("loop", tail, H - tail);
 		if (images !== "dotlottie")
 			w.warn(
-				`The root timeline stops (stop()) while movie clips keep running: play the marker "${segments.intro}" once, then "${segments.tail}" in a loop (a .lottie file's state machine does that)`,
+				`${horizon.intro ? "The timeline loops back to a frame after its first (a goto)" : "The root timeline stops (stop()) while movie clips keep running"}: play the marker "${segments.intro}" once, then "${segments.tail}" in a loop (a .lottie file's state machine does that)`,
 			);
 	}
 	if (images === "dotlottie" && (s.begin === "click" || s.begin === "hover" || s.begin === "manual") && H > 1) segments.poster = add("poster", s.posterFrame === "last" ? H - 1 : 0, 1);

@@ -30,7 +30,7 @@ import { OutputDoc, svgRoot, withAcc } from "./document.ts";
 import { blendHides, blendSubtract, blendWhite, colorMatrix, cssBlendMode, isAlphaOnly, matrixString, type ColorMatrixValues } from "./filters.ts";
 import { alignTracks, encodeKeyframes, groupFrames, type MKey } from "./keyframes.ts";
 import { StaticRenderer } from "./static.ts";
-import { outlineText, textNode } from "./text.ts";
+import { outlineText, textField, textNode } from "./text.ts";
 import { scrollCss, scrollScript, visibleScript, type ScrollRange } from "./triggers.ts";
 import { clickLink } from "../snippets.ts";
 import { playheadFrame } from "./timing.ts";
@@ -103,6 +103,11 @@ export function renderAnimated(ctx: Context, rootId: string, opts: AnimateOption
  * decimals keep it under a third of a frame a day; durations that end (.5 s) stay short.
  */
 const loopSeconds = (ticks: number, fps: number) => fmt(ticks / fps, 7) + "s";
+
+function gcd(a: number, b: number): number {
+	while (b) [a, b] = [b, a % b];
+	return a;
+}
 
 class Writer {
 	readonly ctx: Context;
@@ -274,6 +279,7 @@ class Writer {
 			case "text": {
 				const it = n.item as Extract<typeof n.item, { kind: "text" }>;
 				content = this.opts.textAsOutlines || it.element.textType === "static" ? (it.art ? outlineText(it.element, this.doc.useArt(it.art)) : null) : textNode(it.element, this.ctx.precision.space(this.space), this.doc.fonts);
+				content = textField(it.element, content, this.ctx.precision.space(this.space), (fs, size) => this.doc.filter(fs, null, { x: 1, y: 1 }, this.warn, size), this.warn);
 				break;
 			}
 			case "video":
@@ -374,6 +380,20 @@ class Writer {
 			if (track.every((k) => keys.get((k.t + P < H - 1e-9 ? k.t + P : k.t + P - H).toFixed(6)) === sig(k))) return P;
 		}
 		return 0;
+	}
+
+	/** The period (dividing the horizon, shorter than it) all `tracks` repeat with, or 0. */
+	commonPeriod(tracks: GTrack[]): number {
+		if (!this.repeat || this.tail) return 0;
+		let P = 1;
+		for (const tr of tracks) {
+			if (isConstantTrack(tr)) continue;
+			const p = this.periodOf(tr);
+			if (!p) return 0;
+			P = (P / gcd(P, p)) * p;
+			if (P >= this.H || this.H % P) return 0;
+		}
+		return P > 1 ? P : 0;
 	}
 
 	/** Timing of an animation that repeats every `P` ticks, in step with the horizon. */
@@ -632,24 +652,26 @@ class Writer {
 		if (poster && !X.length) still.push("transform:scale(1)");
 		this.windows().forEach(([from, len, tail], w) => {
 			const extra: string[] = w ? [] : [...still];
-			const anims: { keys: MKey[]; group: Slot[] }[] = [];
+			const anims: { keys: MKey[]; group: Slot[]; period: number }[] = [];
 			for (const group of groups) {
-				const wt = group.map((s) => this.windowTracks(s.tracks, from, tail));
+				// repeating all through the looping horizon: once, repeating on its own (see smil)
+				const period = this.commonPeriod(group.flatMap((s) => s.tracks));
+				const wt = group.map((s) => (period ? s.tracks.map((tr) => sliceTrack(tr, 0, period)) : this.windowTracks(s.tracks, from, tail)));
 				const flatTracks = wt.flat();
-				const keys = flatTracks.every(isConstantTrack) ? null : (alignTracks(flatTracks) ?? mergeTracks(flatTracks, len));
-				if (keys) anims.push({ keys, group });
+				const keys = flatTracks.every(isConstantTrack) ? null : (alignTracks(flatTracks) ?? mergeTracks(flatTracks, period || len));
+				if (keys) anims.push({ keys, group, period });
 				else if (!w) extra.push(...group.map((s, k) => s.body(valuesAt(s, wt[k]!))));
 			}
-			if (!anims.length && extra.length) anims.push({ keys: [{ t: 0, v: [], ease: "hold" }], group: [] });
-			anims.forEach(({ keys, group }, k) => {
+			if (!anims.length && extra.length) anims.push({ keys: [{ t: 0, v: [], ease: "hold" }], group: [], period: 0 });
+			anims.forEach(({ keys, group, period }, k) => {
 				const counts = group.map((s) => s.tracks.length);
 				const body = (v: number[]) => {
 					let o = 0;
 					return group.map((s, j) => s.body(v.slice(o, (o += counts[j]!)))).join(";");
 				};
-				const enc = encodeKeyframes(keys, len, { digits: group.flatMap((s) => s.digits), body, extra: k === 0 && extra.length ? extra.join(";") : undefined });
+				const enc = encodeKeyframes(keys, period || len, { digits: group.flatMap((s) => s.digits), body, extra: k === 0 && extra.length ? extra.join(";") : undefined });
 				if (!enc) return;
-				this.cssRule(g, this.cssName(g), enc.frames, enc.timing, tail);
+				this.cssRule(g, this.cssName(g), enc.frames, enc.timing, tail, period);
 			});
 		});
 		return g;
@@ -803,8 +825,21 @@ class Writer {
 		return t;
 	}
 
-	/** SMIL animations for `tracks`, one per window (`make` gets values/keyTimes + timing). */
+	/**
+	 * SMIL animations for `tracks`, one per window (`make` gets values/keyTimes + timing). Tracks
+	 * that repeat all through a looping horizon (a movie clip's loop, unrolled over the root's) are
+	 * written once, repeating on their own.
+	 */
 	private smil(tracks: GTrack[], fmtV: (v: number[]) => string, make: (a: Record<string, string>) => XmlNode): XmlNode[] {
+		const P = this.commonPeriod(tracks);
+		if (P) {
+			const a = this.smilValues(
+				tracks.map((tr) => sliceTrack(tr, 0, P)),
+				fmtV,
+				P,
+			);
+			return a ? [make({ ...a, ...this.periodTiming(P) })] : [];
+		}
 		const out: XmlNode[] = [];
 		for (const [from, len, tail] of this.windows()) {
 			const a = this.smilValues(this.windowTracks(tracks, from, tail), fmtV, len);
@@ -891,6 +926,15 @@ class Writer {
 	private cssAnimation(node: XmlNode, prop: string, tracks: GTrack[], fmtV: (v: number[]) => string, digits: number[]) {
 		// an animation that holds what the element shows anyway (the poster) is left out
 		const poster = `${prop}:${fmtV(tracks.map((tr) => trackValueAt(tr, this.posterTick)))}`;
+		// repeating all through the looping horizon: once, repeating on its own (see smil)
+		const P = this.commonPeriod(tracks);
+		if (P) {
+			const wt = tracks.map((tr) => sliceTrack(tr, 0, P));
+			const keys = alignTracks(wt) ?? mergeTracks(wt, P);
+			const enc = keys && encodeKeyframes(keys, P, { digits, body: (v) => `${prop}:${fmtV(v)}` });
+			if (enc && !enc.constant) this.cssRule(node, this.cssName(node), enc.frames, enc.timing, false, P);
+			return;
+		}
 		this.windows().forEach(([from, len, tail]) => {
 			const wt = this.windowTracks(tracks, from, tail);
 			if (wt.every(isConstantTrack)) return;
@@ -939,7 +983,8 @@ class Writer {
 	/** Animations of each class, in the order they were added. */
 	private ruleOf = new Map<string, string[]>();
 
-	private cssRule(node: XmlNode, name: string, frames: string, timing = "linear", tail = false) {
+	/** `period`: ticks of an animation that repeats on its own, in step with the horizon (see smil). */
+	private cssRule(node: XmlNode, name: string, frames: string, timing = "linear", tail = false, period = 0) {
 		this.keyframes.push(`@keyframes ${name}{${frames}}`);
 		const cls = this.cssClass(node);
 		// one pass: the default iteration count (1) is left out
@@ -949,7 +994,9 @@ class Writer {
 		// the tail loops after the first pass; until then the first animation (fill: both) holds
 		const decl = tail
 			? `${name} ${loopSeconds(this.H - this.tail, this.fps)} ${timing} ${fmt((this.opts.delay ?? 0) + this.tail / this.fps, 4)}s infinite`
-			: `${name} ${this.dur} ${timing}${delay}${iter}${fill}`;
+			: period
+				? `${name} ${loopSeconds(period, this.fps)} ${timing}${delay} infinite`
+				: `${name} ${this.dur} ${timing}${delay}${iter}${fill}`;
 		let list = this.ruleOf.get(cls);
 		if (!list) {
 			this.ruleOf.set(cls, (list = []));

@@ -31,6 +31,8 @@ const TOLERANCE: Record<string, number> = {
 	// Lottie has no subtract blend: drawn as multiply by the inverted colours (warned); a solid box
 	// at 60 % over a dark ground shows it (1.22 % in all three players, 2026-10-31)
 	"f32-blend2": 0.013,
+	// a text field's border and drop shadow aren't in Lottie (warned; the text is): 0.89 %
+	"f56-text3": 0.01,
 	// a gradient glow with four stops, looked up at 0, 50 and 100 % (warned)
 	"f46-filters3": 0.0013,
 	// dotLottie (ThorVG) blurs narrower: bevels, which subtract two blurred copies, show it most

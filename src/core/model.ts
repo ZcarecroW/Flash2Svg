@@ -195,6 +195,10 @@ export interface TextElement extends ElementBase {
 	multiline: boolean;
 	selectable: boolean;
 	acc?: AccInfo;
+	/** "Show border around text" (dynamic and input text): a white field with a black outline. */
+	border?: boolean;
+	/** Filters on the field (drop shadow, glow...). */
+	filters?: FilterData[];
 }
 
 export interface TextRun {
@@ -207,6 +211,9 @@ export interface TextRun {
 	alignment: string;
 	letterSpacing: number;
 	lineSpacing: number;
+	/** A link set on the run (Properties › Options › Link), and its target window. */
+	url?: string;
+	target?: string;
 }
 
 export interface UnsupportedElement extends ElementBase {

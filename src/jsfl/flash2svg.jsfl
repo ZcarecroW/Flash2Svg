@@ -698,27 +698,34 @@
 			return s;
 		}
 		if (type == "text" || type == "tlfText") {
+			var textType = el.textType || "static";
+			var multiline = true, selectable = false, name = "", password = false, border = false;
+			if (textType != "static") {
+				// "multiline no wrap" and "password" break lines only where the text does
+				try { multiline = el.lineType == "multiline"; } catch (e) {}
+				try { password = el.lineType == "password"; } catch (e) {}
+				try { name = el.name || ""; } catch (e) {}
+				try { border = !!el.border; } catch (e) {}
+			}
+			// a password field shows a star per character, and its text never leaves Animate
+			var mask = function (s) { return password ? String(s).replace(/[^\r\n]/g, "*") : s; };
 			var runs = [];
 			try {
 				for (var r = 0; r < el.textRuns.length; r++) {
 					var run = el.textRuns[r];
 					var a = run.textAttrs;
-					runs.push({
-						text: run.characters,
+					var tr = {
+						text: mask(run.characters),
 						face: a.face, size: a.size, fillColor: a.fillColor,
 						bold: !!a.bold, italic: !!a.italic,
 						alignment: a.alignment, letterSpacing: a.letterSpacing || 0, lineSpacing: a.lineSpacing || 0
-					});
+					};
+					if (a.url) { tr.url = a.url; if (a.target) tr.target = a.target; }
+					runs.push(tr);
 				}
 			} catch (e) {}
-			var textType = el.textType || "static";
-			var multiline = true, selectable = false, name = "";
-			if (textType != "static") {
-				try { multiline = el.lineType != "single line"; } catch (e) {}
-				try { name = el.name || ""; } catch (e) {}
-			}
 			try { selectable = !!el.selectable; } catch (e) {}
-			return {
+			var txt = {
 				kind: "text",
 				textType: textType,
 				atlas: "",
@@ -726,13 +733,17 @@
 				name: name,
 				width: round(el.width),
 				height: round(el.height),
-				text: el.getTextString ? el.getTextString() : "",
+				text: mask(el.getTextString ? el.getTextString() : ""),
 				runs: runs,
 				multiline: multiline,
 				selectable: selectable,
 				acc: accOf(el) || undefined,
 				bounds: boundsOf(el)
 			};
+			if (border) txt.border = true;
+			var tf = filtersOf(get(el, "filters", []));
+			if (tf.length) txt.filters = tf;
+			return txt;
 		}
 		warn("Unsupported element type: " + type);
 		return { kind: "unsupported", what: String(type), bounds: boundsOf(el) };
@@ -1213,6 +1224,24 @@
 			}
 		}
 		if (j.what == "text") {
+			var fields = at.layers[0].frames[k].elements, blank = [];
+			for (var ti = 0; ti < fields.length; ti++) {
+				var tx = fields[ti];
+				if (tx.elementType != "text") continue;
+				var str = tx.getTextString ? tx.getTextString() : "";
+				// nothing to draw (and Animate can't break a field of spaces apart)
+				if (/^\s*$/.test(str)) blank.push(tx);
+				else if (tx.textType != "static" && tx.lineType == "password") {
+					// its outlines show stars, as the field does
+					tx.lineType = "single line";
+					tx.setTextString(str.replace(/[^\r\n]/g, "*"));
+				}
+			}
+			if (blank.length) {
+				job.atlasDoc.selectNone();
+				job.atlasDoc.selection = blank;
+				job.atlasDoc.deleteSelection();
+			}
 			// Animate writes text as SVG fonts, which browsers ignore: convert to outlines.
 			for (var pass = 0; pass < 2; pass++) {
 				var left = at.layers[0].frames[k].elements;

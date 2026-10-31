@@ -189,6 +189,12 @@ embedding (OS/2 *fsType*) or that aren't installed are left to the viewer's font
 warning. *Embed fonts* (in *Text*) / `--no-embed-fonts` turns it off; *Dynamic text as outlines*
 draws Animate's outlines instead. The size overview shows the fonts as their own part.
 
+Text fields keep their other settings too: *Show border around text* (a white field with a black
+outline), filters (a drop shadow on a heading, in the stage's orientation like a symbol's) and a
+link set on the text (*Properties › Options › Link*: the field becomes a link). Password input
+fields show a star per character — their text never leaves Animate. A named field carries its
+instance name as `data-name`, for page scripts.
+
 ### Accessibility
 
 What is set in Animate's *Accessibility* panel goes into every SVG format: the document's name
@@ -232,8 +238,8 @@ const anim = svgElement.flash2svg;
 anim.play(); anim.pause(); anim.stop();
 anim.gotoAndPlay("intro");      // frame label or 1-based frame number
 anim.gotoAndStop(12);
-anim.seek(1.5);                  // seconds, deterministic
-anim.speed = 0.5; anim.muted = true;
+anim.seek(1.5);                  // seconds from the start, deterministic (far ahead too)
+anim.speed = 0.5; anim.muted = true;   // speed: a positive number
 anim.clip("myInstance")?.gotoAndStop("open");   // named movie clip instances
 anim.on("frame", (e) => console.log(e.frame, e.label));
 anim.on("end", () => {});
@@ -407,9 +413,9 @@ write it to `tests/out/<name>/model/`.)
 - 9-slice: an animated scale is sliced frame by frame for symbols that only contain drawings;
   named instances and symbols with nested symbols keep normal scaling then (warned). Nested
   movie clips, bitmaps and text inside 9-slice symbols scale normally, as in Flash.
-- Only the current scene is exported (Flash plays all scenes in a row): a warning tells you when
-  the document has more than one. Put scenes into one timeline, or export them one by one.
-  Frame scripts that jump into another scene are left out.
+- *Source: Current timeline* exports the scene you are in (a warning tells you when the document
+  has more than one; jumps into other scenes are then left out); *All scenes in a row* plays them
+  one after the other as Flash does.
 - In SMIL/CSS output a movie clip that is visible for the whole timeline keeps running across
   the loop; one that appears and disappears restarts each time it appears (like Flash). After a
   `stop()` the running clips loop on (their common period). Very long timelines with many short

@@ -1,6 +1,6 @@
 import { fmt, fmtMatrix } from "../geom.ts";
 import type { EmbeddedFont } from "../fonts.ts";
-import type { TextElement, TextRun } from "../model.ts";
+import type { FilterData, TextElement, TextRun } from "../model.ts";
 import { el, type XmlNode } from "../xml.ts";
 
 // Animate text fields have a 2 px gutter; the field's matrix already points inside it
@@ -119,6 +119,33 @@ export function textNode(t: TextElement, digits: number, fonts?: FontSet): XmlNo
 		children,
 	);
 }
+
+/**
+ * What a text field shows besides its letters, around its node: "Show border around text" (a
+ * white field with a black outline, behind the text), a link set on its text (SVG links outlines
+ * only as a whole: one per field) and its filters, in the parent's orientation as a symbol's.
+ * `filter` makes the filter reference (OutputDoc.filter).
+ */
+export function textField(t: TextElement, node: XmlNode | null, digits: number, filter: (fs: FilterData[], size: { w: number; h: number }) => string | null, warn: (m: string) => void): XmlNode | null {
+	if (!node) return node;
+	let out = node;
+	if (t.border) {
+		// the outline on the field's edge pixels (the matrix points inside the gutter)
+		const box = el("rect", { transform: fmtMatrix(t.matrix, digits) || undefined, x: fmt(0.5 - GUTTER, 2), y: fmt(0.5 - GUTTER, 2), width: fmt(t.width - 1, 2), height: fmt(t.height - 1, 2), fill: "#FFFFFF", stroke: "#000000" });
+		out = el("g", {}, [box, out]);
+	}
+	const urls = [...new Set(t.runs.map((r) => r.url).filter((u): u is string => !!u))];
+	if (urls.length) {
+		if (urls.length > 1) warn(`The text "${t.text.slice(0, 30)}" links to ${urls.length} addresses: the whole field links to the first`);
+		out = el("a", { "xlink:href": urls[0], target: t.runs.find((r) => r.url === urls[0])?.target }, [out]);
+	}
+	const fs = (t.filters ?? []).filter((f) => f.enabled);
+	const ref = fs.length ? filter(fs, { w: t.bounds.width, h: t.bounds.height }) : null;
+	return ref ? el("g", { filter: ref }, [out]) : out;
+}
+
+/** True if the field needs textField's additions. */
+export const hasFieldExtras = (t: TextElement) => !!(t.border || t.runs.some((r) => r.url) || t.filters?.some((f) => f.enabled));
 
 /**
  * Text drawn as outlines keeps its words for assistive technology (Flash reads static text too):

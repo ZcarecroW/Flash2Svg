@@ -34,7 +34,11 @@ const list = args.find((a) => !a.startsWith("--"));
 // overlaps itself during the tween, Animate's rendering leaves the overlap empty; its SVG export
 // (what we follow) fills it. f49: dynamic text — the browser's text rasterising differs from
 // Animate's (Animate's own outline export of the same text: 1.3 %); positions match within 1–2 px.
-const TOLERANCE: Record<string, number> = { "f22-layers": 0.006, "f31-text2": 0.008, "f35-edge": 0.005, "f40-strokes": 0.004, "f45-morph": 0.012, "f49-fonts": 0.02 };
+// f55: hatched and stipple strokes are random, drawn anew by every export and render (0.72 %).
+// f56: Animate's outlines of a single-line dynamic field with CJK text wrap where its render
+// doesn't (fallback font metrics; our live text doesn't wrap), it underlines links as in authoring
+// (Flash Player doesn't) and its field border sits a pixel off (1.54 %).
+const TOLERANCE: Record<string, number> = { "f22-layers": 0.006, "f31-text2": 0.008, "f35-edge": 0.005, "f40-strokes": 0.004, "f45-morph": 0.012, "f49-fonts": 0.02, "f55-strokes2": 0.008, "f56-text3": 0.016 };
 const imagesOpt = opt("images", "");
 const images: Partial<ImageSettings> | null = !imagesOpt ? null : imagesOpt === "lossless" ? {} : { imageLossy: imagesOpt as ImageSettings["imageLossy"] };
 const codecs = createCodecs(nodeWasmLoader());

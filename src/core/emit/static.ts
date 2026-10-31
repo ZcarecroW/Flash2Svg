@@ -10,7 +10,7 @@ import { valueAt } from "../tracks.ts";
 import { clone, el, type XmlNode } from "../xml.ts";
 import { OutputDoc, svgRoot, withAcc } from "./document.ts";
 import { blendHides, blendSubtract, blendWhite, cssBlendMode, isAlphaOnly, type ColorMatrixValues } from "./filters.ts";
-import { outlineText, textNode } from "./text.ts";
+import { outlineText, textField, textNode } from "./text.ts";
 import { clickLink } from "../snippets.ts";
 import { graphicFrame, playheadFrame } from "./timing.ts";
 
@@ -147,9 +147,10 @@ export class StaticRenderer {
 			}
 			case "video":
 				return this.doc.video(item.element, false);
-			case "text":
-				if (this.opts.textAsOutlines || item.element.textType === "static") return item.art ? outlineText(item.element, this.doc.useArt(item.art)) : null;
-				return textNode(item.element, this.ctx.precision.space(prog.id), this.doc.fonts);
+			case "text": {
+				const node = this.opts.textAsOutlines || item.element.textType === "static" ? (item.art ? outlineText(item.element, this.doc.useArt(item.art)) : null) : textNode(item.element, this.ctx.precision.space(prog.id), this.doc.fonts);
+				return textField(item.element, node, this.ctx.precision.space(prog.id), (fs, size) => this.doc.filter(fs, null, { x: 1, y: 1 }, this.warn, size), this.warn);
+			}
 			case "instance": {
 				const node = this.instance(prog, item, frame, ticks, depth);
 				const link = node && clickLink(prog.interactions, item.name);

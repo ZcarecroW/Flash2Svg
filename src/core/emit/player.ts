@@ -16,7 +16,7 @@ import { accAttrs, OutputDoc, svgRoot } from "./document.ts";
 import { blendHides, blendSubtract, blendWhite, cssBlendMode } from "./filters.ts";
 import { PLAYER_RUNTIMES } from "./runtime-code.generated.ts";
 import { StaticRenderer } from "./static.ts";
-import { outlineText, textNode } from "./text.ts";
+import { hasFieldExtras, outlineText, textField, textNode } from "./text.ts";
 import { SCROLL_RANGE_CODES } from "./triggers.ts";
 import { playhead } from "./timing.ts";
 
@@ -124,15 +124,21 @@ export function renderPlayer(ctx: Context, rootId: string, s: ExportSettings): {
 			case "video":
 				return { k: "r", s: it.start, e: it.end, x: serialize(doc.video(it.element, true)) };
 			case "text": {
+				// markup the runtime puts in with innerHTML: in an .svg file that is XML, where the root's
+				// xlink prefix isn't known (SVG 2's plain href is)
+				const raw = (n: XmlNode | null) => serialize(n!).replaceAll(' xlink:href="', ' href="');
+				const field = (n: XmlNode | null) => textField(it.element, n, ctx.precision.space(space), (fs, size) => doc.filter(fs, null, { x: 1, y: 1 }, warn, size), warn);
 				if (s.textAsOutlines || it.element.textType === "static") {
 					const a = it.art ? ctx.art(it.art) : null;
 					if (!a) return null;
 					const id = doc.artwork(a);
+					// a border, link or filter around it: drawn as markup of its own
+					if (hasFieldExtras(it.element)) return { k: "r", s: it.start, e: it.end, x: raw(field(outlineText(it.element, el("use", { href: "#" + id })))) };
 					// its words as ARIA attributes on the <use>
 					const labelled = outlineText(it.element, el("use", {}));
 					return { k: "a", s: it.start, e: it.end, r: id, ...(labelled.name === "g" ? { ac: labelled.attrs as Record<string, string> } : {}) };
 				}
-				return { k: "r", s: it.start, e: it.end, x: serialize(textNode(it.element, ctx.precision.space(space), doc.fonts)) };
+				return { k: "r", s: it.start, e: it.end, x: raw(field(textNode(it.element, ctx.precision.space(space), doc.fonts))) };
 			}
 			case "instance":
 				return instance(it);

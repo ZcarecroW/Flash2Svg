@@ -7,6 +7,7 @@
  * global time, run by run, with exact cut-down Bezier pieces at the edges.
  */
 import { subBezier } from "../easing.ts";
+import { fmt } from "../geom.ts";
 import { COLOR_PROPS, TRANSFORM_PROPS, type ColorProp, type InstanceItem, type Item, type Program, type ProgramLayer, type TransformProp } from "../program.ts";
 import { valueAt, type Ease, type Track } from "../tracks.ts";
 import type { Context } from "../context.ts";
@@ -33,6 +34,8 @@ export interface Horizon {
 	 * after one pass the ticks [tail, ticks) repeat forever. 0 = no such tail.
 	 */
 	tail: number;
+	/** The tail is the root timeline's own loop after an intro (frame scripts jump back to a label). */
+	intro?: boolean;
 }
 
 export interface BakeOptions {
@@ -117,6 +120,9 @@ export function bake(ctx: Context, rootId: string, opts: BakeOptions): BakeResul
 	// ---- root playhead over the horizon
 	let frames: number[];
 	let loop: boolean;
+	// frame scripts loop back to a frame after the first (gotoAndPlay("label") at the end): the
+	// frames before it play once, as an intro
+	let intro = 0;
 	if (opts.startFrame !== undefined || opts.endFrame !== undefined || opts.loop === "always") {
 		const s = Math.max(0, Math.min(prog.frameCount - 1, opts.startFrame ?? 0));
 		const e = Math.max(s + 1, Math.min(prog.frameCount, opts.endFrame ?? prog.frameCount));
@@ -127,6 +133,7 @@ export function bake(ctx: Context, rootId: string, opts: BakeOptions): BakeResul
 		const p = playhead(prog);
 		frames = [...p.prefix, ...p.cycle];
 		loop = p.cycle.length > 0 && opts.loop !== "never";
+		if (loop) intro = p.prefix.length;
 	}
 	if (!frames.length) frames = [0];
 
@@ -136,6 +143,7 @@ export function bake(ctx: Context, rootId: string, opts: BakeOptions): BakeResul
 	// set when running movie clips have no common period within maxTicks
 	let tooLong = false;
 	if (loop) {
+		let period = frames.length - intro;
 		for (const layer of prog.layers) {
 			for (const it of layer.items) {
 				if (it.kind !== "instance" || it.symbolType !== "movie clip" || it.start > 0 || it.end < prog.frameCount) continue;
@@ -143,16 +151,22 @@ export function bake(ctx: Context, rootId: string, opts: BakeOptions): BakeResul
 				if (!child) continue;
 				const ph = playhead(child);
 				if (ph.prefix.length || !ph.cycle.length) continue;
-				const l = lcm(H, ph.cycle.length);
-				if (l <= maxTicks) H = l;
+				const l = lcm(period, ph.cycle.length);
+				if (intro + l <= maxTicks) period = l;
 				else tooLong = true;
 			}
 		}
+		H = intro + period;
+	}
+	// an intro: the loop is a tail after it (first pass once, then the tail repeats)
+	let tail = 0;
+	if (loop && intro) {
+		tail = intro;
+		loop = false;
 	}
 	// A root that stops (stop() script) leaves its movie clips running: extend the horizon until
 	// they have played their intros, then loop their common period as a tail.
-	let tail = 0;
-	if (!loop && opts.loop !== "never" && opts.startFrame === undefined && opts.endFrame === undefined) {
+	if (!loop && !intro && opts.loop !== "never" && opts.startFrame === undefined && opts.endFrame === undefined) {
 		const P = frames.length;
 		const last = frames[P - 1]!;
 		let start = P,
@@ -178,15 +192,17 @@ export function bake(ctx: Context, rootId: string, opts: BakeOptions): BakeResul
 		}
 	}
 	if (tooLong) {
-		const m = `Movie clips with loops of very different lengths keep running: SMIL/CSS repeat after ${Math.round(maxTicks / fps)} s at most, so some clips jump when the animation repeats (the JS player is exact)`;
+		const m = `Movie clips with loops of very different lengths keep running: SMIL/CSS repeat after ${fmt(H / fps, 1)} s, so some clips jump when the animation repeats (the JS player is exact)`;
 		if (!ctx.warnings.includes(m)) ctx.warnings.push(m);
 	}
 	const rootFrames = new Int32Array(H);
-	for (let t = 0; t < H; t++) rootFrames[t] = t < frames.length ? frames[t]! : loop ? frames[t % frames.length]! : frames[frames.length - 1]!;
+	const cycle = frames.length - intro;
+	for (let t = 0; t < H; t++)
+		rootFrames[t] = t < frames.length ? frames[t]! : intro ? frames[intro + ((t - intro) % cycle)]! : loop ? frames[t % frames.length]! : frames[frames.length - 1]!;
 
 	const baker = new Baker(ctx, opts.smooth, H, opts.morph, opts.turning);
 	const root = baker.timeline(prog, rootFrames, 0);
-	return { horizon: { ticks: H, loop, fps, tail }, root, frames: rootFrames, timelines: baker.all };
+	return { horizon: { ticks: H, loop, fps, tail, ...(intro ? { intro: true } : {}) }, root, frames: rootFrames, timelines: baker.all };
 }
 
 /** Ticks after which a running movie clip (and the clips running inside it) repeats; 1 = it stops. */

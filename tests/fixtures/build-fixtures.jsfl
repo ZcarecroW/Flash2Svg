@@ -2292,6 +2292,245 @@
 		log.push("f53 tween: " + tt);
 	});
 
+	// ---------------------------------------------------------------- f54: library and timeline structure
+	build("f54-structure", function () {
+		newDoc("timeline", 400, 300, 30);
+		// two symbols with the same name in different library folders
+		lib.newFolder("a");
+		lib.newFolder("b");
+		symbol("item", "movie clip", function () { rect(-20, -20, 20, 20, "#CC3333"); });
+		lib.moveToFolder("a", "item");
+		symbol("item", "movie clip", function () { oval(-20, -20, 20, 20, "#3333CC"); });
+		lib.moveToFolder("b", "item");
+		// a movie clip of six frames (a bar that moves right), placed as a movie clip and as a graphic
+		symbol("dual", "movie clip", function () {
+			var t = tl();
+			for (var i = 0; i < 6; i++) {
+				if (i) t.insertBlankKeyframe(i);
+				t.currentFrame = i;
+				rect(-30 + i * 8, -6, -14 + i * 8, 6, "#228844");
+			}
+		});
+		// nothing at all, and only a guide layer
+		symbol("nothing", "movie clip", function () {});
+		symbol("guideonly", "movie clip", function () {
+			rect(-20, -20, 20, 20, "#FF00FF");
+			tl().layers[0].layerType = "guide";
+		});
+		layer("folders");
+		place("a/item", 50, 50, 0);
+		place("b/item", 110, 50, 0);
+		layer("dual");
+		place("dual", 220, 50, 0);
+		var g1 = place("dual", 220, 110, 0);
+		g1.symbolType = "graphic"; g1.loop = "single frame"; g1.firstFrame = 3;
+		var g2 = place("dual", 220, 170, 0);
+		g2.symbolType = "graphic"; g2.loop = "play once"; g2.firstFrame = 2;
+		layer("empties");
+		classicTween("nothing", 50, 150, 9, function (e) { e.x = 150; });
+		layer("guideonly");
+		place("guideonly", 50, 220, 0);
+		// a layer that ends early, and a tween one frame long
+		layer("short");
+		var t = tl();
+		place("a/item", 330, 50, 0);
+		t.insertKeyframe(1);
+		t.currentFrame = 1;
+		t.layers[t.currentLayer].frames[1].elements[0].x = 350;
+		t.setSelectedFrames(0, 1);
+		t.createMotionTween();
+		t.insertBlankKeyframe(4);
+		layer("long");
+		classicTween("b/item", 330, 150, 29, function (e) { e.y = 250; e.rotation = 120; });
+		var info = [];
+		for (var i = 0; i < lib.items.length; i++) info.push(lib.items[i].name);
+		log.push("f54 library: " + info.join(", ") + "; dual instances: " + g1.symbolType + "/" + g1.loop + "/" + g1.firstFrame + ", " + g2.symbolType + "/" + g2.loop);
+	});
+
+	// ---------------------------------------------------------------- f55: stroke styles
+	build("f55-strokes2", function () {
+		newDoc("timeline", 500, 320, 24);
+		var styles = [
+			{ style: "dashed", dash1: 8, dash2: 4 },
+			{ style: "dotted", dotSpace: 4 },
+			{ style: "ragged", pattern: "random", waveHeight: "wild", waveLength: "short" },
+			{ style: "stipple", dotSize: "small", variation: "varied sizes", density: "dense" },
+			{ style: "hatched", hatchThickness: "thin", space: "close", jiggle: "wild", rotate: "free", curve: "slight curve", length: "slight" },
+			{ style: "solid", capType: "none", joinType: "miter" },
+		];
+		var made = [];
+		for (var i = 0; i < styles.length; i++) {
+			layer("s" + i);
+			var x = 20 + (i % 3) * 160, y = 20 + Math.floor(i / 3) * 150;
+			var st = styles[i];
+			st.color = "#1144AA";
+			st.thickness = i == 5 ? 14 : 4;
+			try {
+				doc.selectNone();
+				doc.setCustomFill({ style: "noFill" });
+				doc.setCustomStroke(st);
+				doc.addNewRectangle({ left: x, top: y, right: x + 130, bottom: y + 110 }, 0, true, false);
+				// a curve too
+				doc.addNewOval({ left: x + 30, top: y + 30, right: x + 100, bottom: y + 80 }, true, false);
+				var drawn = tl().layers[tl().currentLayer].frames[0].elements[0];
+				made.push(st.style + ":" + (drawn && drawn.edges && drawn.edges.length ? drawn.edges[0].stroke.style : "nothing drawn"));
+			} catch (e) {
+				made.push(st.style + ": ERROR " + e);
+			}
+		}
+		// a stroke filled with a gradient
+		layer("gradientStroke");
+		doc.selectNone();
+		doc.setCustomFill({ style: "noFill" });
+		doc.setCustomStroke({ style: "solid", thickness: 10, color: "#000000", capType: "round", joinType: "round" });
+		doc.addNewLine({ x: 40, y: 300 }, { x: 460, y: 290 });
+		// only the line (selectAll would take every layer's shapes)
+		var lt = tl();
+		doc.selectNone();
+		doc.selection = [lt.layers[lt.currentLayer].frames[0].elements[0]];
+		var gs = doc.getCustomStroke("selection");
+		gs.shapeFill = { style: "linearGradient", colorArray: ["#FF0000", "#00AA00", "#0000FF"], posArray: [0, 128, 255], matrix: { a: 0.25, b: 0, c: 0, d: 0.25, tx: 250, ty: 295 } };
+		doc.setCustomStroke(gs);
+		doc.selectNone();
+		log.push("f55 strokes: " + made.join(", "));
+	});
+
+	// ---------------------------------------------------------------- f56: unusual text
+	build("f56-text3", function () {
+		newDoc("timeline", 500, 360, 24);
+		function text(l, t, r, b, s, type, size, color) {
+			doc.selectNone();
+			doc.addNewText({ left: l, top: t, right: r, bottom: b }, s);
+			doc.selectNone();
+			var tt = tl(), els = tt.layers[tt.currentLayer].frames[tt.currentFrame].elements;
+			var el = els[els.length - 1];
+			el.textType = type;
+			el.setTextAttr("face", "Arial");
+			el.setTextAttr("size", size);
+			el.setTextAttr("fillColor", color);
+			return el;
+		}
+		var notes = [];
+		layer("vertical");
+		var v = text(20, 20, 50, 200, "Vertical", "static", 20, "#003366");
+		try { v.orientation = "vertical left to right"; notes.push("vertical " + v.orientation); } catch (e) { notes.push("vertical: ERROR " + e); }
+		layer("rotated");
+		var r = text(80, 40, 260, 70, "Rotated text", "static", 18, "#660000");
+		r.rotation = -30;
+		layer("link");
+		var l = text(80, 120, 300, 150, "A linked word", "static", 18, "#000099");
+		try { l.setTextAttr("url", "https://example.com/?a=1&b=2", 2, 8); l.setTextAttr("target", "_blank", 2, 8); notes.push("url ok"); } catch (e) { notes.push("url: ERROR " + e); }
+		layer("positions");
+		var p = text(80, 170, 300, 200, "E=mc2 and H2O", "static", 18, "#000000");
+		try { p.setTextAttr("characterPosition", "superscript", 4, 5); p.setTextAttr("characterPosition", "subscript", 11, 12); notes.push("sub/sup ok"); } catch (e) { notes.push("sub/sup: ERROR " + e); }
+		layer("scripts");
+		text(320, 20, 490, 50, "日本語 עברית 😀", "static", 18, "#333333");
+		text(320, 60, 490, 90, "Dynamic 日本語 Ωmega", "dynamic", 18, "#006633");
+		layer("empty");
+		var e0 = text(320, 110, 490, 140, " ", "dynamic", 18, "#000000");
+		e0.name = "emptyField";
+		layer("border");
+		var b = text(320, 150, 490, 180, "Bordered dynamic", "dynamic", 14, "#000000");
+		try { b.border = true; notes.push("border " + b.border); } catch (e) { notes.push("border: ERROR " + e); }
+		layer("password");
+		var pw = text(320, 190, 490, 220, "secret", "input", 14, "#000000");
+		try { pw.lineType = "password"; notes.push("password " + pw.lineType); } catch (e) { notes.push("password: ERROR " + e); }
+		layer("shadowed");
+		var sh = text(80, 230, 300, 270, "Text with a shadow", "static", 22, "#CC6600");
+		doc.selectNone(); sh.selected = true;
+		try { doc.addFilter("dropShadowFilter"); doc.setFilterProperty("distance", 0, 4); notes.push("filter ok"); } catch (e) { notes.push("filter: ERROR " + e); }
+		doc.selectNone();
+		layer("multiline");
+		var ml = text(80, 280, 480, 350, "A multiline dynamic field with BIG and small words that wraps at its width.", "dynamic", 14, "#222222");
+		ml.lineType = "multiline";
+		ml.setTextAttr("size", 26, 38, 41);
+		log.push("f56 text: " + notes.join(", "));
+	});
+
+	// ---------------------------------------------------------------- f57: instance properties
+	build("f57-instances", function () {
+		newDoc("timeline", 500, 300, 24);
+		boxSymbol();
+		var notes = [];
+		function put(name, x, y, fn) {
+			layer(name);
+			var e = place("box", x, y, 0);
+			doc.selectNone(); e.selected = true;
+			try { fn(e); notes.push(name + " ok"); } catch (err) { notes.push(name + ": ERROR " + err); }
+			doc.selectNone();
+			return e;
+		}
+		put("rotY", 60, 60, function (e) { e.rotationY = 50; });
+		put("rotX", 160, 60, function (e) { e.rotationX = 40; e.rotationZ = 20; });
+		put("exportBitmap", 260, 60, function (e) { e.bitmapRenderMode = "export"; });
+		put("cacheOpaque", 360, 60, function (e) { e.bitmapRenderMode = "cache"; e.useBackgroundColor = true; e.backgroundColor = "#FFCC00"; });
+		put("invisible", 440, 60, function (e) { e.visible = false; });
+		put("dark", 60, 160, function (e) { doc.setInstanceBrightness(-100); });
+		put("tinted", 160, 160, function (e) { doc.setInstanceTint("#FF0000", 100); });
+		put("advanced", 260, 160, function (e) { e.colorMode = "advanced"; e.colorRedPercent = -100; e.colorGreenPercent = 100; e.colorBlueAmount = 255; e.colorAlphaPercent = 70; });
+		put("transparent", 360, 160, function (e) { doc.setInstanceAlpha(0); });
+		// alpha 0 to 100 over the timeline, and a 3D rotation that turns
+		layer("fadeIn");
+		classicTween("box", 100, 240, 23, function (e) { doc.selectNone(); e.selected = true; doc.setInstanceAlpha(100); doc.selectNone(); }, null);
+		var t = tl();
+		doc.selectNone(); t.layers[t.currentLayer].frames[0].elements[0].selected = true; doc.setInstanceAlpha(0); doc.selectNone();
+		layer("turn3d");
+		classicTween("box", 300, 240, 23, function (e) { e.rotationY = 80; });
+		extendAll(24);
+		log.push("f57 instances: " + notes.join(", "));
+	});
+
+	// ---------------------------------------------------------------- f58: awkward scenes
+	build("f58-scenes2", function () {
+		newDoc("timeline", 300, 200, 12);
+		boxSymbol();
+		layer("mover");
+		classicTween("box", 50, 100, 5, function (e) { e.x = 250; });
+		layer("actions");
+		var t = tl();
+		t.insertKeyframe(5);
+		t.layers[t.currentLayer].frames[5].actionScript = "gotoAndPlay(\"ende\", \"Szene <3> & co\");";
+		doc.addNewScene("Leer");
+		doc.addNewScene("Szene <3> & co");
+		rect(20, 20, 280, 180, "#0066CC");
+		t = tl();
+		t.insertFrames(5, false, 1);
+		t.insertKeyframe(3);
+		t.layers[0].frames[3].name = "ende";
+		t.layers[0].frames[3].actionScript = "stop();";
+		doc.editScene(0);
+		var names = [];
+		for (var i = 0; i < doc.timelines.length; i++) names.push(doc.timelines[i].name + ":" + doc.timelines[i].frameCount);
+		log.push("f58 scenes: " + names.join(", "));
+	});
+
+	// ---------------------------------------------------------------- f59: long, fast, loops of coprime lengths
+	build("f59-long", function () {
+		newDoc("timeline", 400, 240, 60);
+		function spinner(name, frames, color) {
+			symbol(name, "movie clip", function () {
+				rect(-18, -4, 18, 4, color);
+				var t = tl();
+				t.insertKeyframe(frames - 1);
+				t.setSelectedFrames(0, 1);
+				t.createMotionTween();
+				t.layers[0].frames[0].motionTweenRotate = "clockwise";
+				t.layers[0].frames[0].motionTweenRotateTimes = 1;
+			});
+		}
+		spinner("s7", 7, "#CC3300");
+		spinner("s11", 11, "#33AA00");
+		spinner("s13", 13, "#0033CC");
+		layer("spinners");
+		place("s7", 60, 60, 0);
+		place("s11", 140, 60, 0);
+		place("s13", 220, 60, 0);
+		boxSymbol();
+		layer("slow");
+		classicTween("box", 40, 170, 599, function (e) { e.x = 360; e.rotation = 359; }, function (f) { f.tweenEasing = 40; });
+		extendAll(600);
+	});
+
 	FLfile.write(outDir + "/build-log.txt", log.join("\n"));
 	fl.closeAll(false);
 	fl.quit(false);

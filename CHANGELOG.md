@@ -2,6 +2,50 @@
 
 ## Unreleased
 
+- **Intros that loop back to a label.** A timeline whose last frame jumps back to a later frame
+  (`gotoAndPlay("loop")`, the banner idiom "intro once, then loop") replayed its intro on every
+  loop in SMIL and CSS. Now the intro plays once and the rest loops, as in Flash (and in the JS
+  player, which was right).
+- **Text fields.** A password input field showed its text in clear; now it shows a star per
+  character, and its text never leaves Animate (scene data and outlines). *Show border around
+  text* is drawn (a white field with a black outline), filters on text fields (a drop shadow on a
+  heading) are applied like a symbol's, and a link set on text (*Properties › Options › Link*)
+  makes the field a link in every SVG format. *Multiline no wrap* fields no longer wrap. A field
+  of spaces no longer warns that it can't be converted to outlines. Lottie leaves borders, filters
+  and links of text out (warned).
+- **Smaller SMIL and CSS for looping movie clips.** An animation that repeats all through the
+  loop (a spinner inside a longer timeline) is written once with its own repeating duration
+  instead of unrolled over the whole loop: test documents with nested loops up to 29 % smaller.
+- **Loops stay in step.** Repeating durations were rounded to 4 decimals: loops meant to stay in
+  step drifted a frame apart within minutes. Now 7 (a third of a frame a day).
+- **JS player.** Frame scripts that jump in a circle overflowed the stack (now 16 jumps a frame,
+  like the other formats); `speed` takes positive numbers only (0, negative or NaN broke its
+  clock); `seek()` ignores NaN and Infinity, and far ahead it finds where the animation repeats
+  instead of playing every frame through (an hour: from seconds of a frozen page to milliseconds).
+  Runtime 14.7 → 15.1 KB.
+- **A jump to a label that doesn't exist** went to frame 1 in SMIL/CSS and stayed in the player
+  (Flash: error #2109, the playhead stays): it is left out everywhere, with a warning.
+- **Output that browsers or parsers rejected:** characters XML can't hold (control characters,
+  unpaired surrogates) in labels, names or text; a drawing's gradient or pattern id repeated by a
+  shape tween's copy of the same drawing (the player output of the morph test document had one
+  twice); a named text field wrote its instance name as an id (now `data-name`); a Lottie file of a
+  stage that isn't whole pixels.
+- **GIF and WebP from the command line:** resvg (the CLI's renderer) panicked on clipped bitmap
+  fills and on filtered symbols far off stage, and after a few hundred panics on everything. Clipped
+  fills are drawn exactly (f42 as GIF: 33 s or a crash → 0.7 s), a frame resvg can't take is
+  drawn without the parts it can't (warned), each panic gets a fresh resvg.
+- **Smaller fixes:** still frames of a range past the end of the timeline wrote a file per frame
+  number; the panel kept a .gif/.webp file name when the format changed to SVG; the CLI explains
+  input that isn't a scene model; the warning about clip loops without a common period names the
+  real repeat time.
+- **Tested from scratch:** a fresh clone builds, type-checks and passes everything; a fuzzer
+  (`scripts/fuzz.ts`) mutates the test documents' scene data in every way Animate allows and some
+  it doesn't, compiles them in every format and checks the XML, ids, Lottie schema, determinism,
+  and with `--browser` drives the player in Edge (thousands of cases, no failures left); the browser
+  checks also look an hour ahead; six new test documents (library folders with equal names, a
+  movie clip used as a graphic, empty and guide-only symbols, stroke styles, unusual text, 3D and
+  other instance settings, awkward scenes, a long 60 fps timeline with loops of coprime lengths).
+
 - **Lottie and dotLottie export.** Two new formats: *Lottie* (JSON) and *.lottie* (a dotLottie v2
   archive with the bitmaps inside). Written from the same baked timeline as SMIL, so frame
   scripts, movie clip playheads and graphic loop modes behave the same: symbols become

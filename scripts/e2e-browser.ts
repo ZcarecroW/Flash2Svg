@@ -131,9 +131,12 @@ for (const name of names) {
 				worstFrame = f + 1;
 			}
 		}
-		for (const [t, frame] of [...stopTicks.map((t) => [t, stopFrame] as const), ...far]) {
+		// (SMIL/CSS repeat after the horizon when clip loops have no common period in it: warned)
+		const jumps = format !== "player" && anim.warnings.some((w) => w.startsWith("Movie clips with loops of very different lengths"));
+		for (const [t, frame] of [...stopTicks.map((t) => [t, stopFrame] as const), ...(jumps ? [] : far)]) {
 			const sfile = join(dir, `static-t${t}.svg`);
-			writeFileSync(sfile, renderStatic(ctx, rootId, { frame, ticks: t, movieClips: "play", includeBackground: true, embedImages: true, textAsOutlines: true }).svg);
+			// (text as the outputs draw it: dynamic text stays text)
+			writeFileSync(sfile, renderStatic(ctx, rootId, { frame, ticks: t, movieClips: "play", includeBackground: true, embedImages: true, textAsOutlines: false }).svg);
 			const ref = await shot(sfile, width, height, null);
 			const got = await shot(file, width, height, { format, time: (t + 0.02) / frameRate });
 			const diff = new PNG({ width: ref.width, height: ref.height });
