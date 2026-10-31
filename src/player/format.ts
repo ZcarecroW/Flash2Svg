@@ -104,6 +104,8 @@ interface PBase {
 export interface PArt extends PBase {
 	k: "a";
 	r: string;
+	/** ARIA attributes (text drawn as outlines: its words) */
+	ac?: Record<string, string>;
 }
 export interface PRef extends PBase {
 	k: "r";
@@ -148,6 +150,9 @@ export interface PInst extends PBase {
 	t: 0 | 1 | 2;
 	/** instance name */
 	nm?: string;
+	/** ARIA attributes (Accessibility panel) and description */
+	ac?: Record<string, string>;
+	ad?: string;
 	/** transform tracks x y rot skw sx sy tpx tpy */
 	tr: PTrack[];
 	/** colour tracks rP gP bP aP rA gA bA aA (absent = identity) */

@@ -654,6 +654,45 @@ for (const format of ["mp3", "opus"] as const) {
 		const d = await spin();
 		await wait(200);
 		check("snippets: mouse out stops it", d.equals(await spin()));
+		// keyboard: a button with a click handler takes the focus, Enter clicks it
+		await page.evaluate(() => {
+			(document.documentElement as unknown as { flash2svg: Api }).flash2svg.gotoAndStop(1);
+			(document.querySelector('[data-name="btn_next"]') as SVGElement | null)?.focus();
+		});
+		const focused = await page.evaluate(() => (document.activeElement?.getAttribute("role") ?? "") + " " + (document.activeElement?.getAttribute("data-name") ?? ""));
+		await page.keyboard.press("Enter");
+		await wait(250);
+		check("snippets: a button takes the focus, Enter clicks it", focused === "button btn_next" && (await frame()) > 2, `focus ${focused}, frame ${await frame()}`);
+	}
+}
+
+// ------------------------------------------------------------------ accessibility
+{
+	// f48-accessibility: document name and description, a named box with a description, a button
+	// "Play" (shortcut P, tab index 1), a decoration hidden from assistive technology, a group
+	// whose children don't count
+	for (const format of ["player", "smil"] as const) {
+		const b = format === "player" ? build("f48-accessibility", {}, "a11y") : null;
+		const file = b?.file ?? join(out, "f48-accessibility", "player", "a11y-smil.svg");
+		const model = b?.model ?? (JSON.parse(readFileSync(join(out, "f48-accessibility", "model", "scene.json"), "utf8")) as SceneModel);
+		if (!b) {
+			const modelDir = join(out, "f48-accessibility", "model");
+			if (!existsSync(join(modelDir, "scene.json"))) continue;
+			const files = { readText: (rel: string) => readFileSync(join(modelDir, rel), "utf8"), readBinary: (rel: string) => readFileSync(join(modelDir, rel)) };
+			mkdirSync(dirname(file), { recursive: true });
+			writeFileSync(file, compileScene(model, files, { format, includeBackground: true }).files[0]!.svg);
+		}
+		await open(file, model);
+		await wait(150);
+		const tree = await page.locator("svg").first().ariaSnapshot();
+		const has = (re: RegExp) => re.test(tree);
+		check(
+			`accessibility (${format}): names, roles and descriptions reach the browser`,
+			has(/group "Moving box demo"/) && has(/img "Blue box"/) && has(/button "Play"/) && has(/img "Group"/) && !has(/deco/i),
+			tree.replace(/\n/g, " | "),
+		);
+		const desc = await page.evaluate(() => (document.querySelector('[aria-label="Blue box"] > desc') as Element | null)?.textContent ?? "");
+		check(`accessibility (${format}): the description`, desc === "It moves from left to right", desc);
 	}
 }
 await browser.close();

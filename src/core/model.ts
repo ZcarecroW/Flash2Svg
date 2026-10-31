@@ -28,8 +28,21 @@ export interface SceneModel {
 	warnings: string[];
 }
 
+/** Settings from Animate's Accessibility panel (only what is set). */
+export interface AccInfo {
+	name?: string;
+	description?: string;
+	shortcut?: string;
+	/** "Make object accessible" off */
+	silent?: boolean;
+	/** "Make child objects accessible" off */
+	forceSimple?: boolean;
+	tabIndex?: number;
+}
+
 export interface DocInfo {
 	name: string;
+	acc?: AccInfo;
 	/** "Flash" (ActionScript 3), "htmlcanvas", "webgl", ... */
 	type: string;
 	width: number;
@@ -109,6 +122,7 @@ export interface InstanceElement extends ElementBase {
 	blendMode: string;
 	visible: boolean;
 	cacheAsBitmap: boolean;
+	acc?: AccInfo;
 	/** Graphic symbols: "loop" | "play once" | "single frame" | "loop reverse" | "play once reverse". */
 	loop?: string;
 	firstFrame?: number;
@@ -156,6 +170,7 @@ export interface TextElement extends ElementBase {
 	runs: TextRun[];
 	multiline: boolean;
 	selectable: boolean;
+	acc?: AccInfo;
 }
 
 export interface TextRun {

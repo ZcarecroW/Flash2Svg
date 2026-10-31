@@ -166,6 +166,18 @@ for frame actions. Other code in a handler is warned about. Instances with click
 the hand cursor. SMIL, CSS and still frames turn *Go to Web Page* into an SVG link; for the other
 handlers they warn.
 
+### Accessibility
+
+What is set in Animate's *Accessibility* panel goes into every SVG format: the document's name
+and description become the SVG's `<title>` and `<desc>` (role `img`, or `group` when parts of
+it are accessible themselves); a named symbol instance becomes an image with that name (its
+children count as part of it) and its description a `<desc>`; buttons get the role `button`,
+their shortcut (`aria-keyshortcuts`) and tab index; *Make object accessible* off hides an
+instance or text field (or the whole document) from screen readers. Static text, which is drawn
+as outlines, keeps its words as a label, as Flash reads static text. In the JS player, instances
+with a click handler (code snippets) can be reached with Tab and clicked with Enter or Space.
+Documents without these settings stay as they were, apart from the static text labels.
+
 ### Embedding
 
 ```html

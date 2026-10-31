@@ -46,7 +46,7 @@ support (sources below) before starting a package.
 | 4 | CSS: `linear()` easing, individual transform properties | medium | small–medium | ✅ (also decimals from the displayed size, .svgz) |
 | 5 | Interactivity: triggers, scroll, label state machine | high | medium | ✅ (labels as dotLottie states ⬜, see 6) |
 | 6 | Lottie / dotLottie export | very high (reach) | high | ✅ (effects ✅, built filters ✅, state machine ✅, panel preview ✅) |
-| 7 | WOFF2 fonts, video, library export | medium | medium | ⬜ |
+| 7 | WOFF2 fonts, video, library export | medium | medium | 🚧 accessibility ✅ |
 
 ### 1. Media encoding settings
 - ✅ **Images:**
@@ -147,7 +147,7 @@ support (sources below) before starting a package.
 
 ### 7. More
 - ⬜ Responsive scale modes like Flash (show all, no border, exact fit), cropping, transparent background.
-- ⬜ Accessibility: `<title>`, `<desc>`, `role="img"` and `aria-label` from Animate's accessibility panel.
+- ✅ Accessibility: `<title>`, `<desc>`, roles and `aria-label` from Animate's Accessibility panel (document, instances, buttons with shortcut and tab index, *Make object accessible* off → `aria-hidden`), static text outlines labelled with their words, keyboard use of click handlers in the player; checked in the browser's accessibility tree (f48).
 - ⬜ Export library symbols as separate SVGs (icon workflows).
 - ⬜ Export several scenes.
 - ⬜ A web component (`<flash2svg-player>`) with lazy loading.

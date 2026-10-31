@@ -12,11 +12,11 @@ import type { PChannel, PFrameSound, PInst, PItem, PListener, PMorph, PProgram, 
 import type { HandlerAction, InteractionEvent } from "../snippets.ts";
 import { channelNumbers, channelText, channelVaries, type MorphChannel } from "../morph.ts";
 import { audioMime } from "../mime.ts";
-import { OutputDoc, svgRoot } from "./document.ts";
+import { accAttrs, OutputDoc, svgRoot } from "./document.ts";
 import { blendHides, blendSubtract, blendWhite, cssBlendMode } from "./filters.ts";
 import { PLAYER_RUNTIMES } from "./runtime-code.generated.ts";
 import { StaticRenderer } from "./static.ts";
-import { textNode } from "./text.ts";
+import { outlineText, textNode } from "./text.ts";
 import { SCROLL_RANGE_CODES } from "./triggers.ts";
 import { playhead } from "./timing.ts";
 
@@ -124,7 +124,11 @@ export function renderPlayer(ctx: Context, rootId: string, s: ExportSettings): {
 			case "text": {
 				if (s.textAsOutlines || it.element.textType === "static") {
 					const a = it.art ? ctx.art(it.art) : null;
-					return a ? { k: "a", s: it.start, e: it.end, r: doc.artwork(a) } : null;
+					if (!a) return null;
+					const id = doc.artwork(a);
+					// its words as ARIA attributes on the <use>
+					const labelled = outlineText(it.element, el("use", {}));
+					return { k: "a", s: it.start, e: it.end, r: id, ...(labelled.name === "g" ? { ac: labelled.attrs as Record<string, string> } : {}) };
 				}
 				return { k: "r", s: it.start, e: it.end, x: serialize(textNode(it.element, ctx.precision.space(space))) };
 			}
@@ -143,6 +147,11 @@ export function renderPlayer(ctx: Context, rootId: string, s: ExportSettings): {
 			tr: TRANSFORM_PROPS.map((k) => track(it.transform[k], ctx.precision.instance(it, space)[k])),
 		};
 		if (it.name) p.nm = it.name;
+		const acc = accAttrs(it.acc, it.symbolType === "button");
+		if (acc) {
+			p.ac = acc;
+			if (it.acc!.description && !it.acc!.silent) p.ad = it.acc!.description;
+		}
 		if (!it.visible || blendHides(it.blendMode)) p.hd = 1;
 		if (it.color) {
 			p.c = COLOR_PROPS.map((k) => track(it.color![k], 2));

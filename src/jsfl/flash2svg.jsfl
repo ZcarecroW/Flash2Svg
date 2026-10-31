@@ -77,6 +77,23 @@
 
 	function round(n) { return Math.round(n * 1000000) / 1000000; }
 	/** Reads a property that may throw (HTML5 Canvas documents reject many AS3-only properties). */
+	// Accessibility panel settings of a document, symbol instance or text field (only what is set)
+	function accOf(o) {
+		var a = null;
+		function put(k, v) {
+			if (!a) a = {};
+			a[k] = v;
+		}
+		var n = get(o, "accName", ""), d = get(o, "description", ""), s = get(o, "shortcut", ""), t = get(o, "tabIndex", null);
+		if (n) put("name", String(n));
+		if (d) put("description", String(d));
+		if (s) put("shortcut", String(s));
+		if (get(o, "silent", false) === true) put("silent", true);
+		if (get(o, "forceSimple", false) === true) put("forceSimple", true);
+		if (typeof t == "number" && t > 0) put("tabIndex", t);
+		return a;
+	}
+
 	function get(o, k, def) {
 		try {
 			var v = o[k];
@@ -294,7 +311,8 @@
 				width: src.width,
 				height: src.height,
 				frameRate: src.frameRate,
-				backgroundColor: src.backgroundColor
+				backgroundColor: src.backgroundColor,
+				acc: accOf(src) || undefined
 			},
 			roots: [],
 			timelines: {},
@@ -590,6 +608,8 @@
 					cacheAsBitmap: !!get(el, "cacheAsBitmap", false),
 					bounds: boundsOf(el)
 				};
+				var acc = el.symbolType == "graphic" ? null : accOf(el);
+				if (acc) d.acc = acc;
 				if (el.symbolType == "graphic") {
 					d.loop = get(el, "loop", "loop");
 					d.firstFrame = get(el, "firstFrame", 0);
@@ -657,6 +677,7 @@
 				runs: runs,
 				multiline: multiline,
 				selectable: selectable,
+				acc: accOf(el) || undefined,
 				bounds: boundsOf(el)
 			};
 		}

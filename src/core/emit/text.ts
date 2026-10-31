@@ -48,9 +48,23 @@ export function textNode(t: TextElement, digits: number): XmlNode {
 			"text-anchor": anchor === "start" ? undefined : anchor,
 			"xml:space": "preserve",
 			id: t.name || undefined,
+			"aria-hidden": t.acc?.silent ? "true" : undefined,
+			"aria-label": !t.acc?.silent && t.acc?.name ? t.acc.name : undefined,
 		},
 		children,
 	);
+}
+
+/**
+ * Text drawn as outlines keeps its words for assistive technology (Flash reads static text too):
+ * an image labelled with the text, or with the Accessibility panel's name; hidden when "Make
+ * object accessible" is off.
+ */
+export function outlineText<N extends XmlNode | null>(t: TextElement, node: N): N | XmlNode {
+	if (!node) return node;
+	if (t.acc?.silent) return el("g", { "aria-hidden": "true" }, [node]);
+	const words = (t.acc?.name || t.text).replace(/\s+/g, " ").trim();
+	return words ? el("g", { role: "img", "aria-label": words }, [node]) : node;
 }
 
 function fontFamily(face: string): string {

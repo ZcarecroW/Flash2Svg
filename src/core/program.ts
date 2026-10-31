@@ -9,6 +9,7 @@
 import { classicEase, easePieces, evalBezier as evalEaseBezier, evalEase, isLinear, type EaseCurve } from "./easing.ts";
 import { compose, decompose, nearestAngle } from "./geom.ts";
 import type {
+	AccInfo,
 	BitmapElement,
 	ColorTransform,
 	ElementData,
@@ -56,6 +57,8 @@ export interface InstanceItem extends ItemBase {
 	symbol: string;
 	symbolType: InstanceElement["symbolType"];
 	name: string;
+	/** Accessibility panel settings of the span's first keyframe. */
+	acc?: AccInfo;
 	transform: TransformTracks;
 	/** null when the colour is identity for the whole item. */
 	color: ColorTracks | null;
@@ -827,6 +830,7 @@ function newInstance(e: InstanceElement, uid: string, start: number, end: number
 		visible: e.visible,
 		cacheAsBitmap: e.cacheAsBitmap,
 		bounds: e.bounds,
+		...(e.acc ? { acc: e.acc } : {}),
 	};
 }
 

@@ -191,6 +191,13 @@
   SVG compressed by the server is smaller: the 46 test documents as SMIL 1070 KB, .svgz 372 KB,
   Brotli 341 KB. Node's zlib packs it (the CLI and the panel; 3–8 % smaller and faster than the
   JavaScript fallback).
+- **Accessibility.** The settings of Animate's *Accessibility* panel go into the SVG: the
+  document's name and description as `<title>` / `<desc>` with a role (`img`, or `group` when
+  parts are accessible), named instances as labelled images with their descriptions, buttons with
+  role, shortcut and tab index, *Make object accessible* off as `aria-hidden`; static text drawn
+  as outlines keeps its words as a label (+2 KB over the test documents). The JS player sets the
+  same at run time, and instances with a click handler can be used with Tab and Enter / Space.
+  Checked in the browser's accessibility tree (Playwright `ariaSnapshot`). Test document f48.
 - **Start when visible.** *Start: When visible* (`--begin visible`) starts the animation once half
   of it is on screen. SMIL and CSS hold it with a few lines of script, so it still plays where
   scripts don't run (`<img>`); the JS player waits for its first sight.

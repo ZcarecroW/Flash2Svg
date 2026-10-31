@@ -25,11 +25,11 @@ import {
 	type Horizon,
 	type Interval,
 } from "./bake.ts";
-import { OutputDoc, svgRoot } from "./document.ts";
+import { OutputDoc, svgRoot, withAcc } from "./document.ts";
 import { blendHides, blendSubtract, blendWhite, colorMatrix, cssBlendMode, isAlphaOnly, matrixString, type ColorMatrixValues } from "./filters.ts";
 import { alignTracks, encodeKeyframes, groupFrames, type MKey } from "./keyframes.ts";
 import { StaticRenderer } from "./static.ts";
-import { textNode } from "./text.ts";
+import { outlineText, textNode } from "./text.ts";
 import { scrollCss, scrollScript, visibleScript, type ScrollRange } from "./triggers.ts";
 import { clickLink } from "../snippets.ts";
 import { playheadFrame } from "./timing.ts";
@@ -263,13 +263,14 @@ class Writer {
 			}
 			case "text": {
 				const it = n.item as Extract<typeof n.item, { kind: "text" }>;
-				content = this.opts.textAsOutlines || it.element.textType === "static" ? (it.art ? this.doc.useArt(it.art) : null) : textNode(it.element, this.ctx.precision.space(this.space));
+				content = this.opts.textAsOutlines || it.element.textType === "static" ? (it.art ? outlineText(it.element, this.doc.useArt(it.art)) : null) : textNode(it.element, this.ctx.precision.space(this.space));
 				break;
 			}
 			case "instance": {
 				content = this.instance(n);
 				const link = content && clickLink(this.ctx.programs[this.space]?.interactions, n.item.name);
 				if (link) content = el("a", { "xlink:href": link.href, target: link.target }, [content!]);
+				if (content) content = withAcc(content, n.item.acc, n.item.symbolType === "button");
 				break;
 			}
 			case "morph":

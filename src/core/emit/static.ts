@@ -8,9 +8,9 @@ import type { Mat } from "../model.ts";
 import { COLOR_PROPS, fromProps, TRANSFORM_PROPS, type ColorProp, type InstanceItem, type Item, type Program, type ProgramLayer, type TransformProp } from "../program.ts";
 import { valueAt } from "../tracks.ts";
 import { clone, el, type XmlNode } from "../xml.ts";
-import { OutputDoc, svgRoot } from "./document.ts";
+import { OutputDoc, svgRoot, withAcc } from "./document.ts";
 import { blendHides, blendSubtract, blendWhite, cssBlendMode, isAlphaOnly, type ColorMatrixValues } from "./filters.ts";
-import { textNode } from "./text.ts";
+import { outlineText, textNode } from "./text.ts";
 import { clickLink } from "../snippets.ts";
 import { graphicFrame, playheadFrame } from "./timing.ts";
 
@@ -146,12 +146,13 @@ export class StaticRenderer {
 				return this.doc.image(item.bitmap, item.matrix, this.ctx.precision.space(prog.id));
 			}
 			case "text":
-				if (this.opts.textAsOutlines || item.element.textType === "static") return item.art ? this.doc.useArt(item.art) : null;
+				if (this.opts.textAsOutlines || item.element.textType === "static") return item.art ? outlineText(item.element, this.doc.useArt(item.art)) : null;
 				return textNode(item.element, this.ctx.precision.space(prog.id));
 			case "instance": {
 				const node = this.instance(prog, item, frame, ticks, depth);
 				const link = node && clickLink(prog.interactions, item.name);
-				return link ? el("a", { "xlink:href": link.href, target: link.target }, [node!]) : node;
+				const linked = link ? el("a", { "xlink:href": link.href, target: link.target }, [node!]) : node;
+				return linked && withAcc(linked, item.acc, item.symbolType === "button");
 			}
 		}
 	}

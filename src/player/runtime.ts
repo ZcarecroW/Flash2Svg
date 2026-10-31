@@ -23,7 +23,7 @@ const RAD = Math.PI / 180;
 type Listener = (e: { type: string; frame: number; label?: string }) => void;
 
 /** DOM events of the mouse handlers (PListener codes). */
-const EVENT_CODES: Record<string, number> = { pointerover: 1, pointerout: 2, pointerdown: 3, pointerup: 4, dblclick: 5 };
+const EVENT_CODES: Record<string, number> = { pointerover: 1, pointerout: 2, pointerdown: 3, pointerup: 4, dblclick: 5, keydown: 6 };
 
 function trackAt(P: PProgram, tr: PTrack | undefined, t: number, def: number): number {
 	if (tr === undefined) return def;
@@ -417,6 +417,7 @@ class Inst {
 		switch (it.k) {
 			case "a":
 				this.node = use(it.r);
+				if (it.ac) for (const k in it.ac) this.node.setAttribute(k, it.ac[k]!);
 				break;
 			case "r": {
 				const g = el("g");
@@ -439,8 +440,14 @@ class Inst {
 						g.setAttribute("data-name", it.nm);
 						owner.player.named.set(it.nm, this.clip);
 					}
+					if (it.ac) for (const k in it.ac) g.setAttribute(k, it.ac[k]!);
+					if (it.ad) {
+						const d = el("desc");
+						d.textContent = it.ad;
+						g.prepend(d);
+					}
 					if (it.t === 2) this.button(g);
-					else if (__EVENTS__ && it.nm && clicks(owner, it.nm)) g.style.cursor = "pointer";
+					if (__EVENTS__ && it.nm && clicks(owner, it.nm)) clickable(g);
 					this.clip.sync();
 					// its first frame's script runs now, before it advances (a stop() there holds it)
 					if (it.t === 0) this.clip.runActions();
@@ -1104,7 +1111,14 @@ function clicks(c: Clip, name: string): boolean {
 function listen(p: Player, c: Clip, l: PListener) {
 	p.handlers.push([c, l]);
 	const inst = l[1] && l[2] !== 1 && l[2] !== 2 ? walk(c, l[1], null).inst : null;
-	if (inst) inst.node.style.cursor = "pointer";
+	if (inst) clickable(inst.node);
+}
+
+/** Hand cursor; a click handler can also be reached with the keyboard (Tab, then Enter or Space). */
+function clickable(g: SVGElement) {
+	g.style.cursor = "pointer";
+	if (!g.hasAttribute("tabindex")) g.setAttribute("tabindex", "0");
+	if (!g.hasAttribute("role")) g.setAttribute("role", "button");
 }
 
 function unlisten(p: Player, c: Clip) {
@@ -1120,11 +1134,14 @@ function hear(p: Player, e: Event) {
 	const code = EVENT_CODES[e.type];
 	const target = e.target as Node;
 	const related = (e as MouseEvent).relatedTarget as Node | null;
+	// Enter or Space on a focused instance: a click
+	const key = code === 6;
+	if (key && (e as KeyboardEvent).key !== "Enter" && (e as KeyboardEvent).key !== " ") return;
 	const pressed = code === 3 ? new Set<Node>() : null;
 	let acted = false;
 	for (const [c, l] of p.handlers.slice()) {
 		const click = l[2] === 0;
-		if (click ? code !== 3 && code !== 4 : l[2] !== code) continue;
+		if (click ? code !== 3 && code !== 4 && !key : l[2] !== code) continue;
 		const inst = l[1] ? walk(c, l[1], null).inst : null;
 		const node = l[1] ? inst?.node : c.node;
 		if (!node?.contains(target)) continue;
@@ -1132,7 +1149,7 @@ function hear(p: Player, e: Event) {
 			pressed!.add(node);
 			continue;
 		}
-		if (click && !p.pressed?.has(node)) continue;
+		if (click && !key && !p.pressed?.has(node)) continue;
 		// over / out: entering or leaving the instance, not moving between its parts
 		if ((code === 1 || code === 2) && related && node.contains(related)) continue;
 		handle(c, l, inst);
@@ -1140,6 +1157,7 @@ function hear(p: Player, e: Event) {
 	}
 	if (pressed) p.pressed = pressed;
 	else if (code === 4) p.pressed = null;
+	if (acted && key) e.preventDefault();
 	if (acted) {
 		p.wake();
 		p.root.render(p.time * p.P.fps);

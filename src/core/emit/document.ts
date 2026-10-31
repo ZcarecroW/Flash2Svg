@@ -7,7 +7,7 @@ import { templateNodes } from "../morph.ts";
 import type { Context } from "../context.ts";
 import { fmt, fmtMatrix } from "../geom.ts";
 import { imageMime } from "../mime.ts";
-import type { FilterData, Mat } from "../model.ts";
+import type { AccInfo, FilterData, Mat } from "../model.ts";
 import { cdata, clone, el, serialize, walk, type XmlNode } from "../xml.ts";
 import { buildFilters, colorMatrix, matrixString, type ColorMatrixValues } from "./filters.ts";
 
@@ -292,7 +292,10 @@ export class OutputDoc {
 			}
 			children.push(el("defs", {}, [{ name: "#raw", attrs: {}, children: [parts.join("")] }]));
 		}
-		const svg = { ...root, children: [...children, ...root.children] };
+		// <title> and <desc> stay the first children (assistive technology looks there)
+		const lead = root.children.findIndex((c) => typeof c === "string" || (c.name !== "title" && c.name !== "desc"));
+		const at = lead < 0 ? root.children.length : lead;
+		const svg = { ...root, children: [...root.children.slice(0, at), ...children, ...root.children.slice(at)] };
 		for (const s of this.scripts) svg.children.push(el("script", {}, [cdata(s)]));
 		let out = serialize(svg, { pretty: opts.pretty });
 		if (opts.xmlDeclaration !== false) out = '<?xml version="1.0" encoding="UTF-8"?>\n' + out;
@@ -300,9 +303,14 @@ export class OutputDoc {
 	}
 }
 
+/**
+ * The root <svg>. With a name or description in Animate's Accessibility panel it gets <title>,
+ * <desc> and a role: "img", or "group" when parts of it are accessible themselves (named
+ * instances, buttons); "Make movie accessible" off hides it from assistive technology.
+ */
 export function svgRoot(ctx: Context, attrs: Record<string, string | number> = {}): XmlNode {
 	const d = ctx.model.doc;
-	return el("svg", {
+	const svg = el("svg", {
 		xmlns: "http://www.w3.org/2000/svg",
 		"xmlns:xlink": "http://www.w3.org/1999/xlink",
 		version: "1.1",
@@ -311,6 +319,41 @@ export function svgRoot(ctx: Context, attrs: Record<string, string | number> = {
 		viewBox: `0 0 ${fmt(d.width, 2)} ${fmt(d.height, 2)}`,
 		...attrs,
 	});
+	const acc = d.acc;
+	if (acc?.silent) svg.attrs["aria-hidden"] = "true";
+	else if (acc?.name || acc?.description) {
+		const parts = Object.values(ctx.model.timelines).some((t) => t.layers.some((l) => l.keyframes.some((k) => k.elements.some((e) => e.kind === "instance" && (e.acc?.name || e.symbolType === "button")))));
+		svg.attrs.role = parts ? "group" : "img";
+		if (acc.name) svg.children.push(el("title", {}, [acc.name]));
+		if (acc.description) svg.children.push(el("desc", {}, [acc.description]));
+	}
+	return svg;
+}
+
+/**
+ * ARIA of a symbol instance from the Accessibility panel, or null: hidden ("Make object
+ * accessible" off), or a named image / button (its children then count as part of it), with its
+ * shortcut and tab index (buttons).
+ */
+export function accAttrs(acc: AccInfo | undefined, button: boolean): Record<string, string> | null {
+	if (!acc) return null;
+	if (acc.silent) return { "aria-hidden": "true" };
+	const a: Record<string, string> = {};
+	if (acc.name) {
+		a.role = button ? "button" : "img";
+		a["aria-label"] = acc.name;
+	}
+	if (acc.shortcut) a["aria-keyshortcuts"] = acc.shortcut;
+	if (button && acc.tabIndex) a.tabindex = String(acc.tabIndex);
+	return Object.keys(a).length ? a : null;
+}
+
+/** An instance with its accessibility settings (a group with ARIA and a <desc>). */
+export function withAcc(node: XmlNode, acc: AccInfo | undefined, button: boolean): XmlNode {
+	const a = accAttrs(acc, button);
+	if (!a) return node;
+	const desc = acc!.description && !acc!.silent ? [el("desc", {}, [acc!.description])] : [];
+	return el("g", a, [...desc, node]);
 }
 
 function toBase64(bytes: Uint8Array): string {
