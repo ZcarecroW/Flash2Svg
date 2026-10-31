@@ -3,7 +3,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { runJsfl } from "./lib/animate.mjs";
+import { outputProblems, runJsfl } from "./lib/animate.mjs";
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
 const outRoot = join(repo, "tests", "out");
@@ -19,5 +19,10 @@ const names = list
 writeFileSync(join(outRoot, "e2e-config.txt"), `${names.join(",")}\n${noref ? "noref" : "ref"}`);
 const res = await runJsfl(join(repo, "tests", "e2e", "extract.jsfl"));
 console.log(`Animate exited (${res.code}) after ${res.seconds.toFixed(1)}s`);
+const problems = outputProblems(res.output);
+if (problems.length) {
+	console.log(`FAIL Animate's Output panel reports ${problems.length} problem(s):\n  ${problems.join("\n  ")}`);
+	process.exitCode = 1;
+}
 const logFile = join(outRoot, "extract-log.txt");
 console.log(existsSync(logFile) ? readFileSync(logFile, "utf8") : "No log written.");

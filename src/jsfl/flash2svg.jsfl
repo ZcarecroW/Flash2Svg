@@ -79,6 +79,9 @@
 	/** Reads a property that may throw (HTML5 Canvas documents reject many AS3-only properties). */
 	// Accessibility panel settings of a document, symbol instance or text field (only what is set)
 	function accOf(o) {
+		// ActionScript 3 documents only: HTML5 Canvas has no accessibility settings (Animate writes
+		// "JS API is not supported" to the Output panel for each property read)
+		if (!job || !job.srcDoc || (job.srcDoc.type || "Flash") != "Flash") return null;
 		var a = null;
 		function put(k, v) {
 			if (!a) a = {};
@@ -268,6 +271,10 @@
 			for (var i = 0; i < job.opts.items.length; i++) roots.push({ item: job.opts.items[i] });
 		} else if (tl.libraryItem) {
 			roots.push({ item: tl.libraryItem.name });
+		} else if (job.opts.allScenes && src.timelines && src.timelines.length > 1) {
+			// all scenes in a row, as Flash plays them (the compiler joins them, see core/scenes.ts)
+			for (var s = 0; s < src.timelines.length; s++) roots.push({ scene: s });
+			job.allScenes = true;
 		} else {
 			roots.push({ scene: src.currentTimeline });
 		}
@@ -331,9 +338,12 @@
 			queueTimeline(id);
 		}
 		var scenes = src.timelines ? src.timelines.length : 1;
-		if (scenes > 1 && roots[0].scene !== undefined) {
+		if (job.allScenes) {
+			job.model.sceneOrder = job.model.roots;
+			job.model.roots = ["scene:all"];
+		} else if (scenes > 1 && roots[0].scene !== undefined) {
 			// Flash plays all scenes in a row; only the one being edited is exported
-			warn("The document has " + scenes + " scenes: only the current scene (" + src.timelines[roots[0].scene].name + ") is exported");
+			warn("The document has " + scenes + " scenes: only the current scene (" + src.timelines[roots[0].scene].name + ") is exported (Source: All scenes exports them in a row)");
 		}
 		job.phase = "timelines";
 		job.message = "Reading timelines";
@@ -1230,6 +1240,7 @@
 			width: d.width,
 			height: d.height,
 			frameRate: d.frameRate,
+			scenes: d.timelines ? d.timelines.length : 1,
 			timeline: tl.libraryItem ? tl.libraryItem.name : tl.name,
 			isSymbol: !!tl.libraryItem,
 			frameCount: tl.frameCount,

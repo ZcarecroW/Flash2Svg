@@ -46,7 +46,7 @@ support (sources below) before starting a package.
 | 4 | CSS: `linear()` easing, individual transform properties | medium | small–medium | ✅ (also decimals from the displayed size, .svgz) |
 | 5 | Interactivity: triggers, scroll, label state machine | high | medium | ✅ (labels as dotLottie states ⬜, see 6) |
 | 6 | Lottie / dotLottie export | very high (reach) | high | ✅ (effects ✅, built filters ✅, state machine ✅, panel preview ✅) |
-| 7 | WOFF2 fonts, video, library export | medium | medium | 🚧 accessibility ✅, scale modes ✅, automatic format ✅ |
+| 7 | WOFF2 fonts, video, library export | medium | medium | 🚧 accessibility ✅, scale modes ✅, automatic format ✅, library symbols ✅, scenes ✅ |
 
 ### 1. Media encoding settings
 - ✅ **Images:**
@@ -148,8 +148,8 @@ support (sources below) before starting a package.
 ### 7. More
 - ✅ Responsive scale modes like Flash (show all, no border, exact fit; `scale`, `--scale`), letterbox in the stage colour; a transparent background was there already (*Background* off).
 - ✅ Accessibility: `<title>`, `<desc>`, roles and `aria-label` from Animate's Accessibility panel (document, instances, buttons with shortcut and tab index, *Make object accessible* off → `aria-hidden`), static text outlines labelled with their words, keyboard use of click handlers in the player; checked in the browser's accessibility tree (f48).
-- ⬜ Export library symbols as separate SVGs (icon workflows).
-- ⬜ Export several scenes.
+- ✅ Export library symbols as separate SVGs (icon workflows): *Source: Selected library symbols* (one file each) was there already.
+- ✅ Export several scenes: *All scenes in a row* joins them into one timeline (`src/core/scenes.ts`; frame numbers, scene jumps, next/previous scene, labels per scene).
 - ⬜ A web component (`<flash2svg-player>`) with lazy loading.
 - ⬜ Raster fallbacks (animated WebP/AVIF, MP4, GIF), e.g. for e-mail.
 - ✅ Pick the format automatically (`auto`): the player for sounds / mouse handlers, else CSS unless SMIL is more than 15 % smaller (test documents: CSS 40, SMIL 5, player 3).

@@ -75,7 +75,9 @@ close the panel, quit Animate, then remove it.
 ## Use
 
 1. Open your FLA and go to the timeline (scene or symbol) you want to export — or select symbols
-   in the Library and choose *Source: Selected library symbols*.
+   in the Library and choose *Source: Selected library symbols* (one SVG each, e.g. for icons), or
+   *All scenes in a row* for a document with several scenes: they play one after the other as in
+   Flash, and `gotoAndPlay(5, "Scene 2")`, `nextScene()` and `prevScene()` jump between them.
 2. Pick a format and, if you like, an output file (default: next to the FLA).
 3. Press **Export**. The panel shows a preview you can play and scrub, the file size, and any
    warnings about features that could not be reproduced exactly. A bar shows what the size is

@@ -13,7 +13,7 @@ interface SelfTestJob {
 	fla: string;
 	output: string;
 	settings?: Partial<ExportSettings>;
-	source?: "timeline" | "library";
+	source?: "timeline" | "library" | "scenes";
 	frames?: "all" | "current" | "range";
 	rangeStart?: number;
 	rangeEnd?: number;
@@ -98,7 +98,17 @@ export async function runSelfTestIfRequested(): Promise<boolean> {
 	const cfg = JSON.parse(node.fs.readFileSync(cfgPath, "utf8")) as SelfTestConfig;
 	node.fs.unlinkSync(cfgPath); // never loop
 	const results: unknown[] = [];
-	const log = (r: unknown) => {
+	// what Animate wrote to its Output panel during a job (its own errors, JSFL warnings): saved,
+	// then cleared, so every job reports its own
+	const outFile = cfg.result.replace(/\.json$/i, "") + "-output.txt";
+	const animateOutput = async () => {
+		await evalScript(`fl.outputPanel.save(${JSON.stringify(toFileUri(outFile))}, false); fl.outputPanel.clear(); "ok"`).catch(() => "");
+		const text = node!.fs.existsSync(outFile) ? node!.fs.readFileSync(outFile, "utf8").replace(/^\uFEFF/, "").trim() : "";
+		return text || undefined;
+	};
+	await animateOutput();
+	const log = async (r: Record<string, unknown>) => {
+		r.output = await animateOutput();
 		results.push(r);
 		node!.fs.writeFileSync(cfg.result, JSON.stringify({ done: false, results }, null, 1));
 	};
@@ -130,9 +140,9 @@ export async function runSelfTestIfRequested(): Promise<boolean> {
 				() => false,
 			);
 			const preview = job.preview && (res.format === "lottie" || res.format === "dotlottie") ? await checkPreview(res.files[0]!, res.format, job.preview) : undefined;
-			log({ fla: job.fla, ok: true, format: res.format, files: res.files, bytes: res.output.reduce((n, o) => n + o.stats.bytes, 0), warnings: res.warnings, seconds: res.seconds, steps: progress.length, docType: info.type, images: res.images.map((i) => [i.name, i.width, i.height]), parts: res.output.map((o) => o.stats.parts), drawings: res.output.flatMap((o) => o.stats.drawings), linkedBytes: res.linkedBytes, preview });
+			await log({ fla: job.fla, ok: true, format: res.format, files: res.files, bytes: res.output.reduce((n, o) => n + o.stats.bytes, 0), warnings: res.warnings, seconds: res.seconds, steps: progress.length, docType: info.type, images: res.images.map((i) => [i.name, i.width, i.height]), parts: res.output.map((o) => o.stats.parts), drawings: res.output.flatMap((o) => o.stats.drawings), linkedBytes: res.linkedBytes, preview });
 		} catch (e) {
-			log({ fla: job.fla, ok: false, error: (e as Error).message, seconds: (Date.now() - t0) / 1000 });
+			await log({ fla: job.fla, ok: false, error: (e as Error).message, seconds: (Date.now() - t0) / 1000 });
 		}
 		await evalScript("fl.closeAll(false)").catch(() => "");
 	}

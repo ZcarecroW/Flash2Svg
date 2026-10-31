@@ -191,6 +191,15 @@
   SVG compressed by the server is smaller: the 46 test documents as SMIL 1070 KB, .svgz 372 KB,
   Brotli 341 KB. Node's zlib packs it (the CLI and the panel; 3–8 % smaller and faster than the
   JavaScript fallback).
+- **All scenes in a row.** *Source: All scenes in a row* exports a document with several scenes
+  as one animation, the scenes one after the other as Flash plays them: frame numbers, scene jumps
+  (`gotoAndPlay(5, "Scene 2")`, also in code-snippet handlers), `nextScene()` / `prevScene()`
+  and labels (named with their scene where two scenes share one) count on the joined timeline
+  (`src/core/scenes.ts`). Before, only the current scene was exported.
+- **Animate's Output panel is checked.** The panel self-test saves and clears it after every job,
+  the fixture build and the extraction after their run: errors there fail the test. It caught the
+  accessibility settings being read in HTML5 Canvas documents, which Animate reported as
+  unsupported for every property.
 - **Automatic format** (`--format auto`): the JS player when sounds or mouse handlers need its
   script, otherwise CSS (its transforms play on the compositor), or SMIL when that is more than
   15 % smaller (shape tweens: SMIL morphs one drawing, CSS draws every frame). The test

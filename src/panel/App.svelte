@@ -244,6 +244,9 @@
 			<select bind:value={panel.source}>
 				<option value="timeline">Current timeline</option>
 				<option value="library">Selected library symbols{info.selectedSymbols?.length ? ` (${info.selectedSymbols.length})` : ""}</option>
+				{#if (info.scenes ?? 1) > 1}
+					<option value="scenes">All scenes in a row ({info.scenes})</option>
+				{/if}
 			</select>
 		</label>
 		<label class="row">

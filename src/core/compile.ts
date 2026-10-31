@@ -9,6 +9,7 @@ import { lottieParts, renderLottie } from "./emit/lottie.ts";
 import { renderPlayer } from "./emit/player.ts";
 import { renderStatic } from "./emit/static.ts";
 import { playbackStateMachine } from "./statemachine.ts";
+import { joinScenes } from "./scenes.ts";
 import type { ScrollRange } from "./emit/triggers.ts";
 import { playhead } from "./emit/timing.ts";
 import type { SoundSettings } from "./audio.ts";
@@ -192,6 +193,7 @@ export interface CompileHooks {
 
 export function compileScene(model: SceneModel, files: FileSource, partial: Partial<ExportSettings> = {}, rootIndex = 0, hooks: CompileHooks = {}): CompileOutput {
 	if (partial.format === "auto") return chooseFormat(model, files, partial, rootIndex, hooks);
+	model = joinScenes(model);
 	const s: ExportSettings = { ...DEFAULT_SETTINGS, ...partial };
 	// number fields can arrive empty (null) or out of range from the panel
 	s.digits = Number.isFinite(s.digits) ? Math.max(0, Math.min(6, Math.round(s.digits))) : DEFAULT_SETTINGS.digits;

@@ -23,6 +23,8 @@ export interface DocInfo {
 	frameCount?: number;
 	currentFrame?: number;
 	selectedSymbols?: string[];
+	/** scenes in the document */
+	scenes?: number;
 }
 
 interface JobStatus {
@@ -36,7 +38,7 @@ interface JobStatus {
 
 export interface ExportRequest {
 	settings: ExportSettings;
-	source: "timeline" | "library";
+	source: "timeline" | "library" | "scenes";
 	frames: "all" | "current" | "range";
 	rangeStart: number;
 	rangeEnd: number;
@@ -191,7 +193,7 @@ async function exportInto(
 	const node = nodeOrThrow();
 	const items = req.source === "library" ? (info.selectedSymbols ?? []) : [];
 	if (req.source === "library" && !items.length) throw new Error("Select one or more symbols in the Library first.");
-	const opts = { outDir: toFileUri(node.path.join(work, "scene")), items };
+	const opts = { outDir: toFileUri(node.path.join(work, "scene")), items, allScenes: req.source === "scenes" };
 	let st = await evalJson<JobStatus>(`Flash2Svg.start(${JSON.stringify(JSON.stringify(opts))})`);
 	while (st.state === "running") {
 		if (isCancelled()) {

@@ -20,6 +20,11 @@ export interface SceneModel {
 	doc: DocInfo;
 	/** Ids of the timelines being exported (keys of `timelines`); one SVG is produced per root. */
 	roots: string[];
+	/**
+	 * All scenes exported in a row: their timeline ids in order; `roots` is then ["scene:all"],
+	 * the joined timeline core/scenes.ts makes.
+	 */
+	sceneOrder?: string[];
 	timelines: Record<string, TimelineData>;
 	/** Shape/text artwork rendered through Animate's SVG exporter, keyed by atlas id. */
 	atlas: Record<string, AtlasItem>;

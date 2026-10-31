@@ -2,7 +2,7 @@ import { DEFAULT_SETTINGS, type ExportSettings } from "../../core/compile.ts";
 
 export interface PanelSettings {
 	export: ExportSettings;
-	source: "timeline" | "library";
+	source: "timeline" | "library" | "scenes";
 	frames: "all" | "current" | "range";
 	rangeStart: number;
 	rangeEnd: number;

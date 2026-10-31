@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pngjs from "pngjs";
-import { runJsfl } from "./lib/animate.mjs";
+import { outputProblems, runJsfl } from "./lib/animate.mjs";
 
 const { PNG } = pngjs;
 
@@ -186,5 +186,10 @@ else if (existsSync(onlyFile)) rmSync(onlyFile);
 
 const res = await runJsfl(join(repo, "tests", "fixtures", "build-fixtures.jsfl"));
 console.log(`Animate exited (${res.code}) after ${res.seconds.toFixed(1)}s`);
+const problems = outputProblems(res.output);
+if (problems.length) {
+	console.log(`FAIL Animate's Output panel reports ${problems.length} problem(s):\n  ${problems.join("\n  ")}`);
+	process.exitCode = 1;
+}
 const logFile = join(flaDir, "build-log.txt");
 console.log(existsSync(logFile) ? readFileSync(logFile, "utf8") : "No build log written.");

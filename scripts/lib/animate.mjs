@@ -31,6 +31,11 @@ export function findAnimate() {
 	throw new Error("Adobe Animate not found. Set FLASH2SVG_ANIMATE to the Animate executable.");
 }
 
+/** Lines of Animate's Output panel that report a problem (errors, unsupported APIs). */
+export function outputProblems(text) {
+	return (text ?? "").split(/\r?\n/).filter((l) => /error|exception|failed|not supported/i.test(l));
+}
+
 export function isAnimateRunning() {
 	if (process.platform !== "win32") return false;
 	const out = execFileSync("tasklist", ["/FI", "IMAGENAME eq Animate.exe", "/NH"], { encoding: "utf8" });

@@ -50,6 +50,7 @@ const jobs = [
 	{ fla: fla("f03-transforms"), output: join(out, "transforms-scroll.svg"), settings: { format: "css", begin: "scroll", scrollRange: "crossing" }, expect: { files: 1, contains: [/view-timeline:--/, /animation-timeline:--/] } },
 	{ fla: fla("f03-transforms"), output: join(out, "transforms-visible.svg"), settings: { format: "smil", begin: "visible" }, expect: { files: 1, contains: [/IntersectionObserver/, /pauseAnimations/] } },
 	{ fla: fla("f45-morph"), output: join(out, "morph-auto.svg"), settings: { format: "auto", scale: "fit" }, expect: { files: 1, warning: /Automatic format: SMIL/, contains: [/<animate attributeName="d"/, /width="100%" height="100%"/] } },
+	{ fla: fla("f36-scenes"), output: join(out, "all-scenes.svg"), settings: { format: "player" }, source: "scenes", expect: { files: 1, contains: [/#CC0000/, /"ac":\{"11":\[\[2,12,1\]\]\}/] } },
 	// Lottie: the file name follows the format (.svg chosen, .json / .lottie written); bitmaps embedded,
 	// linked next to the JSON, or inside the archive
 	{ fla: fla("f45-morph"), output: join(out, "morph-lottie.svg"), settings: { format: "lottie" }, preview: {}, expect: { files: 1, ext: ".json", lottie: true, parts: ["drawing", "animation"], preview: { svg: true, moving: true } } },
@@ -102,6 +103,14 @@ const res = JSON.parse(readFileSync(resultFile, "utf8"));
 // check what the jobs promised
 res.results.forEach((r, i) => {
 	const exp = jobs[i]?.expect ?? {};
+	// Animate's Output panel during the job: errors there fail it
+	if (r.output) {
+		console.log(`Animate output panel (${r.fla.split(/[\\/]/).pop()}):\n  ${r.output.replace(/\n/g, "\n  ")}`);
+		if (/error|exception|failed|undefined|not supported/i.test(r.output) && r.ok) {
+			r.ok = false;
+			r.error = "Animate's Output panel reports an error";
+		}
+	}
 	if (!r.ok) return;
 	const problems = [];
 	// the size overview: the parts add up to the files' size; the expected ones are there
