@@ -81,7 +81,12 @@ describe("Lottie output", () => {
 		expect(manifest.version).toBe("2");
 		const id = manifest.animations[0].id as string;
 		expect(id).toMatch(/^[a-zA-Z0-9._\- ]+$/);
-		expect(strFromU8(zip[`a/${id}.json`]!)).toBe(json);
+		// the same animation, holding its last frame once more (dotLottie plays [0, op − 1] inclusive)
+		const plain = JSON.parse(json);
+		const packed = JSON.parse(strFromU8(zip[`a/${id}.json`]!));
+		expect(packed.op).toBe(plain.op + 1);
+		for (const l of plain.layers) if (l.op >= plain.op) l.op = plain.op + 1;
+		expect({ ...packed, op: plain.op }).toEqual({ ...plain });
 	});
 
 	it("turns labels into markers and writes a frame range", () => {
@@ -262,13 +267,15 @@ describe("dotLottie state machine", () => {
 		expect(intro!.transitions).toEqual([{ type: "Transition", toState: "tail", guards: [{ type: "Event", inputName: "introDone" }] }]);
 		expect(tail).toMatchObject({ name: "tail", segment: "loop", loop: true });
 		expect(sm.interactions).toEqual([{ type: "OnComplete", stateName: "intro", actions: [{ type: "Fire", inputName: "introDone" }] }]);
-		// dotLottie players play a marker's last frame too: [tm, tm + dr]
+		// dotLottie players play a marker's last frame too, [tm, tm + dr]: the .lottie holds its last
+		// frame once more (op + 1), so the markers keep their full length
 		const json = JSON.parse(compile("f28-onestop", { format: "lottie" }).files[0]!.svg);
 		const tm = marker(json, "loop").tm as number;
 		expect(marker(json, "intro")).toMatchObject({ tm: 0, dr: tm });
 		expect(marker(json, "loop")).toMatchObject({ dr: json.op - tm });
-		expect(marker(anim, "intro")).toMatchObject({ tm: 0, dr: tm - 1 });
-		expect(marker(anim, "loop")).toMatchObject({ tm, dr: anim.op - tm - 1 });
+		expect(anim.op).toBe(json.op + 1);
+		expect(marker(anim, "intro")).toMatchObject({ tm: 0, dr: tm });
+		expect(marker(anim, "loop")).toMatchObject({ tm, dr: json.op - tm });
 	});
 
 	it("waits on the poster for a click, hover or the page, and starts again on the next one", () => {
@@ -276,7 +283,8 @@ describe("dotLottie state machine", () => {
 		expect(sm.initial).toBe("idle");
 		const idle = (sm.states as Json[])[0]!;
 		expect(idle).toMatchObject({ name: "idle", autoplay: false, segment: "poster" });
-		expect(marker(anim, "poster")).toMatchObject({ tm: anim.op - 1, dr: 1 });
+		// the last frame of the timeline (the .lottie's extra frame only holds it)
+		expect(marker(anim, "poster")).toMatchObject({ tm: anim.op - 2, dr: 1 });
 		expect(sm.inputs).toContainEqual({ type: "Event", name: "play" });
 		expect(sm.interactions).toContainEqual({ type: "Click", actions: [{ type: "Fire", inputName: "play" }] });
 		for (const s of sm.states as Json[])
