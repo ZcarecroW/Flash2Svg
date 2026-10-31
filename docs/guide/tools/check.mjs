@@ -5,7 +5,9 @@
  * scrolling, every image loads), every demo's every format tab (the image, player or Lottie
  * animation really shows), search and the theme switch.
  *
- *   node docs/guide/tools/check.mjs
+ *   node docs/guide/tools/check.mjs [https://zcarecrow.github.io/Flash2Svg/]
+ *
+ * With an address it checks the published site instead (the pages listed are the local build's).
  */
 import { createReadStream, existsSync, readdirSync, statSync } from "node:fs";
 import { createServer } from "node:http";
@@ -42,7 +44,8 @@ const server = createServer((req, res) => {
 	if (req.method === "HEAD") res.end();
 	else createReadStream(file).pipe(res);
 }).listen(0);
-const base = `http://127.0.0.1:${server.address().port}/`;
+const live = process.argv[2];
+const base = live ? live.replace(/\/?$/, "/") : `http://127.0.0.1:${server.address().port}/`;
 
 const problems = [];
 const fail = (where, what) => problems.push(`${where}: ${what}`);
