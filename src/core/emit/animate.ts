@@ -27,6 +27,7 @@ import {
 } from "./bake.ts";
 import { OutputDoc, svgRoot } from "./document.ts";
 import { blendHides, blendSubtract, blendWhite, colorMatrix, cssBlendMode, isAlphaOnly, matrixString, type ColorMatrixValues } from "./filters.ts";
+import { alignTracks, encodeKeyframes, groupFrames, type MKey } from "./keyframes.ts";
 import { StaticRenderer } from "./static.ts";
 import { textNode } from "./text.ts";
 import { playheadFrame } from "./timing.ts";
@@ -178,17 +179,24 @@ class Writer {
 
 	// ------------------------------------------------------------------ structure
 
+	/** The program whose coordinate space is being written (see Precision). */
+	private space = "";
+
 	timeline(bt: BakedTimeline): XmlNode[] {
+		const outer = this.space;
+		this.space = bt.program.id;
 		const content = this.layers(bt);
+		this.space = outer;
 		if (!bt.view) return content;
 		const v = bt.view;
+		const d = this.ctx.precision.view(bt.program.id);
 		const comps: Comp[] = [
-			{ type: "translate", tracks: [v.x, v.y] },
-			{ type: "rotate", tracks: [v.rot] },
-			{ type: "skewX", tracks: [v.skw] },
-			{ type: "scale", tracks: [v.sx, v.sy] },
+			{ type: "translate", tracks: [v.x, v.y], digits: [d.x, d.y] },
+			{ type: "rotate", tracks: [v.rot], digits: [d.rot] },
+			{ type: "skewX", tracks: [v.skw], digits: [d.skw] },
+			{ type: "scale", tracks: [v.sx, v.sy], digits: [d.sx, d.sy] },
 		];
-		return [this.transformChain(comps, el("g", {}, content), v)];
+		return [this.transformChain(comps, el("g", {}, content), v, [d.x, d.sx])];
 	}
 
 	private layers(bt: BakedTimeline): XmlNode[] {
@@ -244,12 +252,12 @@ class Writer {
 				break;
 			case "bitmap": {
 				const it = n.item as Extract<typeof n.item, { kind: "bitmap" }>;
-				content = this.doc.image(it.bitmap, it.matrix);
+				content = this.doc.image(it.bitmap, it.matrix, this.ctx.precision.space(this.space));
 				break;
 			}
 			case "text": {
 				const it = n.item as Extract<typeof n.item, { kind: "text" }>;
-				content = this.opts.textAsOutlines || it.element.textType === "static" ? (it.art ? this.doc.useArt(it.art) : null) : textNode(it.element, this.ctx.digits);
+				content = this.opts.textAsOutlines || it.element.textType === "static" ? (it.art ? this.doc.useArt(it.art) : null) : textNode(it.element, this.ctx.precision.space(this.space));
 				break;
 			}
 			case "instance":
@@ -269,7 +277,7 @@ class Writer {
 		const { defs, body, nodes } = this.doc.morphCopy(p.art);
 		// the still state: at the poster tick if shown then, else where it first shows
 		const at = n.vis.some(([a, b]) => this.posterTick >= a && this.posterTick < b) ? this.posterTick : n.vis[0]![0];
-		const digits = this.ctx.digits;
+		const digits = this.ctx.precision.space(this.space);
 		for (const ch of p.channels) {
 			const node = nodes[ch.node]!;
 			const track = ch.f ? n.frame : n.ratio;
@@ -345,14 +353,15 @@ class Writer {
 		// transform components, innermost first: translate(-tp) scale skewX rotate translate(x,y)
 		const t = n.transform;
 		const neg = (tr: GTrack) => tr.map((k) => ({ ...k, v: -k.v }));
+		const d = this.ctx.precision.instance(n.item, this.space);
 		const comps: Comp[] = [
-			{ type: "translate", tracks: [t.x, t.y] },
-			{ type: "rotate", tracks: [t.rot] },
-			{ type: "skewX", tracks: [t.skw] },
-			{ type: "scale", tracks: [t.sx, t.sy] },
-			{ type: "translate", tracks: [neg(t.tpx), neg(t.tpy)] },
+			{ type: "translate", tracks: [t.x, t.y], digits: [d.x, d.y] },
+			{ type: "rotate", tracks: [t.rot], digits: [d.rot] },
+			{ type: "skewX", tracks: [t.skw], digits: [d.skw] },
+			{ type: "scale", tracks: [t.sx, t.sy], digits: [d.sx, d.sy] },
+			{ type: "translate", tracks: [neg(t.tpx), neg(t.tpy)], digits: [d.tpx, d.tpy] },
 		];
-		inner = this.transformChain(comps, inner, t);
+		inner = this.transformChain(comps, inner, t, [d.x, d.sx]);
 
 		// colour, filters, blend
 		const attrs: Record<string, string> = {};
@@ -464,16 +473,129 @@ class Writer {
 		return el("use", { "xlink:href": "#" + id });
 	}
 
-	private transformChain(comps: Comp[], inner: XmlNode, t: BakedInstance["transform"]): XmlNode {
-		// Fold static components into matrices; animated components get their own animation.
-		// Order of application to points: last comp first (translate(-tp)) ... first comp last.
-		const statics = comps.map((c) => c.tracks.every(isConstantTrack));
-		if (statics.every(Boolean)) {
-			const m = staticMatrix(t, this.posterTick);
-			const s = fmtMatrix(m, this.ctx.digits);
+	/** The component's values print the same all the time (changes below the printed precision). */
+	private still(c: Comp): boolean {
+		return c.tracks.every((tr, k) => {
+			const p = 10 ** c.digits[k]!;
+			const r = Math.round((tr[0]?.v ?? 0) * p);
+			return tr.every((key) => Math.round(key.v * p) === r);
+		});
+	}
+
+	/** `md`: decimals of a still matrix's translation and linear part. */
+	private transformChain(comps: Comp[], inner: XmlNode, t: BakedInstance["transform"], md: [number, number]): XmlNode {
+		if (comps.every((c) => this.still(c))) {
+			const s = fmtMatrix(staticMatrix(t, this.posterTick), ...md);
 			return s ? el("g", { transform: s }, [inner]) : inner;
 		}
-		// Build from the inside out.
+		return this.css ? this.cssTransformChain(comps, inner, md) : this.chainNodes(comps, inner, md);
+	}
+
+	/**
+	 * CSS: one element carries the individual properties translate, rotate and scale plus
+	 * `transform` for what follows them (a skew, the scale after it, the transformation point):
+	 * a tween of position, rotation and scale is one element with one animation. The poster
+	 * stays in the transform attribute (renderers without CSS); while the animations run, a
+	 * `transform` value in their keyframes replaces it (WebKit lets `transform:none` fall back to
+	 * the attribute, so the identity is scale(1)). A part whose two tracks can't share keyframes
+	 * (x and y easing differently...) gets its own element as before.
+	 */
+	private cssTransformChain(comps: Comp[], inner: XmlNode, md: [number, number]): XmlNode {
+		const at = this.posterTick;
+		const moving = (c: Comp) => !this.still(c);
+		const ident = (c: Comp) => !moving(c) && !fmtMatrix(compMatrix(c, at), ...md);
+		let i = 0;
+		let T: Comp | undefined, R: Comp | undefined, S: Comp | undefined;
+		const outer: Comp[] = [];
+		if (comps[i]?.type === "translate") {
+			const c = comps[i++]!;
+			if (moving(c) && !alignTracks(c.tracks)) outer.push(c);
+			else if (!ident(c)) T = c;
+		}
+		if (comps[i]?.type === "rotate") {
+			const c = comps[i++]!;
+			if (!ident(c)) R = c;
+		}
+		if (comps[i]?.type === "skewX" && ident(comps[i]!)) i++;
+		if (comps[i]?.type === "scale" && (!moving(comps[i]!) || alignTracks(comps[i]!.tracks))) {
+			if (!ident(comps[i]!)) S = comps[i];
+			i++;
+		}
+		// the rest (from a skew on) as one function list, if its tracks can share keyframes
+		let X = comps.slice(i).filter((c) => !ident(c));
+		let node = inner;
+		if (X.some(moving) && !alignTracks(X.flatMap((c) => c.tracks))) {
+			node = this.chainNodes(X, node, md);
+			X = [];
+		}
+		const main = [T, R, S, ...X].filter((c): c is Comp => !!c);
+		if (main.some(moving)) node = this.cssTransformElement(node, T, R, S, X, md);
+		else if (main.length) {
+			const s = fmtMatrix(main.reduce((m, c) => mulM(m, compMatrix(c, at)), [1, 0, 0, 1, 0, 0] as Mat), ...md);
+			if (s) node = el("g", { transform: s }, [node]);
+		}
+		return outer.length ? this.chainNodes(outer, node, md) : node;
+	}
+
+	private cssTransformElement(inner: XmlNode, T: Comp | undefined, R: Comp | undefined, S: Comp | undefined, X: Comp[], md: [number, number]): XmlNode {
+		const at = this.posterTick;
+		const g = el("g", {}, [inner]);
+		const all = [T, R, S, ...X].filter((c): c is Comp => !!c);
+		const poster = fmtMatrix(all.reduce((m, c) => mulM(m, compMatrix(c, at)), [1, 0, 0, 1, 0, 0] as Mat), ...md);
+		if (poster) g.attrs.transform = poster;
+		interface Slot {
+			tracks: GTrack[];
+			digits: number[];
+			body: (v: number[]) => string;
+			moving: boolean;
+		}
+		const slots: Slot[] = [];
+		const moving = (...c: Comp[]) => c.some((x) => !this.still(x));
+		if (T) slots.push({ tracks: T.tracks, digits: T.digits, body: (v) => "translate:" + cssTranslate(v[0]!, v[1]!, T.digits), moving: moving(T) });
+		if (R) slots.push({ tracks: R.tracks, digits: R.digits, body: (v) => `rotate:${fmt(v[0]!, R.digits[0])}deg`, moving: moving(R) });
+		if (S) slots.push({ tracks: S.tracks, digits: S.digits, body: (v) => "scale:" + cssScale(v[0]!, v[1]!, S.digits, " "), moving: moving(S) });
+		if (X.length) slots.push({ tracks: X.flatMap((c) => c.tracks), digits: X.flatMap((c) => c.digits), body: (v) => "transform:" + cssFunctions(X, v), moving: moving(...X) });
+		const moves = (s: Slot) => s.moving;
+		// slots that may share keyframes
+		const groups: Slot[][] = [];
+		for (const s of slots.filter(moves)) {
+			const g2 = groups.find((gr) => alignTracks([...gr.flatMap((x) => x.tracks), ...s.tracks]));
+			if (g2) g2.push(s);
+			else groups.push([s]);
+		}
+		const valuesAt = (s: Slot, tr: GTrack[]) => tr.map((x) => trackValueAt(x, 0)).slice(0, s.tracks.length);
+		// constants for the first keyframes: still slots, and the identity standing in for the attribute
+		const still = slots.filter((s) => !moves(s)).map((s) => s.body(s.tracks.map((x) => trackValueAt(x, 0))));
+		if (poster && !X.length) still.push("transform:scale(1)");
+		this.windows().forEach(([from, len, tail], w) => {
+			const extra: string[] = w ? [] : [...still];
+			const anims: { keys: MKey[]; group: Slot[] }[] = [];
+			for (const group of groups) {
+				const wt = group.map((s) => this.windowTracks(s.tracks, from, tail));
+				const flatTracks = wt.flat();
+				const keys = flatTracks.every(isConstantTrack) ? null : (alignTracks(flatTracks) ?? mergeTracks(flatTracks, len));
+				if (keys) anims.push({ keys, group });
+				else if (!w) extra.push(...group.map((s, k) => s.body(valuesAt(s, wt[k]!))));
+			}
+			if (!anims.length && extra.length) anims.push({ keys: [{ t: 0, v: [], ease: "hold" }], group: [] });
+			anims.forEach(({ keys, group }, k) => {
+				const counts = group.map((s) => s.tracks.length);
+				const body = (v: number[]) => {
+					let o = 0;
+					return group.map((s, j) => s.body(v.slice(o, (o += counts[j]!)))).join(";");
+				};
+				const enc = encodeKeyframes(keys, len, { digits: group.flatMap((s) => s.digits), body, extra: k === 0 && extra.length ? extra.join(";") : undefined });
+				if (!enc) return;
+				this.cssRule(g, this.cssName(g), enc.frames, enc.timing, tail);
+			});
+		});
+		return g;
+	}
+
+	/** Components as nested elements, from the inside out: still ones folded into matrices, each animated one on its own. */
+	private chainNodes(comps: Comp[], inner: XmlNode, md: [number, number]): XmlNode {
+		const statics = comps.map((c) => this.still(c));
+		// Order of application to points: last comp first (translate(-tp)) ... first comp last.
 		let node = inner;
 		let i = comps.length - 1;
 		while (i >= 0) {
@@ -484,7 +606,7 @@ class Writer {
 					m = mulM(compMatrix(comps[i]!, this.posterTick), m);
 					i--;
 				}
-				const s = fmtMatrix(m, this.ctx.digits);
+				const s = fmtMatrix(m, ...md);
 				if (s) node = el("g", { transform: s }, [node]);
 				continue;
 			}
@@ -503,23 +625,20 @@ class Writer {
 	// ------------------------------------------------------------------ animation primitives
 
 	private animateTransform(g: XmlNode, c: Comp) {
+		const [d0 = 3, d1 = d0] = c.digits;
 		const fmtV = (vals: number[]) => {
 			switch (c.type) {
 				case "rotate":
 				case "skewX":
-					return fmt(vals[0]!, 3);
+					return fmt(vals[0]!, d0);
 				case "translateX":
-					return `${fmt(vals[0]!, this.ctx.digits)} 0`;
-				case "translateY":
-					return `0 ${fmt(vals[0]!, this.ctx.digits)}`;
 				case "scaleX":
-					return `${fmt(vals[0]!, 4)} 1`;
+					return `${fmt(vals[0]!, d0)} ${c.type === "scaleX" ? 1 : 0}`;
+				case "translateY":
 				case "scaleY":
-					return `1 ${fmt(vals[0]!, 4)}`;
-				case "scale":
-					return `${fmt(vals[0]!, 4)} ${fmt(vals[1]!, 4)}`;
+					return `${c.type === "scaleY" ? 1 : 0} ${fmt(vals[0]!, d0)}`;
 				default:
-					return `${fmt(vals[0]!, this.ctx.digits)} ${fmt(vals[1]!, this.ctx.digits)}`;
+					return `${fmt(vals[0]!, d0)} ${fmt(vals[1]!, d1)}`;
 			}
 		};
 		const svgType = c.type.startsWith("translate") ? "translate" : c.type.startsWith("scale") ? "scale" : c.type;
@@ -527,27 +646,7 @@ class Writer {
 		const pv = c.tracks.map((tr) => trackValueAt(tr, this.posterTick));
 		g.attrs.transform = `${svgType}(${fmtV(pv)})`;
 		if (this.css) {
-			const cssFn = (vals: number[]) => {
-				switch (c.type) {
-					case "rotate":
-						return `rotate(${fmt(vals[0]!, 3)}deg)`;
-					case "skewX":
-						return `skewX(${fmt(vals[0]!, 3)}deg)`;
-					case "scale":
-						return `scale(${fmt(vals[0]!, 4)},${fmt(vals[1]!, 4)})`;
-					case "scaleX":
-						return `scale(${fmt(vals[0]!, 4)},1)`;
-					case "scaleY":
-						return `scale(1,${fmt(vals[0]!, 4)})`;
-					case "translateX":
-						return `translate(${fmt(vals[0]!, this.ctx.digits)}px,0)`;
-					case "translateY":
-						return `translate(0,${fmt(vals[0]!, this.ctx.digits)}px)`;
-					default:
-						return `translate(${fmt(vals[0]!, this.ctx.digits)}px,${fmt(vals[1]!, this.ctx.digits)}px)`;
-				}
-			};
-			this.cssAnimation(g, "transform", c.tracks, cssFn);
+			this.cssAnimation(g, "transform", c.tracks, (v) => cssFunctions([c], v), c.digits);
 			return;
 		}
 		g.children.push(...this.smil(c.tracks, fmtV, (a) => el("animateTransform", { attributeName: "transform", type: svgType, ...a })));
@@ -565,7 +664,8 @@ class Writer {
 	private pendingCss: { prop: string; tracks: GTrack[]; fmtV: (v: number[]) => string }[] = [];
 
 	private applyCssAnimations(g: XmlNode) {
-		for (const p of this.pendingCss.splice(0)) this.cssAnimation(g, p.prop, p.tracks, p.fmtV);
+		// alpha values have 3 decimals
+		for (const p of this.pendingCss.splice(0)) this.cssAnimation(g, p.prop, p.tracks, p.fmtV, p.tracks.map(() => 3));
 	}
 
 	private animateColorMatrix(node: XmlNode, color: Record<ColorProp, GTrack>) {
@@ -724,28 +824,19 @@ class Writer {
 
 	// ------------------------------------------------------------------ CSS
 
-	private cssAnimation(node: XmlNode, prop: string, tracks: GTrack[], fmtV: (v: number[]) => string) {
-		for (const [from, len, tail] of this.windows()) this.cssAnimationWin(node, prop, this.windowTracks(tracks, from, tail), fmtV, len, tail);
-	}
-
-	private cssAnimationWin(node: XmlNode, prop: string, tracks: GTrack[], fmtV: (v: number[]) => string, H: number, tail: boolean) {
-		const keys = mergeTracks(tracks, H);
-		if (!keys) return;
-		const name = this.cssName(node);
-		const frames: string[] = [];
-		const pct = (t: number) => fmt((t / H) * 100, 4) + "%";
-		if (keys[0]!.t > 0) frames.push(`0%{${prop}:${fmtV(keys[0]!.v)};animation-timing-function:step-end}`);
-		for (let i = 0; i < keys.length; i++) {
-			const k = keys[i]!;
-			const next = keys[i + 1];
-			// two keys at the same time = a jump: CSS merges equal offsets, so pull this one back a hair
-			const t = next && next.t - k.t < EPS_TICK / 2 ? Math.max(0, next.t - EPS_TICK) : k.t;
-			const tf = k.ease === "hold" ? "step-end" : k.ease === "linear" ? "linear" : `cubic-bezier(${k.ease.map((x) => fmt(x, 4) || "0").join(",")})`;
-			frames.push(`${pct(t)}{${prop}:${fmtV(k.v)};animation-timing-function:${tf}}`);
-		}
-		const last = keys[keys.length - 1]!;
-		if (last.t < H) frames.push(`100%{${prop}:${fmtV(last.v)}}`);
-		this.cssRule(node, name, frames, "linear", tail);
+	/** `digits`: decimals of each track's values as `fmtV` prints them. */
+	private cssAnimation(node: XmlNode, prop: string, tracks: GTrack[], fmtV: (v: number[]) => string, digits: number[]) {
+		// an animation that holds what the element shows anyway (the poster) is left out
+		const poster = `${prop}:${fmtV(tracks.map((tr) => trackValueAt(tr, this.posterTick)))}`;
+		this.windows().forEach(([from, len, tail]) => {
+			const wt = this.windowTracks(tracks, from, tail);
+			if (wt.every(isConstantTrack)) return;
+			const keys = alignTracks(wt) ?? mergeTracks(wt, len);
+			if (!keys) return;
+			const enc = encodeKeyframes(keys, len, { digits, body: (v) => `${prop}:${fmtV(v)}` });
+			if (!enc || (enc.constant && (tail || enc.frames === `0%,to{${poster}}`))) return;
+			this.cssRule(node, this.cssName(node), enc.frames, enc.timing, tail);
+		});
 	}
 
 	private cssDiscrete(node: XmlNode, prop: string, steps: { t: number; v: string }[], off: string) {
@@ -757,15 +848,15 @@ class Writer {
 
 	private cssDiscreteWin(node: XmlNode, prop: string, steps: { t: number; v: string }[], off: string, H: number, tail: boolean) {
 		const name = this.cssName(node);
-		const frames: string[] = [];
+		const frames: [string, string][] = [];
 		// switch at (or just before) the exact frame time, never after it
 		const pct = (t: number) => (t <= 0 ? "0" : String(Math.floor((t / H) * 1e6) / 1e4)) + "%";
-		if (!steps.length || steps[0]!.t > 0) frames.push(`0%{${prop}:${off}}`);
-		for (const s of steps) frames.push(`${pct(s.t)}{${prop}:${s.v}}`);
+		if (!steps.length || steps[0]!.t > 0) frames.push(["0%", `${prop}:${off}`]);
+		for (const s of steps) frames.push([pct(s.t), `${prop}:${s.v}`]);
 		// explicit end value: without it a non-repeating animation ends ("fill: both") on the
 		// element's own attribute (e.g. visibility="hidden") instead of the last step
-		frames.push(`100%{${prop}:${steps.length ? steps[steps.length - 1]!.v : off}}`);
-		this.cssRule(node, name, frames, "step-end", tail);
+		frames.push(["to", `${prop}:${steps.length ? steps[steps.length - 1]!.v : off}`]);
+		this.cssRule(node, name, groupFrames(frames), "step-end", tail);
 	}
 
 	/** Each animated element gets one class; all its animations go into that class's rule. */
@@ -778,23 +869,30 @@ class Writer {
 	}
 
 	private cssName(node: XmlNode): string {
-		return `${this.opts.idPrefix ?? ""}${this.cssClass(node)}_${this.animCount++}`;
+		this.cssClass(node);
+		return `${this.opts.idPrefix ?? ""}k${this.animCount++}`;
 	}
 
-	private cssRule(node: XmlNode, name: string, frames: string[], timing = "linear", tail = false) {
-		this.keyframes.push(`@keyframes ${name}{${frames.join("")}}`);
+	/** Animations of each class, in the order they were added. */
+	private ruleOf = new Map<string, string[]>();
+
+	private cssRule(node: XmlNode, name: string, frames: string, timing = "linear", tail = false) {
+		this.keyframes.push(`@keyframes ${name}{${frames}}`);
 		const cls = this.cssClass(node);
-		const iter = this.repeat ? "infinite" : "1";
+		// one pass: the default iteration count (1) is left out
+		const iter = this.repeat ? " infinite" : "";
 		const fill = this.repeat ? "" : " both";
 		const delay = this.opts.delay ? ` ${fmt(this.opts.delay, 3)}s` : "";
-		const sel = `#${this.svgId} .${cls}`;
-		const existing = this.rules.findIndex((r) => r.startsWith(`${sel}{`));
 		// the tail loops after the first pass; until then the first animation (fill: both) holds
 		const decl = tail
 			? `${name} ${fmt((this.H - this.tail) / this.fps, 4)}s ${timing} ${fmt((this.opts.delay ?? 0) + this.tail / this.fps, 4)}s infinite`
-			: `${name} ${this.dur} ${timing}${delay} ${iter}${fill}`;
-		if (existing >= 0) this.rules[existing] = this.rules[existing]!.replace(/animation:([^}]*)}/, (_m, a: string) => `animation:${a},${decl}}`);
-		else this.rules.push(`${sel}{animation:${decl}}`);
+			: `${name} ${this.dur} ${timing}${delay}${iter}${fill}`;
+		let list = this.ruleOf.get(cls);
+		if (!list) {
+			this.ruleOf.set(cls, (list = []));
+			this.rules.push(cls);
+		}
+		list.push(decl);
 	}
 
 	finish(svg: XmlNode) {
@@ -819,7 +917,8 @@ class Writer {
 						: `#${this.svgId}:not(.playing) *{animation-play-state:paused}`;
 			// "reduce motion" in the system settings: no animation, every element shows its poster state
 			const still = this.opts.reducedMotion !== false ? `@media (prefers-reduced-motion:reduce){#${this.svgId} *{animation:none!important}}` : "";
-			this.doc.styles.push([...this.keyframes, ...this.rules, play, still].filter(Boolean).join("\n"));
+			const rules = this.rules.map((cls) => `#${this.svgId} .${cls}{animation:${this.ruleOf.get(cls)!.join(",")}}`);
+			this.doc.styles.push([...this.keyframes, ...rules, play, still].filter(Boolean).join("\n"));
 			if (this.opts.begin === "click") this.doc.scripts.push(`document.getElementById(${JSON.stringify(this.svgId)}).addEventListener("click",function(){this.classList.add("playing")});`);
 		}
 		void svg;
@@ -867,6 +966,8 @@ class MorphAnim {
 interface Comp {
 	type: "translate" | "rotate" | "skewX" | "scale" | "translateX" | "translateY" | "scaleX" | "scaleY";
 	tracks: GTrack[];
+	/** Decimals of each track's values (see Precision). */
+	digits: number[];
 }
 
 const COLOR_ORDER: ColorProp[] = ["rP", "gP", "bP", "aP", "rA", "gA", "bA", "aA"];
@@ -937,18 +1038,70 @@ function mulM(a: Mat, b: Mat): Mat {
 	];
 }
 
+/** Value of the CSS translate property ("10px", "0 5px", "10px 5px"). */
+function cssTranslate(x: number, y: number, d: number[]): string {
+	const a = fmt(x, d[0]),
+		b = fmt(y, d[1]);
+	const px = (s: string) => (s === "0" ? "0" : s + "px");
+	return b === "0" ? px(a) : `${px(a)} ${px(b)}`;
+}
+
+/** Two scale factors, one if they are the same. */
+function cssScale(x: number, y: number, d: number[], sep: string): string {
+	const a = fmt(x, d[0]),
+		b = fmt(y, d[1]);
+	return a === b ? a : a + sep + b;
+}
+
+/** Components as a CSS transform function list, from their tracks' values in order. */
+function cssFunctions(comps: Comp[], v: number[]): string {
+	let i = 0;
+	const px = (n: number, d: number) => {
+		const s = fmt(n, d);
+		return s === "0" ? "0" : s + "px";
+	};
+	return comps
+		.map((c) => {
+			const [d0 = 3, d1 = d0] = c.digits;
+			switch (c.type) {
+				case "rotate":
+				case "skewX":
+					return `${c.type}(${fmt(v[i++]!, d0)}deg)`;
+				case "scale":
+					return `scale(${cssScale(v[i++]!, v[i++]!, c.digits, ",")})`;
+				case "scaleX":
+					return `scale(${fmt(v[i++]!, d0)},1)`;
+				case "scaleY":
+					return `scale(1,${fmt(v[i++]!, d0)})`;
+				case "translateX":
+					return `translate(${px(v[i++]!, d0)})`;
+				case "translateY":
+					return `translate(0,${px(v[i++]!, d0)})`;
+				default:
+					return `translate(${px(v[i++]!, d0)},${px(v[i++]!, d1)})`;
+			}
+		})
+		.join(" ");
+}
+
 /** Two-track components whose tracks have different key times are split in two (they commute). */
 function splitComp(c: Comp): Comp[] {
 	if (c.tracks.length < 2) return [c];
 	const [a, b] = c.tracks as [GTrack, GTrack];
 	if (sameTiming(a, b)) return [c];
+	const [da, db] = c.digits as [number, number];
 	if (c.type === "translate") {
-		const out: Comp[] = [];
-		if (!isConstantTrack(a) || true) out.push({ type: "translateX", tracks: [a] });
-		out.push({ type: "translateY", tracks: [b] });
-		return out;
+		return [
+			{ type: "translateX", tracks: [a], digits: [da] },
+			{ type: "translateY", tracks: [b], digits: [db] },
+		];
 	}
-	if (c.type === "scale") return [{ type: "scaleX", tracks: [a] }, { type: "scaleY", tracks: [b] }];
+	if (c.type === "scale") {
+		return [
+			{ type: "scaleX", tracks: [a], digits: [da] },
+			{ type: "scaleY", tracks: [b], digits: [db] },
+		];
+	}
 	return [c];
 }
 
@@ -962,12 +1115,6 @@ function sameTiming(a: GTrack, b: GTrack): boolean {
 		if (String(x.ease) !== String(y.ease)) return false;
 	}
 	return true;
-}
-
-interface MKey {
-	t: number;
-	v: number[];
-	ease: GTrack[number]["ease"];
 }
 
 /** Combines tracks with the same timing into multi-value keys; samples linearly if timings differ. */

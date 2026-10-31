@@ -155,7 +155,7 @@ export function defaultOutput(info: DocInfo, symbol?: string, ext = ".svg"): str
 
 /** `file` with the format's extension, if it has one of another format. */
 function withExt(file: string, ext: string): string {
-	return file.replace(/\.(svg|json|lottie)$/i, "") + (/\.(svg|json|lottie)$/i.test(file) || !/\.[^\\/.]+$/.test(file) ? ext : "");
+	return file.replace(/\.(svgz?|json|lottie)$/i, "") + (/\.(svgz?|json|lottie)$/i.test(file) || !/\.[^\\/.]+$/.test(file) ? ext : "");
 }
 
 export async function runExport(
@@ -242,8 +242,10 @@ async function exportInto(
 	const outputs: CompileOutput[] = [];
 	let linkedBytes = 0;
 	const warnings = new Set<string>(imageWarnings);
+	// Node's zlib packs .svgz smaller than the fallback
+	const hooks = { gzip: (d: Uint8Array) => node.zlib.gzipSync(d, { level: 9 }) };
 	for (let r = 0; r < model.roots.length; r++) {
-		const out = compileScene(model, files, settings, r);
+		const out = compileScene(model, files, settings, r, hooks);
 		outputs.push(out);
 		out.warnings.forEach((w) => warnings.add(w));
 		const rootName = model.timelines[model.roots[r]!]?.name ?? "";

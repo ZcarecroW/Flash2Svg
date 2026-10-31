@@ -105,9 +105,10 @@ export function fmt(n: number, digits = 3): string {
 	return s;
 }
 
-export function fmtMatrix(m: Mat, digits = 3): string {
+/** `digits` for the translation; `lin` for the linear part (by default a bit more precise than positions). */
+export function fmtMatrix(m: Mat, digits = 3, lin = Math.max(digits, 4)): string {
 	const [a, b, c, d, tx, ty] = m;
-	const sd = Math.max(digits, 4); // linear part needs a bit more precision than positions
+	const sd = lin;
 	if (Math.abs(a - 1) < 1e-9 && Math.abs(b) < 1e-9 && Math.abs(c) < 1e-9 && Math.abs(d - 1) < 1e-9) {
 		if (Math.abs(tx) < 1e-9 && Math.abs(ty) < 1e-9) return "";
 		return `translate(${fmt(tx, digits)} ${fmt(ty, digits)})`;

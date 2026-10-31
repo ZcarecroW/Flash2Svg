@@ -43,7 +43,7 @@ support (sources below) before starting a package.
 | 1 | Media encoding settings | very high | medium | 🚧 images ✅, downscaling ✅, audio ✅, budget view ✅, video ⬜, fonts ⬜ |
 | 2 | Player: compositor animations, pause off-screen, reduced motion | high | small | ✅ (canvas renderer ⬜) |
 | 3 | Shape tweens as path morphing (SMIL and player) | very high for shape tweens | medium–high | ✅ |
-| 4 | CSS: `linear()` easing, individual transform properties | medium | small–medium | ⬜ |
+| 4 | CSS: `linear()` easing, individual transform properties | medium | small–medium | ✅ (also decimals from the displayed size, .svgz) |
 | 5 | Interactivity: triggers, scroll, label state machine | high | medium | ⬜ |
 | 6 | Lottie / dotLottie export | very high (reach) | high | ✅ (effects ✅, built filters ✅, state machine ✅, panel preview ✅) |
 | 7 | WOFF2 fonts, video, library export | medium | medium | ⬜ |
@@ -104,10 +104,16 @@ support (sources below) before starting a package.
   - ⬜ Gradient/pattern matrices that turn while blending: player only (SMIL keeps frames).
 
 ### 4. Leaner CSS
-- ⬜ Use `linear()` easing so Animate's custom multi-point eases and bounces fit in one keyframe segment.
-- ⬜ Use the individual properties `translate`, `rotate` and `scale`, for shorter keyframes and fewer nested `<g>`.
-- ⬜ Optionally write `.svgz`, and add a server compression note (Brotli) to the README.
-- ⬜ Choose decimal places from the displayed size instead of one global value.
+- ✅ `linear()` easing (`src/core/emit/keyframes.ts`): keys on one line in value space (frame-by-frame samples, stepped output, multi-piece eases) become one keyframe pair with a `linear()` timing function where that is shorter.
+  - Measured first in Edge 156, Firefox 159 and WebKit 27.2: flat stretches (two positions), jumps (equal positions, also clamped `0%`), outputs outside 0..1, 200 points, positions left out (spread evenly) all behave alike.
+  - Animate's multi-piece custom eases mostly stay `cubic-bezier()` pieces: exact and shorter than sampling them within a printed step. The bigger wins are elsewhere: the timing most keyframes use is the animation's own (stepped CSS no longer repeats `step-end`), equal keyframes share a rule, and samples collapse into `linear()`.
+- ✅ Individual properties `translate`, `rotate` and `scale` (plus `transform` for a skew and the transformation point): an instance is one element, its tweens one or a few animations. Tracks with different key times merge exactly (`alignTracks`).
+  - WebKit lets `transform:none` fall back to the `transform` attribute (WebKit bug 217286, still open), so the keyframes hold `transform:scale(1)` in place of the poster attribute.
+  - Safari 16 was reported to mishandle separate `rotate` and `scale` on SVG elements; WebKit 27.2 draws all 46 test documents right.
+  - The 46 test documents: CSS 1737 → 1295 KB (gzip 459 → 427), stepped 2042 → 1375 KB (490 → 444); playback costs Edge the same or less (style recalculation −2 to −19 %).
+- ✅ `.svgz` (`ExportSettings.svgz`, `--svgz`) and a server compression note (Brotli) in the README. Tested: Edge, Firefox and WebKit show .svgz only with `Content-Encoding: gzip` from a server (not from disk, not with only the type); Brotli of plain SVG is 8 % smaller than .svgz (341 vs 372 KB for the test documents as SMIL).
+- ✅ Decimal places from the displayed size (`src/core/precision.ts`): coordinates get as many as they span on screen (rounded on the log scale), angles and scale factors too but never fewer than 3 and 4; drawings those of the largest scale they are shown at.
+- ⬜ SMIL could merge an instance's animated parts the same way (one element, `additive="sum"` animations); mind the sandwich order of first pass and tail.
 
 ### 5. Interactivity without code
 - ⬜ Start triggers: hover, click, entering the viewport.

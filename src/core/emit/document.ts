@@ -189,10 +189,12 @@ export class OutputDoc {
 	}
 
 	/** A bitmap element: a <use> of the bitmap's shared <image> (null if the bitmap is missing). */
-	image(bitmapId: string, matrix: Mat): XmlNode | null {
+	image(bitmapId: string, matrix: Mat, digits = this.ctx.digits): XmlNode | null {
 		const id = this.bitmapImage(bitmapId);
 		if (!id) return null;
-		return el("use", { "xlink:href": "#" + id, transform: fmtMatrix(matrix, this.ctx.digits) || undefined });
+		// the linear part maps pixels: as precise as the bitmap's width spans
+		const w = this.ctx.model.bitmaps[bitmapId]?.width ?? 100;
+		return el("use", { "xlink:href": "#" + id, transform: fmtMatrix(matrix, digits, Math.max(4, digits + Math.ceil(Math.log10(Math.max(1, w))))) || undefined });
 	}
 
 	/** Filter for Animate filters + colour transform; returns url(#id) or null. */

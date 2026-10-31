@@ -4,12 +4,12 @@
 // --steps: export without interpolation (one step per frame) and check halfway between frames.
 // After a stop() on the root timeline, ticks into the looping tail of the running movie clips are
 // checked too (reported as negative "frames").
-// Usage: node scripts/e2e-browser.ts [name,...] [--formats=smil,css] [--every=4] [--browser=msedge] [--steps] [--threshold=0.0015]
+// Usage: node scripts/e2e-browser.ts [name,...] [--formats=smil,css] [--every=4] [--browser=msedge|chrome|firefox|webkit] [--steps] [--threshold=0.0015]
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import pixelmatch from "pixelmatch";
-import { chromium } from "playwright-core";
+import { chromium, firefox, webkit } from "playwright-core";
 import { PNG } from "pngjs";
 import { compileScene, type OutputFormat } from "../src/core/compile.ts";
 import { createContext } from "../src/core/context.ts";
@@ -32,7 +32,16 @@ const steps = args.includes("--steps");
 const list = args.find((a) => !a.startsWith("--"));
 const names = list ? list.split(",") : readdirSync(out).filter((d) => existsSync(join(out, d, "model", "scene.json")));
 
-const browser = await chromium.launch({ channel: opt("browser", "msedge"), headless: true });
+// --browser=firefox: the installed Firefox over WebDriver BiDi (content sandbox off: it crashes
+// headless content processes here); --browser=webkit: Playwright's WebKit build (needs a one-off
+// `node node_modules/playwright-core/cli.js install webkit`); else an installed Chromium channel
+const engine = opt("browser", "msedge");
+const browser =
+	engine === "firefox"
+		? await firefox.launch({ channel: "moz-firefox", headless: true, firefoxUserPrefs: { "security.sandbox.content.level": 0 }, env: { ...process.env, MOZ_DISABLE_CONTENT_SANDBOX: "1" } })
+		: engine === "webkit"
+			? await webkit.launch({ headless: true })
+			: await chromium.launch({ channel: engine, headless: true });
 const page = await browser.newPage({ deviceScaleFactor: 1 });
 let failures = 0;
 

@@ -157,8 +157,8 @@
 				() => cancelled,
 			);
 			if (panel.rememberInDocument) await saveDocSettings(JSON.stringify(req));
-			// browsers show Lottie files as text or download them
-			if (panel.openAfterExport && result.files[0] && !/\.(json|lottie)$/i.test(result.files[0])) openInBrowser(result.files[0]);
+			// browsers show Lottie files as text or download them, and open .svgz only from a server
+			if (panel.openAfterExport && result.files[0] && !/\.(json|lottie|svgz)$/i.test(result.files[0])) openInBrowser(result.files[0]);
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
@@ -423,11 +423,16 @@
 	</Section>
 
 	<Section title="Advanced" bind:open={panel.open.advanced}>
-		<label class="row">
+		<label class="row" title="Precision on screen: parts shown larger get more decimals, parts shown smaller fewer">
 			<span>Decimals</span>
 			<input type="number" min="0" max="6" bind:value={panel.export.digits} />
 		</label>
 		<label class="check"><input type="checkbox" bind:checked={panel.export.pretty} /> Indent output</label>
+		<label
+			class="check"
+			title="gzip inside, for design tools and servers that send .svgz with Content-Encoding: gzip. Browsers don't open .svgz files from disk; on the web, plain SVG compressed by the server (Brotli) is smaller."
+			><input type="checkbox" bind:checked={panel.export.svgz} disabled={panel.export.format === "lottie" || panel.export.format === "dotlottie"} /> Compressed .svgz</label
+		>
 		<label class="check"><input type="checkbox" bind:checked={panel.rememberInDocument} /> Remember settings in the FLA</label>
 		<label class="check"><input type="checkbox" bind:checked={panel.openAfterExport} /> Open in browser after export</label>
 		<div class="row preset-add">
@@ -446,7 +451,7 @@
 				{result.files.length} file{result.files.length > 1 ? "s" : ""} · {kb(result.output.reduce((n, o) => n + o.stats.bytes, 0))} · {result.seconds.toFixed(1)} s
 			</div>
 			<div class="actions">
-				{#if !/\.(json|lottie)$/i.test(result.files[0] ?? "")}<button class="secondary" onclick={() => openInBrowser(result!.files[0]!)}>Open in browser</button>{/if}
+				{#if !/\.(json|lottie|svgz)$/i.test(result.files[0] ?? "")}<button class="secondary" onclick={() => openInBrowser(result!.files[0]!)}>Open in browser</button>{/if}
 				<button class="secondary" onclick={() => revealInExplorer(result!.files[0]!)}>Show file</button>
 			</div>
 			<Budget {result} />

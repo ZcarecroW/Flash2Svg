@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, wri
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { gunzipSync } from "node:zlib";
 import { findAnimate, isAnimateRunning } from "./lib/animate.mjs";
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -13,6 +14,8 @@ const out = join(repo, "tests", "out", "selftest");
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 const fla = (n) => join(repo, "tests", "fixtures", "fla", `${n}.fla`);
+/** An output file's text (.svgz unzipped). */
+const text = (f) => (f.endsWith(".svgz") ? gunzipSync(readFileSync(f)) : readFileSync(f)).toString("utf8");
 const jobs = [
 	{ fla: fla("f02-eases"), output: join(out, "eases-smil.svg"), settings: { format: "smil" } },
 	{ fla: fla("f04-nested"), output: join(out, "nested-css.svg"), settings: { format: "css" } },
@@ -39,6 +42,9 @@ const jobs = [
 	// shape tweens as path morphs: SMIL animates path data and gradient matrices, the player gets morph parts
 	{ fla: fla("f45-morph"), output: join(out, "morph.svg"), settings: { format: "smil" }, expect: { files: 1, contains: [/<animate attributeName="d"/, /<animateTransform attributeName="gradientTransform"/] } },
 	{ fla: fla("f45-morph"), output: join(out, "morph-player.svg"), settings: { format: "player" }, expect: { files: 1, contains: [/"mp":\[/] } },
+	// lean CSS (one element per instance, individual transform properties), written gzipped: the
+	// name follows (.svg chosen, .svgz written)
+	{ fla: fla("f03-transforms"), output: join(out, "transforms-css.svg"), settings: { format: "css", svgz: true }, expect: { files: 1, ext: ".svgz", svgz: true, parts: ["drawing", "animation"], contains: [/translate:[-\d.]+px/, /rotate:[-\d.]+deg/, /transform:scale\(1\)/] } },
 	// Lottie: the file name follows the format (.svg chosen, .json / .lottie written); bitmaps embedded,
 	// linked next to the JSON, or inside the archive
 	{ fla: fla("f45-morph"), output: join(out, "morph-lottie.svg"), settings: { format: "lottie" }, preview: {}, expect: { files: 1, ext: ".json", lottie: true, parts: ["drawing", "animation"], preview: { svg: true, moving: true } } },
@@ -107,8 +113,9 @@ res.results.forEach((r, i) => {
 	if (exp.format && r.format !== exp.format) problems.push(`format ${r.format}, expected ${exp.format}`);
 	for (const f of r.files) {
 		if (!existsSync(f)) problems.push(`missing ${f}`);
-		else if (!f.endsWith(".lottie") && /NaN|undefined/.test(readFileSync(f, "utf8"))) problems.push(`NaN/undefined in ${f}`);
+		else if (!f.endsWith(".lottie") && /NaN|undefined/.test(text(f))) problems.push(`NaN/undefined in ${f}`);
 		if (exp.ext && !f.endsWith(exp.ext)) problems.push(`${f} should end in ${exp.ext}`);
+		if (exp.svgz && existsSync(f) && readFileSync(f).readUInt16BE(0) !== 0x1f8b) problems.push(`${f} is not gzipped`);
 	}
 	if (exp.lottie && r.files[0] && existsSync(r.files[0])) {
 		try {
@@ -159,7 +166,7 @@ res.results.forEach((r, i) => {
 		if (!got || got[1] !== wh[0] || got[2] !== wh[1]) problems.push(`${name} written ${got ? got[1] + "x" + got[2] : "not at all"}, expected ${wh.join("x")}`);
 	}
 	if (exp.contains && r.files[0]) {
-		const svg = readFileSync(r.files[0], "utf8");
+		const svg = text(r.files[0]);
 		for (const re of exp.contains) if (!re.test(svg)) problems.push(`no ${re} in the output`);
 	}
 	if (exp.soundFiles && r.files[0]) {

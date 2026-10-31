@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { gunzipSync, strFromU8 } from "fflate";
 import { describe, expect, it } from "vitest";
 import { compileScene, sizeParts, type ExportSettings } from "../../src/core/compile.ts";
 import type { SceneModel } from "../../src/core/model.ts";
@@ -17,14 +18,15 @@ describe("CSS output", () => {
 			const svg = compile(name, { format: "css", loop }).files[0]!.svg;
 			const blocks = svg.match(/@keyframes [^{]+\{(?:[^{}]*\{[^}]*\})*\}/g) ?? [];
 			expect(blocks.length).toBeGreaterThan(0);
-			for (const b of blocks) expect(b, b).toMatch(/100%\{/);
+			// "to" (100%), possibly grouped with keyframes that look the same ("75%,to{...}")
+			for (const b of blocks) expect(b, b).toMatch(/[{},]to[,{]/);
 			expect(svg).not.toMatch(/infinite/);
 		}
 	});
 
 	it("holds the stop() frame: the last label's artwork stays visible", () => {
 		const svg = compile("f12-labels", { format: "css" }).files[0]!.svg;
-		const last = /@keyframes (\S+)\{0%\{visibility:hidden\}75%\{visibility:visible\}100%\{visibility:visible\}\}/.exec(svg);
+		const last = /@keyframes (\S+)\{0%\{visibility:hidden\}75%,to\{visibility:visible\}\}/.exec(svg);
 		expect(last).not.toBeNull();
 	});
 });
@@ -37,6 +39,25 @@ describe("settings", () => {
 		}
 		const out = compile("f02-eases", { format: "smil", digits: -3, delay: -1 });
 		expect(out.files[0]!.svg).not.toMatch(/NaN|begin="-/);
+	});
+
+	it("writes .svgz: gzip of the same SVG, the same bytes every time, counted compressed", () => {
+		for (const format of ["smil", "css", "player", "static"] as const) {
+			const plain = compile("f02-eases", { format, idPrefix: "p_" }).files;
+			const out = compile("f02-eases", { format, idPrefix: "p_", svgz: true });
+			out.files.forEach((f, i) => {
+				expect(f.ext).toBe(".svgz");
+				expect([f.bytes![0], f.bytes![1]]).toEqual([0x1f, 0x8b]);
+				expect(strFromU8(gunzipSync(f.bytes!))).toBe(plain[i]!.svg);
+				expect(f.bytes).toEqual(compile("f02-eases", { format, idPrefix: "p_", svgz: true }).files[i]!.bytes);
+			});
+			expect(out.stats.bytes).toBe(out.files.reduce((n, f) => n + f.bytes!.length, 0));
+			expect(out.stats.bytes).toBeLessThan(plain.reduce((n, f) => n + f.svg.length, 0));
+			// the size overview adds up to the compressed files
+			expect(Object.values(out.stats.parts).reduce((a, b) => a + b, 0)).toBe(out.stats.bytes);
+		}
+		// Lottie has its own formats
+		expect(compile("f02-eases", { format: "lottie", svgz: true }).files[0]!.ext).toBe(".json");
 	});
 });
 

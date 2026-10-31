@@ -104,6 +104,7 @@ export const node = req
 			os: req("os") as typeof import("node:os"),
 			url: req("url") as typeof import("node:url"),
 			child: req("child_process") as typeof import("node:child_process"),
+			zlib: req("zlib") as typeof import("node:zlib"),
 		}
 	: null;
 

@@ -4,6 +4,7 @@ import { el } from "./xml.ts";
 import type { BitmapFill, SceneModel } from "./model.ts";
 import { applyNineSlice } from "./nineslice.ts";
 import { buildMorph, type Morph } from "./morph.ts";
+import { measurePrecision, type Precision } from "./precision.ts";
 import { buildPrograms, markShapeAlpha, type ArtSeqItem, type CompileOptions, type Program } from "./program.ts";
 import { valueAt } from "./tracks.ts";
 
@@ -23,7 +24,9 @@ export interface Context {
 	art(atlasId: string): Artwork | null;
 	/** A shape tween as path morphs (null: frame by frame), see morph.ts. Computed once per item. */
 	morph(item: ArtSeqItem): Morph | null;
+	/** Decimals asked for on screen; `precision` turns them into decimals per coordinate space. */
 	digits: number;
+	precision: Precision;
 }
 
 export function createContext(model: SceneModel, files: FileSource, opts: CompileOptions & { digits?: number }): Context {
@@ -39,6 +42,9 @@ export function createContext(model: SceneModel, files: FileSource, opts: Compil
 		return s;
 	};
 	const digits = opts.digits ?? 2;
+	const precision = measurePrecision(model, programs, digits);
+	// the source text and decimals of each imported artwork (an identical drawing reuses it)
+	const sources = new WeakMap<Artwork, { text: string; digits: number; how: string }>();
 	// atlas id -> gradients that use linear RGB interpolation
 	const linear = new Map<string, Set<string>>();
 	const addLinear = (atlas: string, sigs: Iterable<string>) => {
@@ -90,6 +96,7 @@ export function createContext(model: SceneModel, files: FileSource, opts: Compil
 		files,
 		warnings,
 		digits,
+		precision,
 		art(id) {
 			if (derived.has(id)) return derived.get(id)!;
 			if (cache.has(id)) return cache.get(id)!;
@@ -100,24 +107,37 @@ export function createContext(model: SceneModel, files: FileSource, opts: Compil
 			} else {
 				try {
 					const text = files.readText(item.file);
-					const a = importArtwork(text, "s" + id.replace(/[^A-Za-z0-9_]/g, "_"), { digits, linearRGB: linear.get(id), bitmapFills: bitmapFills.get(id), fixedStrokes: fixed.get(id) });
 					const off = item.offset;
-					if (off && (Math.abs(off.x) > 1e-6 || Math.abs(off.y) > 1e-6)) {
-						a.body = el("g", { transform: `translate(${fmt(-off.x, digits)} ${fmt(-off.y, digits)})` }, [a.body]);
-					}
-					if (!a.empty) {
-						// duplicates: full signatures only among artworks whose source text has the same length
-						const key = `${text.length}|${off?.x ?? 0},${off?.y ?? 0}`;
-						const same = byKey.get(key);
-						if (!same) {
-							byKey.set(key, [a]);
-							result = a;
-						} else {
-							const sig = artworkSignature(a);
-							result = same.find((b) => signatureOf(b) === sig) ?? a;
-							if (result === a) {
-								sigs.set(a, sig);
-								same.push(a);
+					// duplicates: full signatures only among artworks whose source text has the same length
+					const key = `${text.length}|${off?.x ?? 0},${off?.y ?? 0}`;
+					const same = byKey.get(key);
+					const d = precision.art(id);
+					const opts = { digits: d, linearRGB: linear.get(id), bitmapFills: bitmapFills.get(id), fixedStrokes: fixed.get(id) };
+					// what else shapes the import (the same text with non-scaling strokes is another drawing)
+					const how = JSON.stringify([[...(opts.linearRGB ?? [])].sort(), (opts.bitmapFills ?? []).map((b) => b.name), [...(opts.fixedStrokes ?? [])].sort()]);
+					// the same drawing, imported the same way with at least these decimals
+					const twin = same?.find((b) => {
+						const s = sources.get(b)!;
+						return s.text === text && s.how === how && s.digits >= d;
+					});
+					if (twin) result = twin;
+					else {
+						const a = importArtwork(text, "s" + id.replace(/[^A-Za-z0-9_]/g, "_"), opts);
+						if (off && (Math.abs(off.x) > 1e-6 || Math.abs(off.y) > 1e-6)) {
+							a.body = el("g", { transform: `translate(${fmt(-off.x, d)} ${fmt(-off.y, d)})` }, [a.body]);
+						}
+						sources.set(a, { text, digits: d, how });
+						if (!a.empty) {
+							if (!same) {
+								byKey.set(key, [a]);
+								result = a;
+							} else {
+								const sig = artworkSignature(a);
+								result = same.find((b) => signatureOf(b) === sig) ?? a;
+								if (result === a) {
+									sigs.set(a, sig);
+									same.push(a);
+								}
 							}
 						}
 					}
@@ -138,7 +158,7 @@ export function createContext(model: SceneModel, files: FileSource, opts: Compil
 					ratios,
 					item.ratio,
 					item.start,
-					digits,
+					precision.art(item.arts[0] ?? ""),
 				);
 				morphs.set(item, m);
 			}

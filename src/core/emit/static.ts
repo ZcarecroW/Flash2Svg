@@ -72,7 +72,8 @@ export class StaticRenderer {
 		if (prog.view) {
 			const p = {} as Record<TransformProp, number>;
 			for (const k of TRANSFORM_PROPS) p[k] = valueAt(prog.view[k], frame);
-			const t = fmtMatrix(fromProps(p), this.ctx.digits);
+			const dig = this.ctx.precision.view(prog.id);
+			const t = fmtMatrix(fromProps(p), dig.x, dig.sx);
 			const inner = this.layers(prog, frame, ticks, depth);
 			return t ? [el("g", { transform: t }, inner)] : inner;
 		}
@@ -126,7 +127,7 @@ export class StaticRenderer {
 		}
 		const rig = layer.rig?.[frame];
 		if (rig && out.length) {
-			const t = fmtMatrix(rig, this.ctx.digits);
+			const t = fmtMatrix(rig, this.ctx.precision.space(prog.id));
 			return t ? [el("g", { transform: t }, out)] : out;
 		}
 		return out;
@@ -141,11 +142,11 @@ export class StaticRenderer {
 				return art ? this.doc.useArt(art) : null;
 			}
 			case "bitmap": {
-				return this.doc.image(item.bitmap, item.matrix);
+				return this.doc.image(item.bitmap, item.matrix, this.ctx.precision.space(prog.id));
 			}
 			case "text":
 				if (this.opts.textAsOutlines || item.element.textType === "static") return item.art ? this.doc.useArt(item.art) : null;
-				return textNode(item.element, this.ctx.digits);
+				return textNode(item.element, this.ctx.precision.space(prog.id));
 			case "instance":
 				return this.instance(prog, item, frame, ticks, depth);
 		}
@@ -186,9 +187,10 @@ export class StaticRenderer {
 			this.doc.defs.push(el("g", { id: symId }, content));
 			this.symbolCache.set(key, symId);
 		}
+		const dig = this.ctx.precision.instance(item, prog.id);
 		const attrs: Record<string, string | undefined> = {
 			"xlink:href": "#" + symId,
-			transform: fmtMatrix(m, this.ctx.digits) || undefined,
+			transform: fmtMatrix(m, dig.x, dig.sx) || undefined,
 		};
 		const filters = activeFilters(item, frame);
 		let colorForFilter: ColorMatrixValues | null = null;

@@ -149,10 +149,39 @@ arrow functions). It is resumable: the panel calls `Flash2Svg.start(options)` an
   artwork's share; `sizeParts` splits each file by embedded images and sounds, the player's script
   and timeline data, SMIL elements and CSS. Drawings are named by the atlas source (timeline and
   layer). The panel's `Budget.svelte` shows them.
+- **Decimals** (`core/precision.ts`, `Context.precision`): `digits` is the precision on screen.
+  Before anything is drawn, one pass over the programs bounds the largest scale each timeline is
+  shown at (from the roots and the camera down; per instance max(|sx|, |sy|) · (1 + |tan skew|)
+  over its keys and the control points of its eases) and how far its content reaches from its
+  origin (element bounds, instances' reach). Coordinates in a space shown P times larger get
+  round(D + log10 P) decimals (the error on screen stays within about 3× of D's at 1:1); angles
+  and scale factors as many as the content they turn or stretch spans, at least 3 and 4 (their
+  error lands on the whole outline; below that a turned symbol's anti-aliasing visibly shifts in
+  pixel tests); drawings those of the
+  largest scale they are shown at (an identical drawing imported with at least as many is reused).
+  SMIL, CSS, the player's tracks and still frames use them; < 0.2 ms.
 - **Writers**: SMIL uses `display` animations for visibility and `animateTransform` per transform
-  component (static parts folded into matrices). CSS uses class-based `@keyframes` with a timing
-  function per keyframe; animated subtrees are inlined (CSS animations inside `<use>` shadow trees
-  can't be paused or seeked). The player emits artwork in `<defs>`, a compact JSON program
+  component (static parts folded into matrices; a part whose values print the same all the time
+  counts as static). CSS (`emit/animate.ts` with `emit/keyframes.ts`): an instance is one element,
+  its tweens the individual properties `translate`, `rotate` and `scale` plus `transform` for what
+  follows them in Animate's order (a skew, the scale after a skew, the transformation point);
+  parts whose two tracks can't share keyframes (x and y easing differently) fall back to an
+  element per part. The poster frame stays in the `transform` attribute; the first animation's
+  first and last keyframes hold `transform:scale(1)` (or the still rest) in its place, which also
+  carries still parts (`transform:none` isn't enough: WebKit then shows the attribute). Slots
+  share keyframes when `alignTracks` can merge their tracks exactly: the union of the key times,
+  eased pieces cut with `subBezier`, jumps kept, refused when two tracks change in one stretch with
+  different eases. `encodeKeyframes` then: the most common timing becomes the animation's
+  (weighted by what leaving it out saves), keyframes with the same declarations share a selector
+  list, offsets are rounded down (a jump never comes late), and a run of keys on one line in
+  value space (within half a printed step after projecting onto the line between the printed
+  ends; at most 256 keys) becomes one segment with a `linear()` timing function when that is
+  shorter — progress printed to a quarter step, holds as stops with two positions, jumps as `0%`
+  (clamped to the stop before), eased pieces sampled within a quarter step, evenly spaced
+  positions left out. Animated subtrees are inlined (CSS animations inside `<use>` shadow trees
+  can't be paused or seeked). `.svgz` (`ExportSettings.svgz`): `compileScene` gzips each file with
+  the host's gzip (`CompileHooks.gzip`: Node's zlib in the CLI and the panel; fflate otherwise).
+  The player emits artwork in `<defs>`, a compact JSON program
   (`src/player/format.ts`) and the runtime (`src/player/runtime.ts`, bundled to ~14 KB; programs
   with sounds get a build with the mixer, ~18 KB, programs with shape-tween morphs one with the
   morph code, +1.3 KB: four builds, `PLAYER_RUNTIMES`; internal member names are shortened with esbuild
@@ -288,7 +317,8 @@ CDN otherwise).
   file). Static renders are rasterised in Edge (resvg alongside) and compared with Animate's PNG
   export; SMIL/CSS/player are seeked in Edge and compared with the static renders (smooth,
   `--steps`, ticks after a `stop()` into the looping tail, and the end state of a play-once
-  export).
+  export); `--browser=firefox` (the installed Firefox over WebDriver BiDi, content sandbox off)
+  and `--browser=webkit` (Playwright's WebKit build) run the same check in those engines.
   `scripts/e2e-lottie.ts` exports every fixture as Lottie JSON and as .lottie, validates it with
   the Lottie Animation Community's schema (`@lottie-animation-community/lottie-specs` + ajv) and
   plays it in lottie-web (SVG renderer) and dotLottie (ThorVG WebAssembly) in Edge and in Skottie
@@ -310,4 +340,6 @@ CDN otherwise).
   hash of document, timeline and settings), artwork-internal ids included
   (`prefixArtwork`); the player's runtime ids start with its svg id.
 - `tests/unit/output.test.ts`: output-level checks on the stored models (CSS end keyframes,
-  settings sanitising).
+  settings sanitising, .svgz). `keyframes.test.ts`: exact track merging and the keyframe encoder,
+  checked with a `linear()` evaluator written after CSS Easing 2. `precision.test.ts`: decimals
+  of drawings and positions shown smaller and larger.

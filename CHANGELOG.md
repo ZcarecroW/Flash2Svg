@@ -157,6 +157,43 @@
   resvg (for information) runs in a child process, so a resvg crash no longer ends the run.
   The Animate watchdog leaves progress windows alone (it closed "Exporting Image Sequence"): only
   windows of an idle Animate count as dialogs.
+- **Leaner CSS output.** An instance is one element: the individual properties `translate`,
+  `rotate` and `scale` carry its tweens (each with its own timing, sharing keyframes where they
+  can), `transform` what follows them (a skew, the transformation point). Before, every animated
+  part had an element and an animation of its own. Keyframes leave out the timing most of them
+  use (it is the animation's own: `animation:… cubic-bezier(…)`), keyframes that look the same
+  share one rule (`75%,to{…}`), and keys that all lie on one line — Animate's frame-by-frame
+  samples, stepped output — become one keyframe pair with a `linear()` timing function, where
+  that is shorter (exact: flat stretches for steps, jumps where Animate jumps). Tracks with
+  different key times are merged exactly (eased pieces cut, no sampling), parts that only move
+  below the printed precision (Animate's ±0.001° skew of sampled frames) stay still. The 46 test
+  documents: 1737 → 1295 KB (gzip 459 → 427 KB), stepped 2042 → 1375 KB (490 → 444 KB); e.g. the
+  stress test 236 → 139 KB, the eases one stepped 30.4 → 9.9 KB. Playback costs Edge the same or
+  a little less (style recalculation −2 to −19 %). Checked frame by frame in Edge, Firefox and
+  WebKit (all 46, smooth and stepped). Needs browsers from 2023 on: `linear()` (Chrome/Edge 113,
+  Firefox 112, Safari 17.2; older ones move such a stretch linearly) and the individual transform
+  properties (since 2022). The poster stays in the `transform` attribute for renderers without
+  CSS; while the animations run their keyframes hold `transform:scale(1)` in its place (WebKit
+  lets `transform:none` fall back to the attribute).
+- **Decimals from the displayed size.** *Decimals* is the precision on screen: a symbol shown at
+  a tenth of its size gets a decimal less, one shown 8 times larger one more (rounded on the log
+  scale, so the error on screen stays within about three times what the setting gives at 1:1).
+  Angles and scale factors get as many as the content they turn or stretch spans, but never
+  fewer than before (3 and 4: their error lands on the whole outline; a large picture gets
+  more). Measured from the timelines before anything is drawn (the largest scale each symbol is
+  shown at over all its uses and frames, how far its content reaches; < 0.2 ms). SMIL, CSS,
+  player and still frames; in the test documents (mostly shown 1:1) a little smaller: SMIL
+  1078 → 1070 KB, stepped 1381 → 1355 KB.
+- **Compressed .svgz** (*Compressed .svgz* in *Advanced*, `--svgz`): gzip of the same SVG, the
+  same bytes on every export; the size overview counts it compressed. For design tools and for
+  servers that send `.svgz` with `Content-Encoding: gzip` — tested: Edge, Firefox and WebKit open
+  it only then, not from disk and not from a server that only sends the type. On the web, plain
+  SVG compressed by the server is smaller: the 46 test documents as SMIL 1070 KB, .svgz 372 KB,
+  Brotli 341 KB. Node's zlib packs it (the CLI and the panel; 3–8 % smaller and faster than the
+  JavaScript fallback).
+- Tests: the browser check runs in Firefox (the installed one, over WebDriver BiDi) and WebKit
+  too (`--browser=firefox|webkit`); unit tests for the keyframe encoder (with a `linear()`
+  evaluator after the CSS Easing 2 rules), the decimals and .svgz.
 
 ## 4.0.0 (2026-10-30)
 

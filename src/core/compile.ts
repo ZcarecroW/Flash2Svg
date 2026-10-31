@@ -1,6 +1,7 @@
 /**
  * Public entry point of the compiler: scene model -> SVG text(s).
  */
+import { gzipSync, strToU8 } from "fflate";
 import { createContext, type FileSource } from "./context.ts";
 import { dotLottieId, packDotLottie } from "./dotlottie.ts";
 import { renderAnimated, type BeginMode } from "./emit/animate.ts";
@@ -44,8 +45,15 @@ export interface ExportSettings extends ImageSettings, SoundSettings {
 	 * frame): one blended drawing instead of a drawing per frame, checked against every frame.
 	 */
 	morph: boolean;
+	/** Decimals on screen (shown larger or smaller, a part gets more or fewer, see precision.ts). */
 	digits: number;
 	pretty: boolean;
+	/**
+	 * SVG formats: gzip-compressed files (.svgz), for design tools and servers that send them with
+	 * Content-Encoding: gzip. Browsers don't open them from disk; on the web, plain SVG compressed
+	 * by the server (Brotli) is smaller.
+	 */
+	svgz?: boolean;
 	/**
 	 * Start of every id in the output, so several SVGs can be inlined into one page. Default: a
 	 * short hash of the document, timeline and settings (the same export gives the same ids).
@@ -69,6 +77,7 @@ export const DEFAULT_SETTINGS: ExportSettings = {
 	morph: true,
 	digits: 2,
 	pretty: false,
+	svgz: false,
 	imageLossy: "jpeg",
 	imageLossless: "png",
 	imageQuality: 0,
@@ -123,7 +132,13 @@ export interface DrawingCost {
 	bytes: number;
 }
 
-export function compileScene(model: SceneModel, files: FileSource, partial: Partial<ExportSettings> = {}, rootIndex = 0): CompileOutput {
+/** What the host does better than plain JavaScript. */
+export interface CompileHooks {
+	/** gzip for .svgz (default: fflate; Node's zlib packs some 3-8 % smaller, and faster). */
+	gzip?(data: Uint8Array): Uint8Array;
+}
+
+export function compileScene(model: SceneModel, files: FileSource, partial: Partial<ExportSettings> = {}, rootIndex = 0, hooks: CompileHooks = {}): CompileOutput {
 	const s: ExportSettings = { ...DEFAULT_SETTINGS, ...partial };
 	// number fields can arrive empty (null) or out of range from the panel
 	s.digits = Number.isFinite(s.digits) ? Math.max(0, Math.min(6, Math.round(s.digits))) : DEFAULT_SETTINGS.digits;
@@ -232,12 +247,27 @@ export function compileScene(model: SceneModel, files: FileSource, partial: Part
 		if (r.horizon.tail) out.stats.loopFrom = r.horizon.tail;
 	}
 	out.assets = [...assets.values()];
+	if (s.svgz && !lottie) {
+		const gzip = hooks.gzip ?? ((d: Uint8Array) => gzipSync(d, { level: 9, mtime: 0 }));
+		for (const f of out.files) {
+			f.bytes = gzip(strToU8(f.svg));
+			f.ext = ".svgz";
+		}
+	}
 	out.stats.bytes = out.files.reduce((n, f) => n + (f.bytes?.length ?? f.svg.length), 0);
 	if (parts) out.stats.parts = parts;
 	else
 		for (const f of out.files) {
 			const p = sizeParts(f.svg);
-			for (const k in p) out.stats.parts[k as keyof SizeParts] += p[k as keyof SizeParts];
+			if (f.bytes) {
+				// compressed: each part's share of the file (the rounding goes to the largest)
+				const keys = Object.keys(p) as (keyof SizeParts)[];
+				const k = f.bytes.length / Math.max(1, f.svg.length);
+				for (const key of keys) p[key] = Math.round(p[key] * k);
+				const big = keys.reduce((a, b) => (p[b] > p[a] ? b : a));
+				p[big] += f.bytes.length - keys.reduce((n, key) => n + p[key], 0);
+			}
+			for (const key in p) out.stats.parts[key as keyof SizeParts] += p[key as keyof SizeParts];
 		}
 	out.stats.drawings = drawingCosts(model, drawingBytes);
 	return out;

@@ -7,7 +7,7 @@ kind of animation in the file:
 | Format | What you get | Works in `<img>` | Interactive |
 | --- | --- | --- | --- |
 | **SMIL** | `<animate>` / `<animateTransform>` with exact `keySplines` easing | ✓ | button states via CSS |
-| **CSS** | `@keyframes` with `cubic-bezier()` per keyframe, class based | ✓ | button states, pause from your page CSS |
+| **CSS** | `@keyframes` on the individual transform properties, `cubic-bezier()` or `linear()` easing, class based | ✓ | button states, pause from your page CSS |
 | **JS player** | artwork + compact timeline + a 14 KB runtime with real Flash semantics (15.5 KB with shape-tween morphs) | poster frame only | ✓ `play()`, `stop()`, `gotoAndPlay("label")`, buttons, sounds |
 | **Frames** | one still SVG per frame | ✓ | – |
 | **Lottie** / **.lottie** | Lottie JSON, or a dotLottie archive with its bitmaps, for lottie-web, dotLottie, Skottie and the app players (iOS, Android, Flutter, React Native) | – | through the player's API |
@@ -185,6 +185,29 @@ smaller and the shape moves smoothly between frames: a 119-frame shape tween tak
 instead of 75.5 KB as SMIL (2.4 instead of 17 KB gzipped). CSS output keeps a drawing per frame
 (Safari can't animate paths with CSS). `--no-morph` turns it off.
 
+**Lean CSS:** an instance is one element whose tweens are the individual properties
+`translate`, `rotate` and `scale` (plus `transform` for a skew and the transformation point),
+each with its own timing and sharing keyframes where they can. Keyframes leave out the timing
+most of them use (the animation has it), equal keyframes share a rule, and stretches that follow
+one curve — Animate's frame-by-frame samples, stepped output — are one keyframe pair with a
+`linear()` timing function where that is shorter. The 46 test documents take 1295 KB as CSS
+(1737 KB before; stepped 1375 instead of 2042 KB). CSS output needs a browser from 2023 on
+(`linear()`: Chrome / Edge 113, Firefox 112, Safari 17.2 — older ones move those stretches
+linearly); it is tested frame by frame in Edge, Firefox and WebKit. Renderers without CSS (design
+tools, image viewers) show the poster frame from the `transform` attributes.
+
+**Decimals** (*Advanced*, `--digits`) is the precision on screen: what is shown smaller gets
+fewer decimals, what is shown larger more (a symbol at a tenth of its size one less, one at 8
+times one more); angles and scale factors get as many as the size of what they turn needs, at
+least 3 and 4.
+
+**.svgz** (*Compressed .svgz*, `--svgz`) writes the SVG gzipped, for design tools and for servers
+that send `.svgz` files with `Content-Encoding: gzip` (Apache: `AddEncoding gzip .svgz`). Browsers
+show it only then — not from disk, not from a server that just sends the type. For the web, keep
+plain `.svg` and let the server compress it, preferably with Brotli: the 46 test documents as
+SMIL are 1070 KB, 372 KB gzipped (.svgz) and 341 KB with Brotli (nginx `brotli on` or
+`gzip_types image/svg+xml`, Apache `mod_brotli` / `mod_deflate` for `image/svg+xml`).
+
 ### Lottie
 
 *Lottie* writes a `.json` file, *.lottie* a dotLottie archive: the same animation and its bitmaps
@@ -230,7 +253,7 @@ lottie-ios / lottie-android.
   thin seams between the tiles of a repeating bitmap fill and faded edges where a clipped bitmap
   fill stretches its edge pixels, smooths pixel art, and its loops run about a frame short.
 - Size: Lottie JSON is wordier than SVG, but compresses as well — the 46 test documents take
-  1462 KB as Lottie and 1078 KB as SMIL, gzipped 379 KB and 373 KB; as .lottie archives 413 KB.
+  1462 KB as Lottie and 1070 KB as SMIL, gzipped 379 KB and 373 KB; as .lottie archives 413 KB.
 - Speed: players draw a precomposition again for each use, so built filters cost render time
   (a bevel blurs four times): about 0.5–2 ms per shadow and 6–9 ms per bevel and frame in Skottie
   on the CPU at 500×400.
@@ -258,6 +281,7 @@ node dist/cli/flash2svg.js scene.json --image-resolution 1 --image-full "poster.
 node dist/cli/flash2svg.js scene.json --format player --sound-format opus --sound-mode "click.wav=lossless"
 node dist/cli/flash2svg.js scene.json --format lottie        # scene.json → <document>.json
 node dist/cli/flash2svg.js scene.json --format dotlottie -o hero.lottie --begin click --poster last
+node dist/cli/flash2svg.js scene.json --format static --svgz  # gzipped: <document>.svgz
 ```
 
 `--help` lists all options. After the export it prints what the size is made of (drawing,
@@ -335,7 +359,9 @@ Animate's own PNG export of every frame, renders our static frames with resvg an
 pixel by pixel, then plays the SMIL, CSS and player outputs in Edge (playwright-core, no browser
 download) and compares them frame by frame (smooth and stepped, plus the end state), and finally
 drives the JS player's API, buttons and sounds, and inlines several exports into one HTML page
-(ids are unique per export, so they don't clash).
+(ids are unique per export, so they don't clash). The browser check also runs in Firefox (the
+installed one) and WebKit: `node scripts/e2e-browser.ts --browser=firefox` or `--browser=webkit`
+(once: `node node_modules/playwright-core/cli.js install webkit`).
 
 `npm run e2e:panel` tests the panel inside Animate: it builds a self-test version, signs it with
 Adobe's `ZXPSignCmd` (put it into `tools/zxpsign/`; no CEP debug mode needed), installs it, lets

@@ -6,6 +6,7 @@
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join, resolve } from "node:path";
+import { gzipSync } from "node:zlib";
 import { compileScene, DEFAULT_SETTINGS, type ExportSettings } from "../core/compile.ts";
 import { encodeSounds } from "../core/audio.ts";
 import { createAudioCodecs } from "../core/audio-codecs.ts";
@@ -41,9 +42,12 @@ const HELP = `flash2svg <scene.json> [options]
                           (.lottie: before a click / hover / script start)
   --ignore-reduced-motion animate also when the system asks for reduced motion
   --no-morph              shape tweens frame by frame (default: path morphs in SMIL and player)
-  --digits <n>            decimal places (default 2)
+  --digits <n>            decimal places on screen (default 2; parts shown larger or smaller get
+                          more or fewer)
   --id-prefix <p>         start of every id (default: a short hash, unique per export)
   --pretty                indented output
+  --svgz                  gzip-compressed SVG (.svgz): for design tools and servers that send
+                          Content-Encoding: gzip; browsers don't open it from disk
   -h, --help
 `;
 
@@ -172,6 +176,9 @@ async function main(argv: string[]) {
 			case "--pretty":
 				s.pretty = true;
 				break;
+			case "--svgz":
+				s.svgz = true;
+				break;
 			default:
 				if (a.startsWith("-")) throw new Error(`Unknown option ${a}`);
 				input = a;
@@ -197,12 +204,13 @@ async function main(argv: string[]) {
 		({ model, files } = r);
 		warnings = [...warnings, ...r.warnings];
 	}
-	const result = compileScene(model, files, s);
+	const result = compileScene(model, files, s, 0, { gzip: (d) => gzipSync(d, { level: 9 }) });
 	result.warnings.unshift(...warnings);
 	const defaultExt = result.files[0]?.ext ?? ".svg";
 	const target = resolve(out || join(base, "..", basename(model.doc.name, extname(model.doc.name)) + defaultExt));
 	mkdirSync(dirname(target), { recursive: true });
-	const ext = extname(target) || defaultExt;
+	// gzip inside: the extension says so, whatever name was given
+	const ext = defaultExt === ".svgz" ? ".svgz" : extname(target) || defaultExt;
 	const stem = target.slice(0, target.length - extname(target).length);
 	for (const f of result.files) writeFileSync(stem + f.suffix + ext, f.bytes ?? f.svg);
 	for (const a of result.assets) {

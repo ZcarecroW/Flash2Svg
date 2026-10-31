@@ -58,13 +58,16 @@ export function renderPlayer(ctx: Context, rootId: string, s: ExportSettings): {
 	/** A morph channel for the program, its numbers rounded. */
 	const channel = (ch: MorphChannel, node: number): PChannel => {
 		const kind = ch.kind === "d" ? 0 : ch.kind === "color" ? 1 : ch.kind === "num" ? 2 : 3;
-		const dig = (i: number) => (kind === 0 ? ctx.digits : kind === 1 ? 1 : kind === 2 ? 4 : i % 6 < 4 ? 5 : ctx.digits);
+		const D = ctx.precision.space(space);
+		const dig = (i: number) => (kind === 0 ? D : kind === 1 ? 1 : kind === 2 ? 4 : i % 6 < 4 ? 5 : D);
 		const round = (v: number[]) => v.map((x, i) => Math.round(x * 10 ** dig(i)) / 10 ** dig(i));
 		const cmds = ch.cmds ?? "";
 		return ch.s ? [node, ch.attr, kind, cmds, round(ch.s), round(ch.e!)] : [node, ch.attr, kind, cmds, ch.f!.map(round)];
 	};
 
 	const filterRefs = new Map<string, string>();
+	// the program whose items are being written (its coordinate space, see Precision)
+	let space = "";
 	const item = (it: Item): PItem | null => {
 		switch (it.kind) {
 			case "art": {
@@ -90,7 +93,7 @@ export function renderPlayer(ctx: Context, rootId: string, s: ExportSettings): {
 						const at = copy.defs.length ? 1 : 0;
 						for (const ch of p.channels) {
 							// the first frame's values in the drawing; what changes in the program
-							copy.nodes[ch.node]!.attrs[ch.attr] = channelText(ch, channelNumbers(ch, p.ratio ? 0 : valueAt(morph.ratio, it.start + p.from), 0), ctx.digits);
+							copy.nodes[ch.node]!.attrs[ch.attr] = channelText(ch, channelNumbers(ch, p.ratio ? 0 : valueAt(morph.ratio, it.start + p.from), 0), ctx.precision.space(space));
 							if (channelVaries(ch)) c.push(channel(ch, ch.node + at));
 						}
 						const m: PMorph = { a: p.from, b: p.to, r: doc.morphTemplate(p.art.id, copy.defs, copy.body), c };
@@ -101,7 +104,7 @@ export function renderPlayer(ctx: Context, rootId: string, s: ExportSettings): {
 				return q;
 			}
 			case "bitmap": {
-				const node = doc.image(it.bitmap, it.matrix);
+				const node = doc.image(it.bitmap, it.matrix, ctx.precision.space(space));
 				if (!node) return null;
 				const id = doc.uid("bmp");
 				doc.defs.push(el("g", { id }, [node]));
@@ -112,7 +115,7 @@ export function renderPlayer(ctx: Context, rootId: string, s: ExportSettings): {
 					const a = it.art ? ctx.art(it.art) : null;
 					return a ? { k: "a", s: it.start, e: it.end, r: doc.artwork(a) } : null;
 				}
-				return { k: "r", s: it.start, e: it.end, x: serialize(textNode(it.element, ctx.digits)) };
+				return { k: "r", s: it.start, e: it.end, x: serialize(textNode(it.element, ctx.precision.space(space))) };
 			}
 			case "instance":
 				return instance(it);
@@ -126,7 +129,7 @@ export function renderPlayer(ctx: Context, rootId: string, s: ExportSettings): {
 			e: it.end,
 			y: it.symbol,
 			t: it.symbolType === "graphic" ? 1 : it.symbolType === "button" ? 2 : 0,
-			tr: TRANSFORM_PROPS.map((k) => track(it.transform[k], k === "sx" || k === "sy" ? 4 : k === "rot" || k === "skw" ? 3 : ctx.digits)),
+			tr: TRANSFORM_PROPS.map((k) => track(it.transform[k], ctx.precision.instance(it, space)[k])),
 		};
 		if (it.name) p.nm = it.name;
 		if (!it.visible || blendHides(it.blendMode)) p.hd = 1;
@@ -173,8 +176,12 @@ export function renderPlayer(ctx: Context, rootId: string, s: ExportSettings): {
 			}
 		}
 		if (prog.inShapeAlpha) t.ia = 1;
-		if (prog.view) t.vw = (["x", "y", "rot", "skw", "sx", "sy"] as const).map((k) => track(prog.view![k], k === "sx" || k === "sy" ? 4 : 3));
+		if (prog.view) {
+			const d = ctx.precision.view(prog.id);
+			t.vw = (["x", "y", "rot", "skw", "sx", "sy"] as const).map((k) => track(prog.view![k], d[k]));
+		}
 		const indexOfLayer = new Map(prog.layers.map((l, i) => [l.index, i]));
+		space = prog.id;
 		for (const l of prog.layers) {
 			const items = l.items.map(item).filter((x): x is PItem => !!x);
 			const pl: PTimeline["ly"][number] = { it: items };
