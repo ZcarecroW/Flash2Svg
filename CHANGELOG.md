@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 4.1.0 (2026-10-31)
 
 - **User guide** at <https://zcarecrow.github.io/Flash2Svg/>: 19 pages with screenshots of the
   panel and 14 demo animations made in Animate and exported with Flash2SVG, each playable in every
