@@ -2512,7 +2512,7 @@ export function renderLottie(ctx: Context, rootId: string, s: ExportSettings, im
 				`The root timeline stops (stop()) while movie clips keep running: play the marker "${segments.intro}" once, then "${segments.tail}" in a loop (a .lottie file's state machine does that)`,
 			);
 	}
-	if (images === "dotlottie" && s.begin !== "auto" && H > 1) segments.poster = add("poster", s.posterFrame === "last" ? H - 1 : 0, 1);
+	if (images === "dotlottie" && (s.begin === "click" || s.begin === "hover" || s.begin === "manual") && H > 1) segments.poster = add("poster", s.posterFrame === "last" ? H - 1 : 0, 1);
 	if (markers.length) animation.markers = markers;
 	return { animation, images: w.files, horizon, segments };
 }

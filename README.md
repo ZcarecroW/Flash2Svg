@@ -6,9 +6,9 @@ kind of animation in the file:
 
 | Format | What you get | Works in `<img>` | Interactive |
 | --- | --- | --- | --- |
-| **SMIL** | `<animate>` / `<animateTransform>` with exact `keySplines` easing | ✓ | button states via CSS |
-| **CSS** | `@keyframes` on the individual transform properties, `cubic-bezier()` or `linear()` easing, class based | ✓ | button states, pause from your page CSS |
-| **JS player** | artwork + compact timeline + a 14 KB runtime with real Flash semantics (15.5 KB with shape-tween morphs) | poster frame only | ✓ `play()`, `stop()`, `gotoAndPlay("label")`, buttons, sounds |
+| **SMIL** | `<animate>` / `<animateTransform>` with exact `keySplines` easing | ✓ | button states via CSS, web links, start on click / hover / when visible, scroll |
+| **CSS** | `@keyframes` on the individual transform properties, `cubic-bezier()` or `linear()` easing, class based | ✓ | button states, web links, pause from your page CSS, scroll-driven (inline) |
+| **JS player** | artwork + compact timeline + a 14.6 KB runtime with real Flash semantics (15.9 KB with shape-tween morphs, 17.4 KB with mouse handlers) | poster frame only | ✓ `play()`, `stop()`, `gotoAndPlay("label")`, buttons, Animate's code snippets, scroll, sounds |
 | **Frames** | one still SVG per frame | ✓ | – |
 | **Lottie** / **.lottie** | Lottie JSON, or a dotLottie archive with its bitmaps, for lottie-web, dotLottie, Skottie and the app players (iOS, Android, Flutter, React Native) | – | through the player's API |
 
@@ -84,8 +84,24 @@ close the panel, quit Animate, then remove it.
 
 Useful options: *Smooth tweens* (interpolate between frames — the "high FPS" look; off = one
 step per frame like the SWF), *Loop* (follow `stop()` scripts / always / once), *Start*
-(automatically, on click, on hover, from script), *Poster* frame for places where animation
-doesn't run, embedding vs. linking images, decimal places.
+(automatically, on click, on hover, from script, when visible, on scroll — see below), *Poster*
+frame for places where animation doesn't run, embedding vs. linking images, decimal places.
+
+### Start and scroll
+
+- *When visible* starts the animation once half of it is on screen (or it fills half the screen).
+  A few lines of script hold it until then (IntersectionObserver); where scripts don't run
+  (`<img>`) it simply plays.
+- *On scroll* lets the scroll position run the animation, once, from the first frame to the
+  last: *While fully visible* (from the moment it is all on screen until it starts to leave, or
+  while it covers the screen when it is taller), *While crossing the screen* (from entering at
+  the bottom to leaving at the top) or *With the whole page*. CSS output uses scroll-driven
+  animations (`view-timeline` / `animation-timeline`; Chrome / Edge 115, Safari 26, Firefox — the
+  current version plays them; tested in Edge, Firefox and WebKit) and needs the SVG inline in the
+  page. SMIL and the JS player set their time from the scroll position by script, inline or in an
+  `<object>` / `<iframe>` of the same site; opened by itself or in `<img>` the animation just
+  plays. Scrolling back costs the player a replay from the start: about 7 ms a frame for 150
+  tweened symbols.
 
 ### Images
 
@@ -134,6 +150,21 @@ Every sound is cut to the part the frames play: Animate pads its sounds with sil
 beep came out as a 3.7 s file). *Convert stereo to mono* is followed. Browsers block sound until
 the visitor clicks or presses a key: until then the sounds run on silently and join at their
 position (a long one starts in the middle). In SMIL and CSS output sounds don't play (warned).
+
+### Code snippets
+
+Mouse handlers that Animate's *Code Snippets* panel writes into frame scripts work in the JS
+player — in AS3 and in HTML5 Canvas documents (`btn.addEventListener(MouseEvent.CLICK, …)`,
+`this.btn.addEventListener("click", ….bind(this))`, `.on("click", …)`, function literals and
+arrows). Recognised: click, mouse over / out (and roll over / out), mouse down / up, double click
+on the timeline itself or its named instances; in the handler `gotoAndPlay()` / `gotoAndStop()`
+(frame or label), `play()`, `stop()`, `nextFrame()`, `prevFrame()` on this timeline, the root,
+the parent or named instances (`MovieClip(this.root)`, `exportRoot`, `this.parent`,
+`event.currentTarget`), `instance.visible = true/false`, and *Go to Web Page*
+(`navigateToURL(new URLRequest(…))`, `window.open(…)`). The handlers' jumps are no longer mistaken
+for frame actions. Other code in a handler is warned about. Instances with click handlers show
+the hand cursor. SMIL, CSS and still frames turn *Go to Web Page* into an SVG link; for the other
+handlers they warn.
 
 ### Embedding
 
@@ -205,7 +236,7 @@ least 3 and 4.
 that send `.svgz` files with `Content-Encoding: gzip` (Apache: `AddEncoding gzip .svgz`). Browsers
 show it only then — not from disk, not from a server that just sends the type. For the web, keep
 plain `.svg` and let the server compress it, preferably with Brotli: the 46 test documents as
-SMIL are 1070 KB, 372 KB gzipped (.svgz) and 341 KB with Brotli (nginx `brotli on` or
+SMIL are 1086 KB, 371 KB gzipped (.svgz) and 340 KB with Brotli (nginx `brotli on` or
 `gzip_types image/svg+xml`, Apache `mod_brotli` / `mod_deflate` for `image/svg+xml`).
 
 ### Lottie
@@ -253,7 +284,7 @@ lottie-ios / lottie-android.
   thin seams between the tiles of a repeating bitmap fill and faded edges where a clipped bitmap
   fill stretches its edge pixels, smooths pixel art, and its loops run about a frame short.
 - Size: Lottie JSON is wordier than SVG, but compresses as well — the 46 test documents take
-  1462 KB as Lottie and 1070 KB as SMIL, gzipped 379 KB and 373 KB; as .lottie archives 413 KB.
+  1462 KB as Lottie and 1086 KB as SMIL, gzipped 379 KB and 372 KB; as .lottie archives 413 KB.
 - Speed: players draw a precomposition again for each use, so built filters cost render time
   (a bevel blurs four times): about 0.5–2 ms per shadow and 6–9 ms per bevel and frame in Skottie
   on the CPU at 500×400.
@@ -282,6 +313,8 @@ node dist/cli/flash2svg.js scene.json --format player --sound-format opus --soun
 node dist/cli/flash2svg.js scene.json --format lottie        # scene.json → <document>.json
 node dist/cli/flash2svg.js scene.json --format dotlottie -o hero.lottie --begin click --poster last
 node dist/cli/flash2svg.js scene.json --format static --svgz  # gzipped: <document>.svgz
+node dist/cli/flash2svg.js scene.json --format css --begin scroll --scroll-range crossing
+node dist/cli/flash2svg.js scene.json --format smil --begin visible --delay 0.3
 ```
 
 `--help` lists all options. After the export it prints what the size is made of (drawing,
@@ -301,6 +334,8 @@ write it to `tests/out/<name>/model/`.)
 - Frame scripts are not run: `stop()`, `play()`, `gotoAndPlay()`/`gotoAndStop()` with a frame
   number or label are followed; of conditions only pass counters are understood
   (`if (n < 3) gotoAndPlay(0); else stop();`). Other conditional actions always run (warned).
+  Mouse handlers from code snippets: see *Code snippets* (JS player); keyboard, `ENTER_FRAME` and
+  timer handlers aren't run (warned).
 - Animate adds the temporary copy each export works on to its *Recent files* list (JSFL can't
   open a document without doing so).
 - 3D transforms export as their 2D projection. IK armatures, video and components are not

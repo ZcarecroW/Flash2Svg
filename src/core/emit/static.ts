@@ -11,6 +11,7 @@ import { clone, el, type XmlNode } from "../xml.ts";
 import { OutputDoc, svgRoot } from "./document.ts";
 import { blendHides, blendSubtract, blendWhite, cssBlendMode, isAlphaOnly, type ColorMatrixValues } from "./filters.ts";
 import { textNode } from "./text.ts";
+import { clickLink } from "../snippets.ts";
 import { graphicFrame, playheadFrame } from "./timing.ts";
 
 export interface StaticOptions {
@@ -147,8 +148,11 @@ export class StaticRenderer {
 			case "text":
 				if (this.opts.textAsOutlines || item.element.textType === "static") return item.art ? this.doc.useArt(item.art) : null;
 				return textNode(item.element, this.ctx.precision.space(prog.id));
-			case "instance":
-				return this.instance(prog, item, frame, ticks, depth);
+			case "instance": {
+				const node = this.instance(prog, item, frame, ticks, depth);
+				const link = node && clickLink(prog.interactions, item.name);
+				return link ? el("a", { "xlink:href": link.href, target: link.target }, [node!]) : node;
+			}
 		}
 	}
 

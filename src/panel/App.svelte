@@ -282,8 +282,22 @@
 						<option value="click">On click</option>
 						<option value="hover">On hover</option>
 						<option value="manual">From script</option>
+						{#if !lottie}
+							<option value="visible">When visible</option>
+							<option value="scroll">On scroll</option>
+						{/if}
 					</select>
 				</label>
+				{#if panel.export.begin === "scroll" && !lottie}
+					<label class="row" title="CSS output follows the scroll in an SVG placed inline in the page; SMIL and the JS player also in an <object> of the same site">
+						<span>Scroll</span>
+						<select bind:value={panel.export.scrollRange}>
+							<option value="visible">While fully visible</option>
+							<option value="crossing">While crossing the screen</option>
+							<option value="page">With the whole page</option>
+						</select>
+					</label>
+				{/if}
 			{/if}
 			{#if !lottie}
 				<label class="row">

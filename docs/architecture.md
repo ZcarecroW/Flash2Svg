@@ -84,6 +84,11 @@ arrow functions). It is resumable: the panel calls `Flash2Svg.start(options)` an
   range: artwork, frame-by-frame artwork (shape tweens), bitmaps, text, and symbol instances.
   Consecutive keyframes holding the same symbol in the same slot form one instance *span* (a movie
   clip keeps playing across them, as in Flash).
+- **Frame scripts**: `core/snippets.ts` first takes the mouse handlers out (Animate's code
+  snippets: listener calls on this timeline or named instances, their named or literal handler
+  functions; comments blanked string-aware) into `Program.interactions` — event, instance, the
+  frame that adds it, actions with target paths ("" this timeline, "/" root, ".." parent, "@" the
+  instance, names below). `parseActions` then reads the frame actions from what is left.
 - **Tracks**: each instance matrix is decomposed as
   `translate(x,y) · rotate(r) · skewX(k) · scale(sx,sy) · translate(−tp)` — the transformation
   point moves, the object turns and scales around it, like Animate does. For each classic tween
@@ -162,7 +167,10 @@ arrow functions). It is resumable: the panel calls `Flash2Svg.start(options)` an
   SMIL, CSS, the player's tracks and still frames use them; < 0.2 ms.
 - **Writers**: SMIL uses `display` animations for visibility and `animateTransform` per transform
   component (static parts folded into matrices; a part whose values print the same all the time
-  counts as static). CSS (`emit/animate.ts` with `emit/keyframes.ts`): an instance is one element,
+  counts as static). Animated symbols are written in place, in SMIL as in CSS (copies with fresh
+  ids for repeats); only still content is shared through `<use>`: WebKit doesn't run SMIL
+  animations in a `<use>` copy on an element that holds a `<use>`, nor reliably through two.
+  CSS (`emit/animate.ts` with `emit/keyframes.ts`): an instance is one element,
   its tweens the individual properties `translate`, `rotate` and `scale` plus `transform` for what
   follows them in Animate's order (a skew, the scale after a skew, the transformation point);
   parts whose two tracks can't share keyframes (x and y easing differently) fall back to an
@@ -184,7 +192,10 @@ arrow functions). It is resumable: the panel calls `Flash2Svg.start(options)` an
   The player emits artwork in `<defs>`, a compact JSON program
   (`src/player/format.ts`) and the runtime (`src/player/runtime.ts`, bundled to ~14 KB; programs
   with sounds get a build with the mixer, ~18 KB, programs with shape-tween morphs one with the
-  morph code, +1.3 KB: four builds, `PLAYER_RUNTIMES`; internal member names are shortened with esbuild
+  morph code, +1.3 KB, programs with mouse handlers or the start triggers *visible* / *scroll* one
+  with that code, +2.8 KB: eight builds, `PLAYER_RUNTIMES`, by `__SOUND__`, `__MORPH__`,
+  `__EVENTS__`; code a build leaves out lives in functions, not methods, so esbuild drops it;
+  internal member names are shortened with esbuild
   `mangleProps`, list in `scripts/build-runtime.mjs`). Tweened transforms and alpha are Web
   Animations (keyframes from the tracks, cached per item): the browser plays them on the
   compositor, and `sync()` only sets an animation's start time when its timeline jumps or stops
@@ -327,7 +338,11 @@ CDN otherwise).
   matches Animate's own PNG at least as well passes. `scripts/e2e-statemachine.ts` runs the
   .lottie state machines in dotlottie-web (state and frame on every animation frame): intro then
   tail without an extra frame, a click start and restart from the poster, looping, playing once.
+  `scripts/e2e-triggers.ts` serves exports over HTTP and checks *on scroll* (frames at scroll
+  positions against the static frames) and *when visible* (held below the fold, running in view),
+  inline and in an `<object>`, for SMIL, CSS and the player (`--browser=firefox|webkit` too).
   `scripts/e2e-player.ts` drives the JS player: labels, goto, loop modes, start modes, buttons,
+  code snippets (f47: clicks on buttons, mouse over / out, visible, web pages),
   sounds (Web Audio calls recorded: in/out points, loops, envelopes, stream sync after goto and
   pause, mute, seek, button sounds, MP3 and Opus, blocked autoplay). `scripts/e2e-inline.ts`
   inlines several exports into one HTML page.

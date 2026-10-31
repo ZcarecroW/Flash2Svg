@@ -7,18 +7,23 @@
  * This file is bundled (esbuild, minified) into an IIFE string by scripts/build.mjs.
  */
 import { evalBezier } from "../core/easing.ts";
-import type { PChannel, PFrameSound, PInst, PItem, PMorph, PProgram, PTimeline, PTrack } from "./format.ts";
+import type { PChannel, PFrameSound, PInst, PItem, PListener, PMorph, PProgram, PTimeline, PTrack } from "./format.ts";
 
 /** Build flags: the sound code (Mixer) is only in the runtime of programs with sounds, the
  * morph code (shape tweens) only in that of programs with path morphs. */
 declare const __SOUND__: boolean;
 declare const __MORPH__: boolean;
+/** mouse handlers from frame scripts (PTimeline.ev), the start triggers "visible" and "scroll" */
+declare const __EVENTS__: boolean;
 
 const NS = "http://www.w3.org/2000/svg";
 const XL = "http://www.w3.org/1999/xlink";
 const RAD = Math.PI / 180;
 
 type Listener = (e: { type: string; frame: number; label?: string }) => void;
+
+/** DOM events of the mouse handlers (PListener codes). */
+const EVENT_CODES: Record<string, number> = { pointerover: 1, pointerout: 2, pointerdown: 3, pointerup: 4, dblclick: 5 };
 
 function trackAt(P: PProgram, tr: PTrack | undefined, t: number, def: number): number {
 	if (tr === undefined) return def;
@@ -100,7 +105,7 @@ class Clip {
 	readonly node: SVGGElement;
 	frame = 0;
 	playing = true;
-	private items = new Map<PItem, Inst>();
+	readonly items = new Map<PItem, Inst>();
 	private layerNodes: SVGGElement[] = [];
 	private maskIds: string[] = [];
 	readonly tl: PTimeline;
@@ -111,6 +116,11 @@ class Clip {
 	/** times each frame was entered (counted stops) */
 	private passes: number[] = [];
 	buttonState = 0;
+	/** the clip whose instance this clip is, and that instance (null: the root) */
+	up: Clip | null = null;
+	inst: Inst | null = null;
+	/** mouse handlers of this timeline already added (a frame entered again doesn't add them twice) */
+	heard: Set<PListener> | null = null;
 
 	constructor(player: Player, tl: PTimeline, kind: number) {
 		this.player = player;
@@ -156,11 +166,17 @@ class Clip {
 	}
 
 	/** Runs frame scripts for the frame just entered; returns false if a goto changed the frame. */
-	private runActions(): void {
+	runActions(): void {
 		if (this.enteredFrame === this.frame) return;
 		this.enteredFrame = this.frame;
 		const acts = this.tl.ac?.[this.frame];
 		const label = this.labelAt(this.frame);
+		if (__EVENTS__)
+			for (const l of this.tl.ev ?? [])
+				if (l[0] === this.frame && !(this.heard ??= new Set()).has(l)) {
+					this.heard.add(l);
+					listen(this.player, this, l);
+				}
 		if (this.kind === -1) this.player.emit({ type: "frame", frame: this.frame, label });
 		this.playSounds();
 		if (!acts) return;
@@ -334,6 +350,7 @@ class Clip {
 			this.player.anims.delete(this.vanim);
 		}
 		for (const inst of this.items.values()) inst.dispose();
+		if (__EVENTS__ && this.heard) unlisten(this.player, this);
 	}
 
 	/** Graphic symbols/buttons: frame chosen by the parent. */
@@ -415,13 +432,18 @@ class Inst {
 				const sym = P.tl[it.y];
 				if (sym && !it.hd) {
 					this.clip = new Clip(owner.player, sym, it.t);
+					this.clip.up = owner;
+					this.clip.inst = this;
 					g.appendChild(this.clip.node);
 					if (it.nm) {
 						g.setAttribute("data-name", it.nm);
 						owner.player.named.set(it.nm, this.clip);
 					}
 					if (it.t === 2) this.button(g);
+					else if (__EVENTS__ && it.nm && clicks(owner, it.nm)) g.style.cursor = "pointer";
 					this.clip.sync();
+					// its first frame's script runs now, before it advances (a stop() there holds it)
+					if (it.t === 0) this.clip.runActions();
 				}
 				// Animate filters work in the parent's orientation (not rotated with the instance):
 				// outer (blend, opacity, colour) > filter > transform > clip
@@ -796,7 +818,7 @@ class Player {
 	named = new Map<string, Clip>();
 	inTick = false;
 	private listeners: Record<string, Listener[]> = {};
-	private time = 0; // seconds since last tick
+	time = 0; // seconds since last tick
 	private raf = 0;
 	private last = 0;
 	running = false;
@@ -814,10 +836,18 @@ class Player {
 		this.loop = loop;
 		this.defs = (svg.querySelector("defs") as SVGDefsElement) ?? (svg.insertBefore(el("defs"), svg.firstChild) as SVGDefsElement);
 		if (__SOUND__ && Object.keys(P.snd).length) this.mixer = new Mixer(this);
+		// (capturing: before a button switches its drawing under the pointer)
+		if (__EVENTS__) for (const type in EVENT_CODES) svg.addEventListener(type, (e) => hear(this, e), true);
 		this.reset();
 	}
 
+	/** Mouse handlers added so far: [the timeline whose script added it, the handler]. */
+	handlers: [Clip, PListener][] = [];
+	/** The instances of click handlers the last press was on. */
+	pressed: Set<Node> | null = null;
+
 	reset() {
+		this.handlers = [];
 		this.mixer?.stopAll();
 		this.clock = 0;
 		this.root?.dispose();
@@ -883,6 +913,11 @@ class Player {
 		if (!this.loop && !r.playing && r.ended) r.gotoFrame(0, true);
 		r.playing = true;
 		r.updateAdvance();
+		this.wake();
+	}
+
+	/** Runs the frame loop (the root may stay stopped: its movie clips play on). */
+	wake() {
 		if (this.running) return;
 		this.running = true;
 		this.last = performance.now();
@@ -984,6 +1019,130 @@ class Player {
 					gotoAndStop: (t: number | string) => c.gotoFrame(c.resolve(typeof t === "number" ? t - 1 : t), false),
 				}
 			: null;
+	}
+}
+
+/** Scroll scrubbing: on from where it is, back by a seek (frame scripts can't run backwards). */
+function scrub(p: Player, seconds: number) {
+	const fd = 1 / p.P.fps;
+	const from = Math.floor(p.clock / fd + 1e-6);
+	const to = Math.floor(seconds / fd + 1e-6);
+	if (to < from || p.running) return p.seek(seconds);
+	p.quiet = true;
+	try {
+		for (let i = from; i < to; i++) {
+			p.clock += fd;
+			p.step();
+		}
+	} finally {
+		p.quiet = false;
+	}
+	p.time = Math.max(0, seconds - to * fd);
+	p.clock = seconds;
+	p.root.render(p.time / fd);
+}
+
+// ------------------------------------------------------------------ mouse handlers
+// (functions, not methods: builds without handlers leave them out)
+
+/** The named instance on a timeline (on stage now). */
+function child(c: Clip, name: string): Inst | null {
+	for (const i of c.items.values()) if ((i.it as PInst).nm === name) return i;
+	return null;
+}
+
+/** Follows a target path from clip `c` (see PListener): the timeline and instance it names. */
+function walk(c: Clip, path: string, at: Inst | null): { clip: Clip | null; inst: Inst | null } {
+	let clip: Clip | null = c;
+	let inst: Inst | null = c.inst;
+	const segs = path.split("/");
+	if (path.startsWith("/")) {
+		clip = c.player.root;
+		inst = null;
+		segs.shift();
+	}
+	for (const s of segs) {
+		if (!s) continue;
+		if (s === "@") inst = at;
+		else if (s === "..") inst = clip?.up?.inst ?? null;
+		else inst = clip ? child(clip, s) : null;
+		clip = s === ".." ? (clip?.up ?? null) : (inst?.clip ?? null);
+	}
+	return { clip, inst };
+}
+
+/** Runs a mouse handler's actions (`at`: the instance it listens on) from clip `c`. */
+function handle(c: Clip, l: PListener, at: Inst | null) {
+	for (let k = 3; k < l.length; k++) {
+		const a = l[k] as (number | string)[];
+		if (a[0] === 6) {
+			const w = String(a[2] || "_blank");
+			if (w === "_blank") open(String(a[1]), w, "noopener");
+			else open(String(a[1]), w === "_self" ? "_top" : w);
+			continue;
+		}
+		const r = walk(c, String(a[1]), at);
+		if (a[0] === 5) {
+			if (r.inst) r.inst.node.style.display = a[2] ? "" : "none";
+			continue;
+		}
+		const t = r.clip;
+		if (!t) continue;
+		if (a[0] === 0 || a[0] === 1) {
+			t.playing = a[0] === 1;
+			t.updateAdvance();
+		} else if (a[0] === 2) t.gotoFrame(t.resolve(a[2]!), a[3] === 1);
+		else t.gotoFrame(Math.max(0, Math.min(t.tl.n - 1, t.frame + (a[0] === 3 ? 1 : -1))), false);
+	}
+}
+
+/** A click handler of clip `c` listens on its instance `name`: it shows the hand cursor (like a button). */
+function clicks(c: Clip, name: string): boolean {
+	return !!c.heard && c.player.handlers.some(([h, l]) => h === c && l[1] === name && l[2] !== 1 && l[2] !== 2);
+}
+
+function listen(p: Player, c: Clip, l: PListener) {
+	p.handlers.push([c, l]);
+	const inst = l[1] && l[2] !== 1 && l[2] !== 2 ? walk(c, l[1], null).inst : null;
+	if (inst) inst.node.style.cursor = "pointer";
+}
+
+function unlisten(p: Player, c: Clip) {
+	p.handlers = p.handlers.filter((h) => h[0] !== c);
+}
+
+/**
+ * One listener per event type on the SVG finds the handlers whose instance it happened in. A
+ * click is a press and a release on the same instance: the browser's click event goes to a common
+ * ancestor when a button switches its drawing in between.
+ */
+function hear(p: Player, e: Event) {
+	const code = EVENT_CODES[e.type];
+	const target = e.target as Node;
+	const related = (e as MouseEvent).relatedTarget as Node | null;
+	const pressed = code === 3 ? new Set<Node>() : null;
+	let acted = false;
+	for (const [c, l] of p.handlers.slice()) {
+		const click = l[2] === 0;
+		if (click ? code !== 3 && code !== 4 : l[2] !== code) continue;
+		const inst = l[1] ? walk(c, l[1], null).inst : null;
+		const node = l[1] ? inst?.node : c.node;
+		if (!node?.contains(target)) continue;
+		if (click && code === 3) {
+			pressed!.add(node);
+			continue;
+		}
+		if (click && !p.pressed?.has(node)) continue;
+		// over / out: entering or leaving the instance, not moving between its parts
+		if ((code === 1 || code === 2) && related && node.contains(related)) continue;
+		handle(c, l, inst);
+		acted = true;
+	}
+	if (pressed) p.pressed = pressed;
+	else if (code === 4) p.pressed = null;
+	if (acted) {
+		p.wake();
+		p.root.render(p.time * p.P.fps);
 	}
 }
 
@@ -1211,6 +1370,15 @@ function envelopeAt(env: number[], k: number, t: number): number {
 
 // ------------------------------------------------------------------ boot
 
+/** No page around it to scroll: opened by itself, or in a frame of another origin (can't be seen from inside). */
+function alone(svg: Element): boolean {
+	try {
+		return !window.frameElement && (window !== window.top || document.documentElement === svg);
+	} catch {
+		return true;
+	}
+}
+
 (function boot() {
 	const script = document.currentScript as SVGScriptElement | null;
 	const svg = (script?.ownerSVGElement ?? document.querySelector("svg[data-f2s]")) as SVGSVGElement | null;
@@ -1263,19 +1431,70 @@ function envelopeAt(env: number[], k: number, t: number): number {
 		player.rest();
 	});
 	const delay = parseFloat(svg.getAttribute("data-delay") || "0") * 1000;
-	const start = () => setTimeout(() => player.play(), delay);
+	// runs the frame loop: the root plays unless frame 1's script stops it (as in Flash)
+	const start = () => setTimeout(() => player.wake(), delay);
 	// "reduce motion" in the system settings: the poster frame, still, until a click plays it
 	const still = svg.getAttribute("data-reduce") !== "0" && typeof matchMedia === "function" ? matchMedia("(prefers-reduced-motion: reduce)") : null;
-	if (begin === "auto") {
-		if (still?.matches) {
-			player.root.gotoFrame(P.pf ?? 0, false);
+	if ((begin === "auto" || begin === "visible" || begin === "scroll") && still?.matches) {
+		player.root.gotoFrame(P.pf ?? 0, false);
+		player.root.render(0);
+		const go = () => {
+			player.root.gotoFrame(0, true);
 			player.root.render(0);
-			svg.addEventListener("click", start, { once: true });
-		} else start();
+			start();
+		};
+		svg.addEventListener("click", go, { once: true });
+	} else if (begin === "auto") {
+		start();
 		still?.addEventListener("change", () => (still.matches ? player.pause() : player.play()));
-	} else if (begin === "click") svg.addEventListener("click", start, { once: true });
+	} else if (__EVENTS__ && begin === "visible") {
+		// when half on screen (or filling half of it)
+		if (typeof IntersectionObserver !== "function") start();
+		else
+			new IntersectionObserver(
+				(es, o) => {
+					const e = es[es.length - 1]!;
+					if (e.isIntersecting && (e.intersectionRatio >= 0.5 || e.intersectionRect.height >= (e.rootBounds?.height ?? innerHeight) / 2)) {
+						o.disconnect();
+						start();
+					}
+				},
+				{ threshold: [0, 0.25, 0.5] },
+			).observe(svg);
+	} else if (__EVENTS__ && begin === "scroll" && !alone(svg)) {
+		// the scroll position runs the first pass (same ranges as CSS view timelines, triggers.ts):
+		// 0 fully on screen (contain), 1 crossing the screen (cover), 2 the page's scroll position
+		const m = +(svg.getAttribute("data-scroll") || 0);
+		let host: Element | null = null;
+		try {
+			host = window.frameElement;
+		} catch {
+			// a page of another origin around it: its own position counts
+		}
+		const w = host ? window.parent : window;
+		const box = host ?? svg;
+		const dur = (P.on ?? P.tl[P.root]!.n) / P.fps;
+		let q = 0;
+		const update = () => {
+			q = 0;
+			const r = box.getBoundingClientRect();
+			const v = w.innerHeight;
+			const k = v - r.height;
+			const p = m === 2 ? w.scrollY / Math.max(1, w.document.documentElement.scrollHeight - v) : m === 1 ? (v - r.top) / (v + r.height) : k > 0 ? (k - r.top) / k : k < 0 ? r.top / k : r.top > 0 ? 0 : 1;
+			scrub(player, Math.min(1, Math.max(0, p)) * dur);
+		};
+		const later = () => void (q ||= requestAnimationFrame(update));
+		w.addEventListener("scroll", later, { capture: true, passive: true });
+		w.addEventListener("resize", later);
+		update();
+	} else if (begin === "scroll" || begin === "visible") start();
+	else if (begin === "click") svg.addEventListener("click", start, { once: true });
 	else if (begin === "hover") {
-		svg.addEventListener("pointerenter", () => player.play());
+		// (played to its end without looping: from the start again)
+		svg.addEventListener("pointerenter", () => {
+			if (player.root.ended) player.root.gotoFrame(0, true);
+			player.wake();
+		});
 		svg.addEventListener("pointerleave", () => player.pause());
 	}
 	svg.dispatchEvent(new CustomEvent("flash2svg:ready", { detail: api }));

@@ -21,7 +21,11 @@ const HELP = `flash2svg <scene.json> [options]
   --format <f>            smil (default) | css | player | static | lottie (JSON) | dotlottie (.lottie)
   --frames <a-b>          frame range, 1-based inclusive (e.g. 1-24)
   --loop <m>              auto (follow stop() scripts) | always | never
-  --begin <m>             auto | click | hover | manual (SVG; .lottie: its state machine)
+  --begin <m>             auto | click | hover | manual | visible (when half on screen) |
+                          scroll (the scroll position runs it; CSS: inline SVG only)
+                          (SVG; .lottie: its state machine)
+  --scroll-range <r>      begin scroll: visible (while fully on screen, default) | crossing
+                          (from entering to leaving the screen) | page (the page's scroll)
   --delay <s>             start delay in seconds (SVG)
   --steps                 no inter-frame interpolation (low FPS look)
   --background            include the stage colour
@@ -101,7 +105,10 @@ async function main(argv: string[]) {
 				s.loop = oneOf("auto", "always", "never");
 				break;
 			case "--begin":
-				s.begin = oneOf("auto", "click", "hover", "manual");
+				s.begin = oneOf("auto", "click", "hover", "manual", "visible", "scroll");
+				break;
+			case "--scroll-range":
+				s.scrollRange = oneOf("visible", "crossing", "page");
 				break;
 			case "--delay":
 				s.delay = num(0, 86400);

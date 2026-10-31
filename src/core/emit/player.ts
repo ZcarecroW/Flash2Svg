@@ -8,7 +8,8 @@ import { fmt } from "../geom.ts";
 import { COLOR_PROPS, TRANSFORM_PROPS, type InstanceItem, type Item, type Program } from "../program.ts";
 import { valueAt, type Track } from "../tracks.ts";
 import { cdata, serialize, el, walk, type XmlNode } from "../xml.ts";
-import type { PChannel, PFrameSound, PInst, PItem, PMorph, PProgram, PSeq, PTimeline, PTrack } from "../../player/format.ts";
+import type { PChannel, PFrameSound, PInst, PItem, PListener, PMorph, PProgram, PSeq, PTimeline, PTrack } from "../../player/format.ts";
+import type { HandlerAction, InteractionEvent } from "../snippets.ts";
 import { channelNumbers, channelText, channelVaries, type MorphChannel } from "../morph.ts";
 import { audioMime } from "../mime.ts";
 import { OutputDoc, svgRoot } from "./document.ts";
@@ -16,9 +17,19 @@ import { blendHides, blendSubtract, blendWhite, cssBlendMode } from "./filters.t
 import { PLAYER_RUNTIMES } from "./runtime-code.generated.ts";
 import { StaticRenderer } from "./static.ts";
 import { textNode } from "./text.ts";
+import { SCROLL_RANGE_CODES } from "./triggers.ts";
 import { playhead } from "./timing.ts";
 
 const LOOP_CODES: Record<string, number> = { loop: 0, "play once": 1, "single frame": 2, "loop reverse": 3, "play once reverse": 4 };
+const EVENT_CODES: Record<InteractionEvent, number> = { click: 0, over: 1, out: 2, down: 3, up: 4, dblclick: 5 };
+
+/** A handler action in the player's format (see PListener). */
+function actionCode(a: HandlerAction): (number | string)[] {
+	if (a.type === "url") return [6, a.url, a.window];
+	if (a.type === "visible") return [5, a.target, a.value ? 1 : 0];
+	if (a.type === "goto") return [2, a.target, typeof a.frame === "number" ? a.frame - 1 : a.frame, a.play ? 1 : 0];
+	return [{ stop: 0, play: 1, next: 3, prev: 4 }[a.type], a.target];
+}
 
 export function renderPlayer(ctx: Context, rootId: string, s: ExportSettings): { svg: string; assets: OutputDoc["assets"]; drawingBytes: OutputDoc["drawingBytes"] } {
 	const doc = new OutputDoc(ctx, { embedImages: s.embedImages, idPrefix: s.idPrefix ?? "" });
@@ -175,6 +186,7 @@ export function renderPlayer(ctx: Context, rootId: string, s: ExportSettings): {
 				});
 			}
 		}
+		if (prog.interactions?.length) t.ev = prog.interactions.map((i): PListener => [i.frame, i.on, EVENT_CODES[i.event], ...i.actions.map(actionCode)]);
 		if (prog.inShapeAlpha) t.ia = 1;
 		if (prog.view) {
 			const d = ctx.precision.view(prog.id);
@@ -284,15 +296,18 @@ export function renderPlayer(ctx: Context, rootId: string, s: ExportSettings): {
 		id: svgId,
 		"data-f2s": "1",
 		"data-begin": s.begin,
-		"data-loop": s.loop === "never" ? "0" : "1",
-		"data-delay": s.delay ? fmt(s.delay, 3) : "",
+		"data-loop": s.loop === "never" || s.begin === "scroll" ? "0" : "1",
+		"data-delay": s.delay && s.begin !== "scroll" ? fmt(s.delay, 3) : "",
+		...(s.begin === "scroll" ? { "data-scroll": String(SCROLL_RANGE_CODES[s.scrollRange ?? "visible"]) } : {}),
 		...(s.reducedMotion === false ? { "data-reduce": "0" } : {}),
 	});
 	if (s.includeBackground) svg.children.push(el("rect", { width: fmt(d.width, 2), height: fmt(d.height, 2), fill: d.backgroundColor }));
 	svg.children.push(poster);
 	svg.children.push(el("script", { type: "application/json" }, [cdata(JSON.stringify(P).replace(/</g, "\\u003c"))]));
 	const morphs = Object.values(P.tl).some((t) => t.ly.some((l) => l.it.some((i) => i.k === "q" && i.mp)));
-	doc.scripts.push(PLAYER_RUNTIMES[(Object.keys(P.snd).length ? 1 : 0) + (morphs ? 2 : 0)]!);
+	// mouse handlers and the start triggers share a build
+	const events = s.begin === "visible" || s.begin === "scroll" || Object.values(P.tl).some((t) => t.ev);
+	doc.scripts.push(PLAYER_RUNTIMES[(Object.keys(P.snd).length ? 1 : 0) + (morphs ? 2 : 0) + (events ? 4 : 0)]!);
 	return { svg: doc.toString(svg, { pretty: s.pretty }), assets: doc.assets, drawingBytes: doc.drawingBytes };
 }
 

@@ -45,6 +45,10 @@ const jobs = [
 	// lean CSS (one element per instance, individual transform properties), written gzipped: the
 	// name follows (.svg chosen, .svgz written)
 	{ fla: fla("f03-transforms"), output: join(out, "transforms-css.svg"), settings: { format: "css", svgz: true }, expect: { files: 1, ext: ".svgz", svgz: true, parts: ["drawing", "animation"], contains: [/translate:[-\d.]+px/, /rotate:[-\d.]+deg/, /transform:scale\(1\)/] } },
+	{ fla: fla("f47-snippets"), output: join(out, "snippets-player.svg"), settings: { format: "player" }, expect: { files: 1, contains: [/"ev":\[\[0,"btn_next",0,\[2,"",1,1\]\]/, /data-begin="auto"/] } },
+	{ fla: fla("f47-snippets"), output: join(out, "snippets-smil.svg"), settings: { format: "smil" }, expect: { files: 1, warning: /mouse handlers from frame scripts/, contains: [/<a xlink:href="https:\/\/example\.com\/" target="_blank">/] } },
+	{ fla: fla("f03-transforms"), output: join(out, "transforms-scroll.svg"), settings: { format: "css", begin: "scroll", scrollRange: "crossing" }, expect: { files: 1, contains: [/view-timeline:--/, /animation-timeline:--/] } },
+	{ fla: fla("f03-transforms"), output: join(out, "transforms-visible.svg"), settings: { format: "smil", begin: "visible" }, expect: { files: 1, contains: [/IntersectionObserver/, /pauseAnimations/] } },
 	// Lottie: the file name follows the format (.svg chosen, .json / .lottie written); bitmaps embedded,
 	// linked next to the JSON, or inside the archive
 	{ fla: fla("f45-morph"), output: join(out, "morph-lottie.svg"), settings: { format: "lottie" }, preview: {}, expect: { files: 1, ext: ".json", lottie: true, parts: ["drawing", "animation"], preview: { svg: true, moving: true } } },

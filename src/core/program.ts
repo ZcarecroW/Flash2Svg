@@ -24,6 +24,7 @@ import type {
 	TimelineData,
 	TweenData,
 } from "./model.ts";
+import { blankComments, splitScript, type Interaction } from "./snippets.ts";
 import { simplify, type Ease, type Key, type Track } from "./tracks.ts";
 
 export interface CompileOptions {
@@ -144,6 +145,8 @@ export interface Program {
 	layers: ProgramLayer[];
 	labels: { frame: number; name: string }[];
 	actions: Record<number, FrameAction[]>;
+	/** Mouse handlers added by frame scripts (Animate's code snippets, see snippets.ts). */
+	interactions?: Interaction[];
 	camera?: TimelineData["camera"];
 	/** Camera (root scenes): transform applied to all layers, in this timeline's frame time. */
 	view?: TransformTracks;
@@ -516,12 +519,12 @@ function buildProgram(tl: TimelineData, opts: CompileOptions, warnings: string[]
 		for (const kf of layer.keyframes) {
 			if (kf.label && kf.label.type !== "comment") prog.labels.push({ frame: kf.index, name: kf.label.name });
 			if (kf.script) {
-				const acts = parseActions(kf.script, {
-					zeroBased: doc.type !== "Flash",
-					scene: tl.kind === "scene" ? tl.name : undefined,
-					warn: (m) => warnings.push(`${tl.name}, frame ${kf.index + 1}: ${m}`),
-				});
+				const where = { zeroBased: doc.type !== "Flash", scene: tl.kind === "scene" ? tl.name : undefined, warn: (m: string) => warnings.push(`${tl.name}, frame ${kf.index + 1}: ${m}`) };
+				// mouse handlers out first: their jumps aren't frame actions
+				const parts = splitScript(kf.script, { ...where, frame: kf.index });
+				const acts = parseActions(parts.frameCode, where);
 				if (acts.length) (prog.actions[kf.index] ??= []).push(...acts);
+				if (parts.interactions.length) (prog.interactions ??= []).push(...parts.interactions);
 			}
 		}
 		if (!layerIncluded(tl.layers, li, opts)) continue;
@@ -628,7 +631,8 @@ function concatM(first: Mat, then: Mat): Mat {
  */
 export function parseActions(script: string, opts: { zeroBased?: boolean; scene?: string; warn?: (m: string) => void } = {}): FrameAction[] {
 	const out: FrameAction[] = [];
-	const code = script.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+	// (string-aware: "//" in a label or address isn't a comment)
+	const code = blankComments(script);
 	// arguments may be strings with any character (labels like "a, (b)")
 	const re = /(?:^|[^\w.])(?:this\s*\.\s*)?(stop|play|gotoAndPlay|gotoAndStop)\s*\(\s*((?:"[^"]*"|'[^']*'|[^)"'])*?)\s*\)/g;
 	// a counter is incremented in the script: x++, ++x, x += 1, x + 1

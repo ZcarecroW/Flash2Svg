@@ -599,6 +599,63 @@ for (const format of ["mp3", "opus"] as const) {
 		await strict.close();
 	}
 }
+
+// ------------------------------------------------------------------ code snippets (mouse handlers)
+{
+	// f47-snippets: stop() on frame 1; buttons at y 260, x 60 (go to frame 2 and play), 153 (go to
+	// "end" = frame 19 and stop), 246 (web page), 339 (hide mc_box at 200,160); mc_spin (320,160)
+	// spins while the mouse is over it
+	const b = build("f47-snippets", {}, "snippets");
+	if (b) {
+		await open(b.file, b.model);
+		await wait(300);
+		check("snippets: the frame script stops on frame 1", (await frame()) === 1, `frame ${await frame()}`);
+		await page.mouse.click(60, 260);
+		await wait(250);
+		const f = await frame();
+		check("snippets: a click goes to frame 2 and plays", f > 2 && f < 24, `frame ${f}`);
+		await wait(1100);
+		check("snippets: ... up to the stop() on the last frame", (await frame()) === 24, `frame ${await frame()}`);
+		await page.mouse.click(153, 260);
+		await wait(250);
+		check("snippets: gotoAndStop(label) on a click", (await frame()) === 19, `frame ${await frame()}`);
+		const box = () => pixel(190, 160);
+		check("snippets: mc_box shows", near(await box(), [0x33, 0x66, 0xcc]), String(await box()));
+		await page.mouse.click(339, 260);
+		await wait(100);
+		check("snippets: a click hides mc_box (visible = false)", near(await box(), [0xee, 0xee, 0xee]), String(await box()));
+		await page.evaluate(() => {
+			const w = window as unknown as { __opened: unknown[]; open: unknown };
+			w.__opened = [];
+			w.open = (...a: unknown[]) => void w.__opened.push(a);
+		});
+		await page.mouse.click(246, 260);
+		const opened = await page.evaluate(() => JSON.stringify((window as unknown as { __opened: unknown[] }).__opened));
+		check("snippets: a click opens the web page", opened === JSON.stringify([["https://example.com/", "_blank", "noopener"]]), opened);
+		const cursor = await page.evaluate(() => getComputedStyle(document.elementFromPoint(60, 260)!).cursor);
+		check("snippets: buttons show the hand cursor", cursor === "pointer", cursor);
+		// over / out: the spinner turns only while the mouse is on it
+		const spin = async () => PNG.sync.read(await page.screenshot({ clip: { x: 280, y: 120, width: 80, height: 80 } })).data;
+		const still0 = await spin();
+		await wait(200);
+		check("snippets: mc_spin stands still", still0.equals(await spin()));
+		await page.mouse.move(320, 160);
+		await wait(120);
+		const a = await spin();
+		await wait(120);
+		check("snippets: mouse over plays mc_spin", !a.equals(await spin()));
+		await page.mouse.move(320, 165);
+		await wait(80);
+		const c = await spin();
+		await wait(80);
+		check("snippets: moving within it keeps it playing", !c.equals(await spin()));
+		await page.mouse.move(10, 10);
+		await wait(80);
+		const d = await spin();
+		await wait(200);
+		check("snippets: mouse out stops it", d.equals(await spin()));
+	}
+}
 await browser.close();
 console.log(failures ? `\nplayer: ${failures} of ${checks} checks failed` : `\nplayer: all ${checks} checks ok`);
 process.exitCode = failures ? 1 : 0;

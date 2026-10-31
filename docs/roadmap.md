@@ -44,7 +44,7 @@ support (sources below) before starting a package.
 | 2 | Player: compositor animations, pause off-screen, reduced motion | high | small | ✅ (canvas renderer ⬜) |
 | 3 | Shape tweens as path morphing (SMIL and player) | very high for shape tweens | medium–high | ✅ |
 | 4 | CSS: `linear()` easing, individual transform properties | medium | small–medium | ✅ (also decimals from the displayed size, .svgz) |
-| 5 | Interactivity: triggers, scroll, label state machine | high | medium | ⬜ |
+| 5 | Interactivity: triggers, scroll, label state machine | high | medium | ✅ (labels as dotLottie states ⬜, see 6) |
 | 6 | Lottie / dotLottie export | very high (reach) | high | ✅ (effects ✅, built filters ✅, state machine ✅, panel preview ✅) |
 | 7 | WOFF2 fonts, video, library export | medium | medium | ⬜ |
 
@@ -116,10 +116,14 @@ support (sources below) before starting a package.
 - ⬜ SMIL could merge an instance's animated parts the same way (one element, `additive="sum"` animations); mind the sandwich order of first pass and tail.
 
 ### 5. Interactivity without code
-- ⬜ Start triggers: hover, click, entering the viewport.
-- ⬜ Scroll scrubbing with CSS `animation-timeline` (fallback for Firefox).
-- ⬜ Labels as states and buttons as transitions, like the state machines of Rive and dotLottie.
-- ⬜ Recognise Animate's code snippets such as "click → go to frame".
+- ✅ Start triggers: hover and click (before), *when visible* (half on screen): SMIL and CSS hold the animation with a few lines of script (IntersectionObserver), so it still plays where scripts don't run; the player starts on its first sight (`src/core/emit/triggers.ts`).
+- ✅ Scroll scrubbing (*on scroll*: while fully visible = `contain`, while crossing = `cover`, or the page's scroll):
+  - Measured first: Edge 156, Firefox 159 (now on by default) and WebKit 27.2 run scroll-driven animations alike, a named `view-timeline` on the `<svg>` drives its children, and time durations and delays map onto the range proportionally per animation (so every animation keeps the export's length, played once). The `animation` shorthand resets `animation-timeline`: the timeline rule comes after the animation rules.
+  - CSS: inline SVG only. SMIL and the player: a script sets the time from the position (the same ranges), also in an `<object>` of the same origin; alone or in `<img>` it just plays. The player scrubs forward step by step and replays from the start backwards (7 ms a frame for 150 tweened symbols).
+  - `scripts/e2e-triggers.ts`: frames at scroll positions against the static frames, inline and in an `<object>` (served over HTTP), in Edge, Firefox and WebKit.
+- ✅ Animate's code snippets (`src/core/snippets.ts`): mouse handlers in AS3 and Canvas syntax (named functions, `.bind(this)`, `.on()`, function literals, arrows) on this timeline or named instances; in the handlers goto/play/stop/next/previous frame on this timeline, the root, the parent or named instances, `visible`, web pages. The player runs them (a build with the handler code only when needed: 14.6 → 17.4 KB); SMIL/CSS/frames turn web pages into SVG links. Their jumps had been mistaken for frame actions. Test document f47.
+  - Found on the way (player): a `stop()` on frame 1 was overridden by the automatic start, and movie clips created at the start or after a jump skipped their first frame's script.
+- 🚧 Labels as states and buttons as transitions: the player follows them through the code snippets and its API (`gotoAndPlay("label")`); as dotLottie states see package 6.
 
 ### 6. Lottie / dotLottie export
 - ✅ Formats *Lottie* (JSON) and *.lottie* (dotLottie v2: manifest, `a/`, bitmaps in `i/`; fflate), written from the baked timeline like SMIL (`src/core/emit/lottie.ts`, `src/core/dotlottie.ts`).
@@ -138,7 +142,7 @@ support (sources below) before starting a package.
 - ✅ The filters without a Lottie effect, built from track mattes, blend modes and blur / Tritone effects: inner, knockout and *hide object* shadows and glows, strong or unevenly blurred ones, bevels (exact clamped difference: lighten, then difference), gradient glows and bevels (Tritone lookup at 0, 50, 100 %); strength as a colour-dodge gain. Exact in lottie-web and Skottie except gradients with other stops.
 - ⬜ Colour effects on bitmaps: a tint (equal multipliers) is Lottie's Fill effect (colour, opacity = amount).
 - ⬜ A seamless loop seam in dotLottie (its loops run about a frame short): a closing key one frame past the end.
-- ⬜ Labels as states (package 5), buttons as state machine interactions.
+- ⬜ Labels as states (package 5), buttons as state machine interactions: needs a bake of every part a handler can jump to (today Lottie follows the first pass like SMIL).
 - ⬜ Shared tile grids for frame-by-frame bitmap fills (each frame repeats its tiles today).
 
 ### 7. More

@@ -2027,6 +2027,140 @@
 		extendAll(24);
 	});
 
+	// ---------------------------------------------------------------- f47: Animate's code snippets (mouse handlers)
+	build("f47-snippets", function () {
+		newDoc("timeline", 400, 300, 24);
+		boxSymbol();
+		symbol("btn", "button", function () {
+			var t = tl();
+			var colors = ["#CC3333", "#33CC33", "#3333CC", "#33CCCC"];
+			for (var i = 0; i < 4; i++) {
+				if (i > 0) t.insertBlankKeyframe(i);
+				t.currentFrame = i;
+				rect(-35, -15, 35, 15, colors[i]);
+			}
+		});
+		// a spinner that stands still until the mouse is over it
+		symbol("spinner", "movie clip", function () {
+			classicTween("box", 0, 0, 11, function (e) { e.rotation = 330; });
+			layer("actions");
+			tl().layers[tl().currentLayer].frames[0].actionScript = "stop();";
+		});
+		layer("bg");
+		rect(0, 0, 400, 300, "#EEEEEE");
+		layer("mover");
+		classicTween("box", 60, 70, 23, function (e) { e.x = 340; e.rotation = 90; });
+		layer("panel");
+		place("box", 200, 160, 0).name = "mc_box";
+		layer("spin");
+		place("spinner", 320, 160, 0).name = "mc_spin";
+		layer("buttons");
+		var names = ["btn_next", "btn_end", "btn_web", "btn_hide"];
+		for (var b = 0; b < names.length; b++) place("btn", 60 + b * 93, 260, 0).name = names[b];
+		extendAll(24);
+		layer("labels");
+		var t = tl();
+		t.layers[t.currentLayer].frames[0].name = "start";
+		t.insertKeyframe(18);
+		t.layers[t.currentLayer].frames[18].name = "end";
+		layer("actions");
+		t = tl();
+		var li = t.currentLayer;
+		// as the Code Snippets panel writes them (comments included)
+		t.layers[li].frames[0].actionScript = [
+			"/* Click to Go to Frame and Play",
+			"Clicking on the specified symbol instance moves the playhead to the specified frame in the timeline and continues playback from that frame.",
+			"*/",
+			"stop();",
+			"",
+			"btn_next.addEventListener(MouseEvent.CLICK, fl_ClickToGoToAndPlayFromFrame);",
+			"",
+			"function fl_ClickToGoToAndPlayFromFrame(event:MouseEvent):void",
+			"{",
+			"	gotoAndPlay(2);",
+			"}",
+			"",
+			"/* Click to Go to Frame and Stop */",
+			"btn_end.addEventListener(MouseEvent.CLICK, fl_ClickToGoToAndStopAtFrame);",
+			"",
+			"function fl_ClickToGoToAndStopAtFrame(event:MouseEvent):void",
+			"{",
+			"	gotoAndStop(\"end\");",
+			"}",
+			"",
+			"/* Click to Go to Web Page */",
+			"btn_web.addEventListener(MouseEvent.CLICK, fl_ClickToGoToWebPage);",
+			"",
+			"function fl_ClickToGoToWebPage(event:MouseEvent):void",
+			"{",
+			"	navigateToURL(new URLRequest(\"https://example.com/\"), \"_blank\");",
+			"}",
+			"",
+			"/* Click to Hide an Object */",
+			"btn_hide.addEventListener(MouseEvent.CLICK, fl_ClickToHide);",
+			"",
+			"function fl_ClickToHide(event:MouseEvent):void",
+			"{",
+			"	mc_box.visible = false;",
+			"}",
+			"",
+			"/* Mouse Over Event */",
+			"mc_spin.addEventListener(MouseEvent.MOUSE_OVER, fl_MouseOverHandler);",
+			"",
+			"function fl_MouseOverHandler(event:MouseEvent):void",
+			"{",
+			"	mc_spin.play();",
+			"}",
+			"",
+			"/* Mouse Out Event */",
+			"mc_spin.addEventListener(MouseEvent.MOUSE_OUT, fl_MouseOutHandler);",
+			"",
+			"function fl_MouseOutHandler(event:MouseEvent):void",
+			"{",
+			"	mc_spin.stop();",
+			"}"
+		].join("\n");
+		t.insertKeyframe(23);
+		t.layers[li].frames[23].actionScript = "stop();";
+	});
+
+	// ---------------------------------------------------------------- f48: Accessibility panel settings
+	build("f48-accessibility", function () {
+		newDoc("timeline", 300, 200, 24);
+		boxSymbol();
+		symbol("btn", "button", function () {
+			var t = tl();
+			for (var i = 0; i < 4; i++) {
+				if (i > 0) t.insertBlankKeyframe(i);
+				t.currentFrame = i;
+				rect(-30, -12, 30, 12, ["#CC3333", "#33CC33", "#3333CC", "#33CCCC"][i]);
+			}
+		});
+		symbol("deco", "movie clip", function () { oval(-10, -10, 10, 10, "#999999"); });
+		doc.accName = "Moving box demo";
+		doc.description = "A blue box moves to the right; the Play button starts it again.";
+		layer("mover");
+		classicTween("box", 60, 70, 23, function (e) { e.x = 240; });
+		var t = tl();
+		var box = t.layers[t.currentLayer].frames[0].elements[0];
+		box.name = "mc_box";
+		box.accName = "Blue box";
+		box.description = "It moves from left to right";
+		layer("ui");
+		var b = place("btn", 150, 160, 0);
+		b.name = "btn_play";
+		b.accName = "Play";
+		b.shortcut = "P";
+		b.tabIndex = 1;
+		var dec = place("deco", 270, 30, 0);
+		dec.silent = true;
+		var grp = place("box", 40, 160, 0);
+		grp.accName = "Group";
+		grp.forceSimple = true;
+		log.push("f48 defaults: tabIndex " + place("deco", 20, 20, 0).tabIndex + ", silent " + dec.silent);
+		extendAll(24);
+	});
+
 	FLfile.write(outDir + "/build-log.txt", log.join("\n"));
 	fl.closeAll(false);
 	fl.quit(false);

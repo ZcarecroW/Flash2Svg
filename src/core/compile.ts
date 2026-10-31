@@ -9,6 +9,7 @@ import { lottieParts, renderLottie } from "./emit/lottie.ts";
 import { renderPlayer } from "./emit/player.ts";
 import { renderStatic } from "./emit/static.ts";
 import { playbackStateMachine } from "./statemachine.ts";
+import type { ScrollRange } from "./emit/triggers.ts";
 import { playhead } from "./emit/timing.ts";
 import type { SoundSettings } from "./audio.ts";
 import type { ImageSettings } from "./images.ts";
@@ -28,7 +29,14 @@ export interface ExportSettings extends ImageSettings, SoundSettings {
 	startFrame?: number;
 	endFrame?: number;
 	loop: "auto" | "always" | "never";
+	/**
+	 * "visible": when half on screen; "scroll": the scroll position runs it, once (CSS: inline SVG
+	 * only; SMIL and the player also in an <object> of the same origin). Where scripts don't run
+	 * (<img>), "visible" and SMIL "scroll" just play.
+	 */
 	begin: BeginMode;
+	/** begin "scroll": while fully on screen (CSS `contain`), while crossing the screen (`cover`), or with the page. */
+	scrollRange: ScrollRange;
 	delay: number;
 	/** High FPS interpolation of tweens. */
 	smooth: boolean;
@@ -65,6 +73,7 @@ export const DEFAULT_SETTINGS: ExportSettings = {
 	format: "smil",
 	loop: "auto",
 	begin: "auto",
+	scrollRange: "visible",
 	delay: 0,
 	smooth: true,
 	includeBackground: false,
@@ -166,7 +175,18 @@ export function compileScene(model: SceneModel, files: FileSource, partial: Part
 	};
 	const assets = new Map<string, { path: string; source: string }>();
 	const lottie = s.format === "lottie" || s.format === "dotlottie";
+	if (lottie && (s.begin === "visible" || s.begin === "scroll"))
+		out.warnings.push(`Start "${s.begin === "visible" ? "when visible" : "on scroll"}" is up to the page that shows a Lottie animation: it plays when loaded`);
 	if (s.format !== "player" && !lottie && Object.keys(model.sounds).length) out.warnings.push("Sounds play only in the JS player format (SMIL, CSS and still frames have no sound)");
+	if (s.format !== "player") {
+		// web links work as SVG links (not in Lottie); the other handlers need the player's script
+		const handlers = Object.values(ctx.programs).flatMap((p) => p.interactions ?? []);
+		const scripted = handlers.filter((i) => lottie || i.event !== "click" || i.actions.some((a) => a.type !== "url"));
+		if (scripted.length)
+			out.warnings.push(
+				`${scripted.length} mouse handler${scripted.length > 1 ? "s" : ""} from frame scripts (${[...new Set(scripted.map((i) => i.on || "the timeline"))].slice(0, 4).join(", ")}) run only in the JS player format${handlers.length > scripted.length ? "; web links work here too" : ""}`,
+			);
+	}
 	let parts: SizeParts | null = null;
 
 	if (lottie) {
@@ -177,7 +197,8 @@ export function compileScene(model: SceneModel, files: FileSource, partial: Part
 		if (dot) {
 			const images = r.images.map((i) => ({ name: i.name, bytes: files.readBinary(i.source) }));
 			const id = dotLottieId(String(r.animation.nm || "animation"));
-			const sm = r.horizon.ticks > 1 ? playbackStateMachine({ animation: id, loop: r.horizon.loop, begin: s.begin, ...r.segments }) : null;
+			const begin = s.begin === "visible" || s.begin === "scroll" ? "auto" : s.begin;
+			const sm = r.horizon.ticks > 1 ? playbackStateMachine({ animation: id, loop: r.horizon.loop, begin, ...r.segments }) : null;
 			const bytes = packDotLottie(json, id, images, sm);
 			// the archive's share of the bitmaps; the compressed JSON split like the plain one
 			const img = images.reduce((n, i) => n + i.bytes.length, 0);
@@ -236,6 +257,7 @@ export function compileScene(model: SceneModel, files: FileSource, partial: Part
 			reducedMotion: s.reducedMotion,
 			morph: s.morph,
 			begin: s.begin,
+			scrollRange: s.scrollRange,
 			delay: s.delay,
 			pretty: s.pretty,
 		});

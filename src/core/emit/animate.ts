@@ -30,9 +30,12 @@ import { blendHides, blendSubtract, blendWhite, colorMatrix, cssBlendMode, isAlp
 import { alignTracks, encodeKeyframes, groupFrames, type MKey } from "./keyframes.ts";
 import { StaticRenderer } from "./static.ts";
 import { textNode } from "./text.ts";
+import { scrollCss, scrollScript, visibleScript, type ScrollRange } from "./triggers.ts";
+import { clickLink } from "../snippets.ts";
 import { playheadFrame } from "./timing.ts";
 
-export type BeginMode = "auto" | "click" | "hover" | "manual";
+/** "visible": when half on screen; "scroll": the scroll position runs it (see triggers.ts). */
+export type BeginMode = "auto" | "click" | "hover" | "manual" | "visible" | "scroll";
 
 export interface AnimateOptions extends BakeOptions {
 	format: "smil" | "css";
@@ -42,6 +45,8 @@ export interface AnimateOptions extends BakeOptions {
 	/** Which frame to show where animation is unsupported / before it starts. */
 	posterFrame: "first" | "last";
 	begin: BeginMode;
+	/** begin "scroll": the part of the scrolling that runs the animation (default "visible"). */
+	scrollRange?: ScrollRange;
 	/** Seconds to wait before starting (auto mode). */
 	delay?: number;
 	idPrefix?: string;
@@ -63,6 +68,7 @@ export interface AnimateResult {
 const EPS_TICK = 0.01; // width of an instantaneous jump, in ticks
 
 export function renderAnimated(ctx: Context, rootId: string, opts: AnimateOptions): AnimateResult {
+	if (opts.begin === "scroll") opts = { ...opts, loop: "never", delay: 0 };
 	const { horizon, root } = bake(ctx, rootId, { ...opts, morph: opts.format === "smil" && opts.morph !== false });
 	const doc = new OutputDoc(ctx, { embedImages: opts.embedImages, idPrefix: opts.idPrefix ?? "" });
 	const svgId = doc.uid("anim");
@@ -260,9 +266,12 @@ class Writer {
 				content = this.opts.textAsOutlines || it.element.textType === "static" ? (it.art ? this.doc.useArt(it.art) : null) : textNode(it.element, this.ctx.precision.space(this.space));
 				break;
 			}
-			case "instance":
+			case "instance": {
 				content = this.instance(n);
+				const link = content && clickLink(this.ctx.programs[this.space]?.interactions, n.item.name);
+				if (link) content = el("a", { "xlink:href": link.href, target: link.target }, [content!]);
 				break;
+			}
 			case "morph":
 				content = this.morph(n);
 				break;
@@ -443,7 +452,7 @@ class Writer {
 		if (blendSubtract(n.item.blendMode)) {
 			// SMIL: <use> copies run the same animations; CSS: copies share the animation classes
 			if (!this.css) g.attrs.id = this.doc.uid("sub");
-			const copy = () => (this.css ? this.copyWithFreshIds(g) : el("use", { "xlink:href": "#" + g.attrs.id }));
+			const copy = () => (this.css || hasUse(g) ? this.copyWithFreshIds(g) : el("use", { "xlink:href": "#" + g.attrs.id }));
 			const white = () => el("g", { filter: this.doc.whiteFilter(false, true), style: "mix-blend-mode:difference" }, [copy()]);
 			const first = white();
 			g.attrs.style = style.join(";");
@@ -455,9 +464,11 @@ class Writer {
 
 	/** Reference to a (shared) baked child timeline. */
 	private childRef(bt: BakedTimeline): XmlNode {
-		if (this.css && bt.animated) {
-			// CSS animations inside <use> shadow trees can't be paused/seeked reliably: inline,
-			// and copy the first rendering for further uses (classes keep sharing the CSS).
+		if (bt.animated) {
+			// CSS animations inside <use> shadow trees can't be paused/seeked reliably, and WebKit
+			// doesn't run SMIL animations there on elements holding a <use> (the shared drawings) nor
+			// reliably through two <use>: inline, and copy the first rendering for further uses
+			// (CSS classes keep sharing the keyframes).
 			const tpl = this.inlined.get(bt.key);
 			if (tpl) return this.copyWithFreshIds(tpl);
 			const g = el("g", {}, this.timeline(bt));
@@ -908,18 +919,29 @@ class Writer {
 					`${s} .f2s-btn:active>.f2s-down{display:inline}${s} .f2s-btn:active>.f2s-over,${s} .f2s-btn:active>.f2s-up{display:none}`,
 			);
 		}
+		const begin = this.opts.begin;
+		const range = this.opts.scrollRange ?? "visible";
 		if (this.css && (this.keyframes.length || this.rules.length)) {
 			const play =
-				this.opts.begin === "auto"
+				begin === "auto"
 					? ""
-					: this.opts.begin === "hover"
+					: begin === "hover"
 						? `#${this.svgId}:not(:hover) *{animation-play-state:paused}`
-						: `#${this.svgId}:not(.playing) *{animation-play-state:paused}`;
+						: begin === "visible"
+							? `#${this.svgId}.f2s-wait *{animation-play-state:paused}`
+							: begin === "scroll"
+								? scrollCss(this.svgId, range)
+								: `#${this.svgId}:not(.playing) *{animation-play-state:paused}`;
 			// "reduce motion" in the system settings: no animation, every element shows its poster state
 			const still = this.opts.reducedMotion !== false ? `@media (prefers-reduced-motion:reduce){#${this.svgId} *{animation:none!important}}` : "";
 			const rules = this.rules.map((cls) => `#${this.svgId} .${cls}{animation:${this.ruleOf.get(cls)!.join(",")}}`);
 			this.doc.styles.push([...this.keyframes, ...rules, play, still].filter(Boolean).join("\n"));
-			if (this.opts.begin === "click") this.doc.scripts.push(`document.getElementById(${JSON.stringify(this.svgId)}).addEventListener("click",function(){this.classList.add("playing")});`);
+			if (begin === "click") this.doc.scripts.push(`document.getElementById(${JSON.stringify(this.svgId)}).addEventListener("click",function(){this.classList.add("playing")});`);
+			if (begin === "visible") this.doc.scripts.push(visibleScript(this.svgId, true));
+		}
+		if (!this.css && this.H > 1) {
+			if (begin === "visible") this.doc.scripts.push(visibleScript(this.svgId, false));
+			if (begin === "scroll") this.doc.scripts.push(scrollScript(this.svgId, range, this.H / this.fps));
 		}
 		void svg;
 	}
@@ -1135,6 +1157,10 @@ function mergeTracks(tracks: GTrack[], H: number): MKey[] | null {
 
 function cloneNode(n: XmlNode): XmlNode {
 	return { name: n.name, attrs: { ...n.attrs }, children: n.children.map((c) => (typeof c === "string" ? c : cloneNode(c))) };
+}
+
+function hasUse(n: XmlNode): boolean {
+	return n.name === "use" || n.children.some((c) => typeof c !== "string" && hasUse(c));
 }
 
 function walkNodes(n: XmlNode, fn: (n: XmlNode) => void) {

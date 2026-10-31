@@ -39,6 +39,8 @@ export interface PTimeline {
 	lb?: Record<string, number>;
 	/** frame -> actions: [0]=stop [1]=play [2, target, play(0/1)]=goto; [9, from, before, ...] = only on passes [from, before) over the frame */
 	ac?: Record<number, (number | string)[][]>;
+	/** mouse handlers added by frame scripts */
+	ev?: PListener[];
 	/** layers bottom to top */
 	ly: PLayer[];
 	/** frame sounds */
@@ -54,6 +56,16 @@ export interface PTimeline {
 	 */
 	hl?: 1;
 }
+
+/**
+ * A mouse handler added by a frame script: [frame (0-based) that adds it, instance path ("" the
+ * timeline itself), event (0 click, 1 over, 2 out, 3 down, 4 up, 5 double click), ...actions].
+ * Actions: [0, target] stop, [1, target] play, [2, target, frame (0-based) or label, play 0/1]
+ * goto, [3, target] next frame, [4, target] previous frame, [5, target, 0/1] visible, [6, url,
+ * window] open a web page. Targets are paths as in core/snippets.ts ("" this timeline, "/" the
+ * root, ".." the parent, "@" the instance the listener is on, instance names below).
+ */
+export type PListener = [number, string, number, ...(number | string)[][]];
 
 /**
  * [url, seconds, lead]: the length of the sound in the file and the encoder delay at its start

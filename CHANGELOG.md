@@ -191,9 +191,38 @@
   SVG compressed by the server is smaller: the 46 test documents as SMIL 1070 KB, .svgz 372 KB,
   Brotli 341 KB. Node's zlib packs it (the CLI and the panel; 3–8 % smaller and faster than the
   JavaScript fallback).
+- **Start when visible.** *Start: When visible* (`--begin visible`) starts the animation once half
+  of it is on screen. SMIL and CSS hold it with a few lines of script, so it still plays where
+  scripts don't run (`<img>`); the JS player waits for its first sight.
+- **Scroll.** *Start: On scroll* (`--begin scroll`, `--scroll-range visible|crossing|page`) lets the
+  scroll position run the animation once: while it is fully visible, while it crosses the screen,
+  or with the whole page. CSS uses scroll-driven animations (a `view-timeline` on the SVG; inline
+  SVG), SMIL and the JS player set their time by script (inline or in an `<object>` of the same
+  site; alone or in `<img>` they just play). Measured first in Edge, Firefox 159 (now without a
+  flag) and WebKit, which map time durations onto the scroll range the same way; tested frame by
+  frame at scroll positions, inline and in an `<object>`, in all three. The player scrubs forward
+  step by step and replays from the start backwards (about 7 ms a frame for 150 tweened symbols).
+- **Animate's code snippets.** Mouse handlers in frame scripts — *Click to Go to Frame and Play /
+  Stop*, *Go to Web Page*, *Mouse Over / Out*, *Click to Hide an Object* and the like, in AS3 and
+  HTML5 Canvas syntax — run in the JS player: click, mouse over / out, down / up and double click
+  on the timeline or named instances, with frame jumps, play / stop, next / previous frame and
+  `visible` on this timeline, the root, the parent or named instances, and web pages. Instances
+  with a click handler show the hand cursor. SMIL, CSS and still frames turn *Go to Web Page* into
+  an SVG link and warn about the rest. The handlers' jumps used to be taken for frame actions.
+  The handler code comes into the player's script only when a document has handlers (14.6 →
+  17.4 KB). Test document f47 (Animate's own snippet texts).
+- **Player:** a `stop()` on frame 1 now holds when the player starts by itself (the start used to
+  override it, also on hover), and a movie clip created at the start or after a jump runs its
+  first frame's script before it advances (a `stop()` there was skipped).
+- **SMIL plays in Safari.** WebKit doesn't run SMIL animations inside a `<use>` copy on an element
+  that holds another `<use>` (our shared drawings), and only sometimes through two `<use>`: nested
+  symbols stood still in Safari (10 of the 46 test documents, also during normal playback). SMIL
+  now writes animated symbols in place like CSS does and shares only still content; the test
+  documents grow 1069 → 1086 KB (gzip 373 → 372 KB).
 - Tests: the browser check runs in Firefox (the installed one, over WebDriver BiDi) and WebKit
-  too (`--browser=firefox|webkit`); unit tests for the keyframe encoder (with a `linear()`
-  evaluator after the CSS Easing 2 rules), the decimals and .svgz.
+  too (`--browser=firefox|webkit`): SMIL, CSS and the player pass all 46 test documents in Edge,
+  Firefox and WebKit; unit tests for the keyframe encoder (with a `linear()` evaluator after the
+  CSS Easing 2 rules), the decimals and .svgz.
 
 ## 4.0.0 (2026-10-30)
 
