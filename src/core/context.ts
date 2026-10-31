@@ -14,10 +14,21 @@ export interface FileSource {
 	readBinary(rel: string): Uint8Array;
 }
 
+/**
+ * How the SVG fits the space it is given (Flash's scale modes): "fixed" at the stage size, or
+ * filling it: "fit" shows all (letterboxed), "fill" leaves no border (cropped), "stretch" fits
+ * exactly (distorted).
+ */
+export type ScaleMode = "fixed" | "fit" | "fill" | "stretch";
+
 export interface Context {
 	model: SceneModel;
 	programs: Record<string, Program>;
 	opts: CompileOptions;
+	/** Root <svg> sizing (default "fixed"). */
+	scale?: ScaleMode;
+	/** The stage colour behind the stage too (letterbox areas of "fit"). */
+	background?: boolean;
 	files: FileSource;
 	warnings: string[];
 	/** Artwork for an atlas id (deduplicated: identical drawings share one Artwork). */

@@ -140,6 +140,38 @@ for (const name of names) {
 		}
 	}
 }
+// scale modes: in a box twice as wide as the stage, "fit" letterboxes with the stage colour and
+// "fill" crops top and bottom; references are the fixed-size frame placed the same way by the page
+{
+	const name = names[0]!;
+	const modelDir = join(out, name, "model");
+	const model: SceneModel = JSON.parse(readFileSync(join(modelDir, "scene.json"), "utf8"));
+	const files = { readText: (rel: string) => readFileSync(join(modelDir, rel), "utf8"), readBinary: (rel: string) => readFileSync(join(modelDir, rel)) };
+	const W = Math.ceil(model.doc.width),
+		H = Math.ceil(model.doc.height);
+	const one = (s: Partial<ExportSettings>) => compileScene(model, files, { format: "static", frames: [0], includeBackground: true, ...s }).files[0]!.svg;
+	writeFileSync(join(dir, "scale-fixed.svg"), one({}));
+	const box = `width:${2 * W}px;height:${H}px`;
+	const refs = {
+		fit: `<div style="${box};background:${model.doc.backgroundColor};display:flex;justify-content:center"><img src="scale-fixed.svg" width="${W}" height="${H}"></div>`,
+		fill: `<div style="${box};overflow:hidden"><img src="scale-fixed.svg" width="${2 * W}" height="${2 * H}" style="display:block;margin-top:${-H / 2}px"></div>`,
+	};
+	for (const scale of ["fit", "fill"] as const) {
+		writeFileSync(join(dir, `scale-${scale}.svg`), one({ scale }));
+		const shot = async (body: string) => {
+			writeFileSync(join(dir, "scale-page.html"), `<!doctype html><body style="margin:0">${body}</body>`);
+			await page.goto(base + "scale-page.html");
+			await page.waitForLoadState("load");
+			return PNG.sync.read(await page.screenshot({ clip: { x: 0, y: 0, width: 2 * W, height: H } }));
+		};
+		const ref = await shot(refs[scale]);
+		const got = await shot(`<img src="scale-${scale}.svg" style="display:block;${box}">`);
+		const ratio = diff(ref, got);
+		if (ratio > THRESHOLD) failures++;
+		console.log(`scale ${scale.padEnd(6)} ${ratio <= THRESHOLD ? "ok" : "FAIL"} (${(ratio * 100).toFixed(2)}% of the pixels differ)`);
+	}
+}
+
 await browser.close();
 server.close();
 console.log(failures ? `\nTriggers: ${failures} FAILED` : "\nTriggers: all good");

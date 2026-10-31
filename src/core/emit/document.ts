@@ -310,13 +310,18 @@ export class OutputDoc {
  */
 export function svgRoot(ctx: Context, attrs: Record<string, string | number> = {}): XmlNode {
 	const d = ctx.model.doc;
+	const scale = ctx.scale ?? "fixed";
+	const fixed = scale === "fixed";
 	const svg = el("svg", {
 		xmlns: "http://www.w3.org/2000/svg",
 		"xmlns:xlink": "http://www.w3.org/1999/xlink",
 		version: "1.1",
-		width: fmt(d.width, 2),
-		height: fmt(d.height, 2),
+		width: fixed ? fmt(d.width, 2) : "100%",
+		height: fixed ? fmt(d.height, 2) : "100%",
 		viewBox: `0 0 ${fmt(d.width, 2)} ${fmt(d.height, 2)}`,
+		preserveAspectRatio: scale === "fill" ? "xMidYMid slice" : scale === "stretch" ? "none" : undefined,
+		// the stage colour fills the letterbox too, as in Flash
+		style: !fixed && ctx.background ? `background:${d.backgroundColor}` : undefined,
 		...attrs,
 	});
 	const acc = d.acc;

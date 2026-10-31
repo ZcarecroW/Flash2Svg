@@ -2,7 +2,7 @@
  * Public entry point of the compiler: scene model -> SVG text(s).
  */
 import { gzipSync, strToU8 } from "fflate";
-import { createContext, type FileSource } from "./context.ts";
+import { createContext, type FileSource, type ScaleMode } from "./context.ts";
 import { dotLottieId, packDotLottie } from "./dotlottie.ts";
 import { renderAnimated, type BeginMode } from "./emit/animate.ts";
 import { lottieParts, renderLottie } from "./emit/lottie.ts";
@@ -15,8 +15,14 @@ import type { SoundSettings } from "./audio.ts";
 import type { ImageSettings } from "./images.ts";
 import type { SceneModel } from "./model.ts";
 
-/** "lottie": Lottie JSON; "dotlottie": the same in a .lottie archive with its bitmaps. */
-export type OutputFormat = "smil" | "css" | "player" | "static" | "lottie" | "dotlottie";
+/**
+ * "lottie": Lottie JSON; "dotlottie": the same in a .lottie archive with its bitmaps; "auto": the
+ * JS player when sounds or mouse handlers need its script, else CSS or SMIL (see chooseFormat).
+ */
+export type OutputFormat = "smil" | "css" | "player" | "static" | "lottie" | "dotlottie" | "auto";
+
+/** CSS plays transforms on the compositor (smoother, also in Safari): chosen up to this much larger than SMIL. */
+const CSS_SIZE_FACTOR = 1.15;
 
 /**
  * Image and sound settings take effect through encodeImages (images.ts) and encodeSounds
@@ -38,6 +44,11 @@ export interface ExportSettings extends ImageSettings, SoundSettings {
 	/** begin "scroll": while fully on screen (CSS `contain`), while crossing the screen (`cover`), or with the page. */
 	scrollRange: ScrollRange;
 	delay: number;
+	/**
+	 * SVG size: "fixed" (the stage size) or filling the space it is given: "fit" (show all), "fill"
+	 * (no border, cropped), "stretch" (exact fit). Default "fixed".
+	 */
+	scale?: ScaleMode;
 	/** High FPS interpolation of tweens. */
 	smooth: boolean;
 	includeBackground: boolean;
@@ -75,6 +86,7 @@ export const DEFAULT_SETTINGS: ExportSettings = {
 	begin: "auto",
 	scrollRange: "visible",
 	delay: 0,
+	scale: "fixed",
 	smooth: true,
 	includeBackground: false,
 	includeHiddenLayers: true,
@@ -115,7 +127,38 @@ export interface CompileOutput {
 	assets: { path: string; source: string }[];
 	warnings: string[];
 	/** frames: ticks of the first pass (SMIL/CSS: the horizon; `loopFrom`: where a looping tail starts after a stop()). */
-	stats: { durationSeconds: number; frames: number; bytes: number; loopFrom?: number; parts: SizeParts; drawings: DrawingCost[] };
+	stats: { durationSeconds: number; frames: number; bytes: number; loopFrom?: number; parts: SizeParts; drawings: DrawingCost[]; format?: OutputFormat };
+}
+
+/**
+ * Format "auto": the JS player when the document needs its script — sounds, or mouse handlers
+ * other than web links; else CSS, unless SMIL is clearly smaller (shape tweens: SMIL morphs one
+ * drawing, CSS draws every frame). The choice and why is the first warning, `stats.format` says it.
+ */
+function chooseFormat(model: SceneModel, files: FileSource, partial: Partial<ExportSettings>, rootIndex: number, hooks: CompileHooks): CompileOutput {
+	const sounds = Object.keys(model.sounds).length > 0;
+	const handlers = Object.values(model.timelines).some((t) => t.layers.some((l) => l.keyframes.some((k) => k.script && /addEventListener|\.on\s*\(/.test(k.script))));
+	if (sounds || handlers) {
+		const out = compileScene(model, files, { ...partial, format: "player" }, rootIndex, hooks);
+		// handlers that are only web links work in SMIL/CSS too: the player's program tells
+		if (sounds || out.files[0]?.svg.includes('"ev":')) {
+			out.warnings.unshift(`Automatic format: JS player (${sounds ? "it has sounds" : "frame scripts add mouse handlers"})`);
+			out.stats.format = "player";
+			return out;
+		}
+	}
+	const smil = compileScene(model, files, { ...partial, format: "smil" }, rootIndex, hooks);
+	const css = compileScene(model, files, { ...partial, format: "css" }, rootIndex, hooks);
+	const kb = (n: number) => (n / 1024).toFixed(1) + " KB";
+	const useCss = css.stats.bytes <= smil.stats.bytes * CSS_SIZE_FACTOR;
+	const out = useCss ? css : smil;
+	out.warnings.unshift(
+		useCss
+			? `Automatic format: CSS (${kb(css.stats.bytes)}, SMIL ${kb(smil.stats.bytes)}): its transforms play on the compositor`
+			: `Automatic format: SMIL (${kb(smil.stats.bytes)}, CSS ${kb(css.stats.bytes)})`,
+	);
+	out.stats.format = useCss ? "css" : "smil";
+	return out;
 }
 
 /** What the output's characters are spent on (all files together). */
@@ -148,6 +191,7 @@ export interface CompileHooks {
 }
 
 export function compileScene(model: SceneModel, files: FileSource, partial: Partial<ExportSettings> = {}, rootIndex = 0, hooks: CompileHooks = {}): CompileOutput {
+	if (partial.format === "auto") return chooseFormat(model, files, partial, rootIndex, hooks);
 	const s: ExportSettings = { ...DEFAULT_SETTINGS, ...partial };
 	// number fields can arrive empty (null) or out of range from the panel
 	s.digits = Number.isFinite(s.digits) ? Math.max(0, Math.min(6, Math.round(s.digits))) : DEFAULT_SETTINGS.digits;
@@ -158,6 +202,8 @@ export function compileScene(model: SceneModel, files: FileSource, partial: Part
 		includeGuides: s.includeGuides,
 		digits: s.digits,
 	});
+	ctx.scale = s.scale ?? "fixed";
+	ctx.background = s.includeBackground;
 	const rootId = model.roots[rootIndex];
 	if (!rootId) throw new Error("Nothing to export");
 	const prog = ctx.programs[rootId]!;

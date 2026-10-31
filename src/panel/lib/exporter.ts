@@ -231,7 +231,7 @@ async function exportInto(
 
 	// only the player plays sounds
 	let sounds: SoundReport[] = [];
-	if (settings.format === "player" && Object.keys(model.sounds).length) {
+	if ((settings.format === "player" || settings.format === "auto") && Object.keys(model.sounds).length) {
 		onProgress(0.85, "Encoding sounds");
 		const enc = await encodeSounds(model, files, req.settings, await panelAudio());
 		({ model, files, report: sounds } = enc);

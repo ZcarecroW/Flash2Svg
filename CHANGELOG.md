@@ -191,6 +191,14 @@
   SVG compressed by the server is smaller: the 46 test documents as SMIL 1070 KB, .svgz 372 KB,
   Brotli 341 KB. Node's zlib packs it (the CLI and the panel; 3–8 % smaller and faster than the
   JavaScript fallback).
+- **Automatic format** (`--format auto`): the JS player when sounds or mouse handlers need its
+  script, otherwise CSS (its transforms play on the compositor), or SMIL when that is more than
+  15 % smaller (shape tweens: SMIL morphs one drawing, CSS draws every frame). The test
+  documents: CSS 40, SMIL 5, player 3. The choice and the sizes are the first message.
+- **Scale modes.** *Size* (`--scale fixed|fit|fill|stretch`): the stage size as before, or
+  filling the space the page gives the SVG like Flash's *show all* (letterboxed in the stage
+  colour when the background is exported), *no border* and *exact fit*. Checked in the browser
+  against the fixed-size frame placed the same way.
 - **Accessibility.** The settings of Animate's *Accessibility* panel go into the SVG: the
   document's name and description as `<title>` / `<desc>` with a role (`img`, or `group` when
   parts are accessible), named instances as labelled images with their descriptions, buttons with

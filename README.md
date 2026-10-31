@@ -10,6 +10,7 @@ kind of animation in the file:
 | **CSS** | `@keyframes` on the individual transform properties, `cubic-bezier()` or `linear()` easing, class based | ✓ | button states, web links, pause from your page CSS, scroll-driven (inline) |
 | **JS player** | artwork + compact timeline + a 14.6 KB runtime with real Flash semantics (15.9 KB with shape-tween morphs, 17.4 KB with mouse handlers) | poster frame only | ✓ `play()`, `stop()`, `gotoAndPlay("label")`, buttons, Animate's code snippets, scroll, sounds |
 | **Frames** | one still SVG per frame | ✓ | – |
+| **Automatic** | the JS player when sounds or mouse handlers need it, else CSS — or SMIL when that is clearly smaller (shape tweens) | ✓ (CSS/SMIL) | as the chosen format |
 | **Lottie** / **.lottie** | Lottie JSON, or a dotLottie archive with its bitmaps, for lottie-web, dotLottie, Skottie and the app players (iOS, Android, Flutter, React Native) | – | through the player's API |
 
 This is a ground-up rewrite (v4) of [TomByrne/Flash2Svg](https://github.com/TomByrne/Flash2Svg)
@@ -86,6 +87,10 @@ Useful options: *Smooth tweens* (interpolate between frames — the "high FPS" l
 step per frame like the SWF), *Loop* (follow `stop()` scripts / always / once), *Start*
 (automatically, on click, on hover, from script, when visible, on scroll — see below), *Poster*
 frame for places where animation doesn't run, embedding vs. linking images, decimal places.
+
+*Size* (in *Advanced*, `--scale`): the stage size, or filling the space the page gives the SVG
+like Flash's scale modes — *show all* (letterboxed in the stage colour when the background is
+exported), *no border* (cropped) or *stretch* (exact fit).
 
 ### Start and scroll
 

@@ -66,3 +66,27 @@ describe("scroll", () => {
 		}
 	});
 });
+
+describe("scale modes", () => {
+	it("fixed by default; fit / fill / stretch fill the space with the viewBox", () => {
+		const root = (s: Partial<ExportSettings>) => /<svg [^>]*>/.exec(compile("f03-transforms", { format: "smil", ...s }).files[0]!.svg)![0];
+		expect(root({})).toMatch(/width="550" height="400"|width="[\d.]+" height="[\d.]+"/);
+		expect(root({})).not.toMatch(/preserveAspectRatio|100%/);
+		expect(root({ scale: "fit" })).toMatch(/width="100%" height="100%" viewBox="0 0 [\d.]+ [\d.]+"/);
+		expect(root({ scale: "fit" })).not.toMatch(/preserveAspectRatio/);
+		expect(root({ scale: "fill" })).toMatch(/preserveAspectRatio="xMidYMid slice"/);
+		expect(root({ scale: "stretch" })).toMatch(/preserveAspectRatio="none"/);
+		// with the stage colour: the letterbox too
+		expect(root({ scale: "fit", includeBackground: true })).toMatch(/style="background:#[0-9A-Fa-f]{6}"/);
+		for (const format of ["css", "player", "static"] as const) expect(/<svg [^>]*>/.exec(compile("f03-transforms", { format, scale: "fill" }).files[0]!.svg)![0], format).toMatch(/slice/);
+	});
+});
+
+describe("automatic format", () => {
+	it("CSS unless SMIL is clearly smaller; says which and why", () => {
+		const out = compile("f03-transforms", { format: "auto" });
+		expect(out.stats.format).toBe("css");
+		expect(out.warnings[0]).toMatch(/^Automatic format: CSS \([\d.]+ KB, SMIL [\d.]+ KB\)/);
+		expect(out.files[0]!.svg).toMatch(/@keyframes/);
+	});
+});

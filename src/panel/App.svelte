@@ -22,6 +22,7 @@
 	let newPreset = $state("");
 
 	const formats = [
+		{ id: "auto", name: "Automatic", hint: "The JS player when sounds or mouse handlers need it, else CSS or SMIL, whichever suits (CSS plays transforms on the compositor)." },
 		{ id: "smil", name: "SMIL", hint: "Plays everywhere, also in <img>. Smallest for tweens." },
 		{ id: "css", name: "CSS", hint: "CSS @keyframes: easy to pause / restyle from a page." },
 		{ id: "player", name: "JS player", hint: "Exact Flash semantics, buttons, sounds, play/stop/goto API." },
@@ -437,6 +438,17 @@
 	</Section>
 
 	<Section title="Advanced" bind:open={panel.open.advanced}>
+		{#if !lottie}
+			<label class="row" title="The stage size, or filling the space the page gives it (like Flash's scale modes)">
+				<span>Size</span>
+				<select bind:value={panel.export.scale}>
+					<option value="fixed">Stage size</option>
+					<option value="fit">Fill the space, show all</option>
+					<option value="fill">Fill the space, no border</option>
+					<option value="stretch">Stretch to the space</option>
+				</select>
+			</label>
+		{/if}
 		<label class="row" title="Precision on screen: parts shown larger get more decimals, parts shown smaller fewer">
 			<span>Decimals</span>
 			<input type="number" min="0" max="6" bind:value={panel.export.digits} />

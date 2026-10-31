@@ -18,7 +18,8 @@ import { nodeWasmLoader } from "./wasm.ts";
 const HELP = `flash2svg <scene.json> [options]
 
   -o, --out <file>        output file (default: <document>.svg, .json or .lottie next to scene.json)
-  --format <f>            smil (default) | css | player | static | lottie (JSON) | dotlottie (.lottie)
+  --format <f>            smil (default) | css | player | static | lottie (JSON) | dotlottie (.lottie) |
+                          auto (the player for sounds / mouse handlers, else CSS or SMIL)
   --frames <a-b>          frame range, 1-based inclusive (e.g. 1-24)
   --loop <m>              auto (follow stop() scripts) | always | never
   --begin <m>             auto | click | hover | manual | visible (when half on screen) |
@@ -28,6 +29,8 @@ const HELP = `flash2svg <scene.json> [options]
                           (from entering to leaving the screen) | page (the page's scroll)
   --delay <s>             start delay in seconds (SVG)
   --steps                 no inter-frame interpolation (low FPS look)
+  --scale <m>             fixed (the stage size, default) | fit (fill the space, show all) |
+                          fill (no border, cropped) | stretch (exact fit, distorted)
   --background            include the stage colour
   --link-images           write images as files next to the SVG (or Lottie JSON) instead of embedding
   --image-lossy <f>       bitmaps set to "Photo (JPEG)" in Animate: jpeg (default) | webp | avif
@@ -91,7 +94,7 @@ async function main(argv: string[]) {
 				out = val();
 				break;
 			case "--format":
-				s.format = oneOf("smil", "css", "player", "static", "lottie", "dotlottie");
+				s.format = oneOf("smil", "css", "player", "static", "lottie", "dotlottie", "auto");
 				break;
 			case "--frames": {
 				const m = /^(\d+)(?:-(\d+))?$/.exec(val());
@@ -112,6 +115,9 @@ async function main(argv: string[]) {
 				break;
 			case "--delay":
 				s.delay = num(0, 86400);
+				break;
+			case "--scale":
+				s.scale = oneOf("fixed", "fit", "fill", "stretch");
 				break;
 			case "--steps":
 				s.smooth = false;
