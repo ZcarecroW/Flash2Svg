@@ -21,6 +21,8 @@ interface SelfTestJob {
 	select?: string[];
 	/** JSFL to run on the opened document before exporting. */
 	jsfl?: string;
+	/** Keep the scene data next to the output (<name>.scene/). */
+	keepScene?: boolean;
 	/** Lottie exports: show the result in the panel's preview (in this player) and report what it drew. */
 	preview?: { player?: "lottie-web" | "dotlottie"; click?: boolean };
 }
@@ -132,6 +134,7 @@ export async function runSelfTestIfRequested(): Promise<boolean> {
 					rangeStart: job.rangeStart ?? 1,
 					rangeEnd: job.rangeEnd ?? info.frameCount ?? 1,
 					output: job.output,
+					keepScene: job.keepScene,
 				},
 				info,
 				(p, m) => {

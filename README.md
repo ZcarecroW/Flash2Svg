@@ -4,11 +4,13 @@ Export Adobe Animate timelines as **animated SVG**: tweens with their real easin
 movie clips and graphic symbols, masks, filters, the camera, buttons and sounds. You choose the
 kind of animation in the file:
 
+**User guide with live demos: [zcarecrow.github.io/Flash2Svg](https://zcarecrow.github.io/Flash2Svg/)**
+
 | Format | What you get | Works in `<img>` | Interactive |
 | --- | --- | --- | --- |
 | **SMIL** | `<animate>` / `<animateTransform>` with exact `keySplines` easing | ✓ | button states via CSS, web links, start on click / hover / when visible, scroll |
 | **CSS** | `@keyframes` on the individual transform properties, `cubic-bezier()` or `linear()` easing, class based | ✓ | button states, web links, pause from your page CSS, scroll-driven (inline) |
-| **JS player** | artwork + compact timeline + a 14.7 KB runtime with real Flash semantics (16.1 KB with shape-tween morphs, 17.8 KB with mouse handlers) | poster frame only | ✓ `play()`, `stop()`, `gotoAndPlay("label")`, buttons, Animate's code snippets, scroll, sounds |
+| **JS player** | artwork + compact timeline + a 15.1 KB runtime with real Flash semantics (6.2 KB gzipped; 16.4 KB with shape-tween morphs, 18.1 KB with mouse handlers) | poster frame only | ✓ `play()`, `stop()`, `gotoAndPlay("label")`, buttons, Animate's code snippets, scroll, sounds |
 | **Frames** | one still SVG per frame | ✓ | – |
 | **GIF** / **WebP** | animated raster fallbacks of the first pass (GIF: 256 colours a frame; WebP: full colour with alpha, only the changed rectangle per frame), for e-mail and apps without SVG animation | ✓ | – |
 | **Automatic** | the JS player when sounds or mouse handlers need it, else CSS — or SMIL when that is clearly smaller (shape tweens) | ✓ (CSS/SMIL) | as the chosen format |

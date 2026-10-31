@@ -209,3 +209,29 @@ describe("instance alpha", () => {
 		expect(programs.root!.inShapeAlpha).toBeUndefined();
 	});
 });
+
+describe("layer effects", () => {
+	const blur = { name: "blurFilter", enabled: true, blurX: 40, blurY: 40, quality: "high" };
+	const wrapper = (m: SceneModel) => {
+		const { programs } = buildPrograms(m, { smooth: true, includeHiddenLayers: true, includeGuides: false });
+		return programs[m.roots[0]!]!.layers.flatMap((l) => l.items).find((it): it is InstanceItem => it.kind === "instance" && it.uid.endsWith("|fx"))!;
+	};
+
+	it("sizes the filter region by everything on the layer, shapes too", () => {
+		// f12-labels' Layer_1: a 50 x 80 shape in four places
+		const m = model("f12-labels");
+		const layer = m.timelines[m.roots[0]!]!.layers[1]!;
+		layer.effects = [{ frame: 0, filters: [blur], blendMode: "normal" }];
+		expect(wrapper(m).bounds).toEqual({ left: 20, top: 60, width: 50, height: 80 });
+	});
+
+	it("measures the smallest keyframe: a region measured on more would cut the blur off", () => {
+		const m = model("f12-labels");
+		const layer = m.timelines[m.roots[0]!]!.layers[1]!;
+		layer.effects = [{ frame: 0, filters: [blur], blendMode: "normal" }];
+		// the first keyframe gets a second shape far away: its content is 230 wide
+		const first = layer.keyframes[0]!;
+		first.elements.push({ ...first.elements[0]!, bounds: { left: 200, top: 60, width: 50, height: 80 } });
+		expect(wrapper(m).bounds).toEqual({ left: 80, top: 60, width: 50, height: 80 });
+	});
+});

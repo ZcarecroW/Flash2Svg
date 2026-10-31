@@ -129,6 +129,18 @@ function copyStatic() {
 		);
 	}
 	writeFileSync(join(ext, "CSXS/manifest.xml"), manifest);
+	// --debug-port=N: CEP's remote debugging (the guide's screenshot tool drives the panel through it)
+	const port = process.argv.find((a) => a.startsWith("--debug-port="))?.slice(13);
+	if (port) writeFileSync(join(ext, ".debug"), `<?xml version="1.0" encoding="UTF-8"?>
+<ExtensionList>
+	<Extension Id="org.flash2svg.panel">
+		<HostList>
+			<Host Name="FLPR" Port="${port}"/>
+		</HostList>
+	</Extension>
+</ExtensionList>
+`);
+	else rmSync(join(ext, ".debug"), { force: true });
 	cpSync(join(repo, "LICENSE"), join(ext, "LICENSE"));
 	writeIcons(join(ext, "icons"));
 	// image and audio codecs (src/core/images.ts, audio-codecs.ts): WebAssembly next to the panel and the CLI

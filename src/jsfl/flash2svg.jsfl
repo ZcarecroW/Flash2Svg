@@ -19,7 +19,7 @@
  * Status JSON: {"state":"running"|"done"|"error"|"idle","phase":..,"progress":0..1,"message":..,"scene":uri}
  */
 (function (global) {
-	var VERSION = "4.0.0";
+	var VERSION = "4.1.0";
 
 	// ------------------------------------------------------------------ JSON
 
@@ -263,6 +263,24 @@
 
 	// ------------------------------------------------------------------ phases
 
+	/**
+	 * Waits until a file Animate is writing has stopped growing. The first saveAsCopy of a
+	 * document returns before the copy is written (measured: back after 1 s with 47 of 90 KB on
+	 * disk); opening it then fails with "An error occurred opening file", a dialog that waits.
+	 * Later copies are complete when it returns: then this costs a quarter second.
+	 */
+	function whenWritten(uri) {
+		var t0 = new Date().getTime(), last = -1, since = t0;
+		for (;;) {
+			var now = new Date().getTime(), size = FLfile.getSize(uri);
+			if (size != last || size <= 0) {
+				last = size;
+				since = now;
+			} else if (now - since >= 250) return;
+			if (now - t0 > 30000) return;
+		}
+	}
+
 	function prepare() {
 		var src = job.srcDoc;
 		var tl = src.getTimeline();
@@ -285,15 +303,18 @@
 		// opened: closing that "copy" would close the user's document. Try new copies, then the
 		// file as last saved.
 		job.copies = [];
+		// (a new name each time: never a copy an earlier, interrupted export left there)
+		var stamp = new Date().getTime().toString(36);
 		for (var attempt = 0; attempt < 3 && !job.doc; attempt++) {
-			var uri = job.outDir + "/_source_copy" + (attempt || "") + ".fla";
+			var uri = job.outDir + "/_source_copy_" + stamp + (attempt || "") + ".fla";
 			if (!src.saveAsCopy(uri)) throw new Error("Could not save a temporary copy of the document.");
+			whenWritten(uri);
 			job.copies.push(uri);
 			var opened = fl.openDocument(uri);
 			if (opened && opened != src) job.doc = opened;
 		}
 		if (!job.doc && src.pathURI && FLfile.exists(src.pathURI)) {
-			var fileCopy = job.outDir + "/_source_file.fla";
+			var fileCopy = job.outDir + "/_source_file_" + stamp + ".fla";
 			if (FLfile.copy(src.pathURI, fileCopy)) {
 				job.copies.push(fileCopy);
 				var o = fl.openDocument(fileCopy);
@@ -1245,7 +1266,10 @@
 			// Animate writes text as SVG fonts, which browsers ignore: convert to outlines.
 			for (var pass = 0; pass < 2; pass++) {
 				var left = at.layers[0].frames[k].elements;
-				if (!left.length) break;
+				// (one character becomes shapes in the first pass already)
+				var texts = 0;
+				for (var li2 = 0; li2 < left.length; li2++) if (left[li2].elementType == "text") texts++;
+				if (!texts) break;
 				job.atlasDoc.selectNone();
 				job.atlasDoc.selection = left;
 				try { job.atlasDoc.breakApart(); } catch (e) { warn("Could not convert text to outlines: " + e); break; }

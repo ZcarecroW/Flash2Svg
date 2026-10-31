@@ -46,6 +46,8 @@ export interface ExportRequest {
 	rangeEnd: number;
 	/** Absolute output path (file); empty = next to the FLA */
 	output: string;
+	/** Keep the scene data next to the output as <name>.scene/ (scene.json and its files), for the command line. */
+	keepScene?: boolean;
 }
 
 export interface ExportResult {
@@ -311,6 +313,12 @@ async function exportInto(
 			node.fs.writeFileSync(dst, bytes);
 			linkedBytes += bytes.byteLength;
 		}
+	}
+	if (req.keepScene && written[0]) {
+		const stem = written[0].slice(0, written[0].length - node.path.extname(written[0]).length).replace(/_\d+$/, "");
+		const dir = stem + ".scene";
+		node.fs.rmSync(dir, { recursive: true, force: true });
+		node.fs.cpSync(sceneDir, dir, { recursive: true });
 	}
 	onProgress(1, "Done");
 	return {

@@ -52,6 +52,7 @@ const HELP = `flash2svg <scene.json> [options]
   --no-embed-fonts        dynamic text uses the viewer's fonts (default: the installed fonts are
                           embedded as WOFF2 subsets of the characters used)
   --no-hidden-layers      skip hidden layers
+  --guides                include guide layers (never shown in Flash)
   --poster <first|last>   frame shown where animation does not run, and with "reduce motion"
                           (.lottie: before a click / hover / script start)
   --ignore-reduced-motion animate also when the system asks for reduced motion
@@ -177,6 +178,9 @@ async function main(argv: string[]) {
 				break;
 			case "--no-hidden-layers":
 				s.includeHiddenLayers = false;
+				break;
+			case "--guides":
+				s.includeGuides = true;
 				break;
 			case "--poster":
 				s.posterFrame = oneOf("first", "last");

@@ -323,7 +323,7 @@ export class OutputDoc {
 		return el("mask", attrs, [...(box ? [all] : []), ...hole, el("g", { filter: this.whiteFilter() }, content)]);
 	}
 
-	toString(root: XmlNode, opts: { pretty?: boolean; xmlDeclaration?: boolean } = {}): string {
+	toString(root: XmlNode, opts: { pretty?: boolean; xmlDeclaration?: boolean; shareStops?: boolean } = {}): string {
 		const children: XmlNode[] = [];
 		const faces = [...this.usedFonts].map(
 			(f) => `@font-face{font-family:"${f.family}";src:url(data:font/woff2;base64,${f.woff2}) format("woff2");font-weight:${f.bold ? 700 : 400};font-style:${f.italic ? "italic" : "normal"}}`,
@@ -332,6 +332,7 @@ export class OutputDoc {
 		if (this.defs.length) {
 			// serialized one by one, which also tells what each drawing costs
 			const parts = this.defs.map((d) => serialize(d, { pretty: opts.pretty }, 2));
+			if (opts.shareStops !== false) this.shareStops(parts, opts.pretty);
 			for (const r of this.artRanges) {
 				let n = 0;
 				for (let i = r.from; i < r.to; i++) if (this.defs[i]!.name !== "image") n += parts[i]!.length;
@@ -347,6 +348,40 @@ export class OutputDoc {
 		let out = serialize(svg, { pretty: opts.pretty });
 		if (opts.xmlDeclaration !== false) out = '<?xml version="1.0" encoding="UTF-8"?>\n' + out;
 		return out;
+	}
+
+	/**
+	 * Gradients with the same stops (a shape tween's frames, copies of a drawing) take them from
+	 * one stop-only gradient through `xlink:href`, so each set of stops is in the file once. The
+	 * template has no other attributes, so nothing else is inherited from it. Only gradients
+	 * straight in <defs> with plain stops: a morph's template keeps its own (the player counts its
+	 * nodes). Changes `parts` (the serialized defs) where that makes the file smaller.
+	 */
+	private shareStops(parts: string[], pretty?: boolean) {
+		const groups = new Map<string, number[]>();
+		this.defs.forEach((d, i) => {
+			if ((d.name !== "linearGradient" && d.name !== "radialGradient") || "xlink:href" in d.attrs || "href" in d.attrs || !d.children.length) return;
+			if (!d.children.every((c) => typeof c !== "string" && c.name === "stop" && !c.children.length && !("id" in c.attrs))) return;
+			const key = d.children.map((c) => serialize(c)).join("");
+			const at = groups.get(key);
+			if (at) at.push(i);
+			else groups.set(key, [i]);
+		});
+		for (const at of groups.values()) {
+			if (at.length < 2) continue;
+			const first = this.defs[at[0]!]!;
+			const id = this.uid("stops");
+			const template = serialize(el("linearGradient", { id }, first.children), { pretty }, 2);
+			const linked = at.map((i) => serialize({ ...this.defs[i]!, attrs: { ...this.defs[i]!.attrs, "xlink:href": "#" + id }, children: [] }, { pretty }, 2));
+			let before = 0;
+			for (const i of at) before += parts[i]!.length;
+			if (template.length + linked.reduce((n, s) => n + s.length, 0) >= before) {
+				this.ids.delete(id);
+				continue;
+			}
+			at.forEach((i, k) => (parts[i] = linked[k]!));
+			parts[at[0]!] = template + parts[at[0]!];
+		}
 	}
 }
 

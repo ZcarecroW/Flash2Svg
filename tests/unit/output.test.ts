@@ -162,3 +162,46 @@ describe("size overview", () => {
 		expect(d.every((x) => / › /.test(x.name) && x.count > 0)).toBe(true);
 	});
 });
+
+describe("shared gradient stops", () => {
+	// every drawing a rectangle of its own width, filled with a gradient (the same drawings would be merged)
+	const widths = new Map<string, number>();
+	const art = (stops: string) => (file: string) => {
+		if (!widths.has(file)) widths.set(file, widths.size + 5);
+		return `<svg xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="5" y2="0" gradientTransform="matrix(1 0 0 1 2 0.5)">${stops}</linearGradient></defs><rect width="${widths.get(file)}" height="5" fill="url(#g)"/></svg>`;
+	};
+	const three = `<stop offset="0" stop-color="#FF0000"/><stop offset=".5" stop-color="#00FF00"/><stop offset="1" stop-color="#0000FF" stop-opacity=".5"/>`;
+	const build = (format: "smil" | "css" | "player" | "static", readText: (f: string) => string) => {
+		const model: SceneModel = JSON.parse(readFileSync(new URL(`../fixtures/models/f12-labels.json`, import.meta.url), "utf8"));
+		return compileScene(model, { readText, readBinary: () => new Uint8Array() }, { format }).files[0]!.svg;
+	};
+
+	it("writes each set of stops once; the gradients keep their own geometry", () => {
+		// (a still of f12-labels shows one drawing: nothing to share)
+		for (const format of ["smil", "css", "player"] as const) {
+			const svg = build(format, art(three));
+			const gradients = [...svg.matchAll(/<linearGradient\b([^>]*?)(\/>|>(.*?)<\/linearGradient>)/g)];
+			const templates = gradients.filter((g) => !/xlink:href/.test(g[1]!));
+			const linked = gradients.filter((g) => /xlink:href/.test(g[1]!));
+			expect(linked.length, format).toBeGreaterThan(1);
+			expect(templates.length, format).toBe(1);
+			// the template: an id and stops, nothing a gradient could inherit by mistake
+			expect(templates[0]![1]!.trim(), format).toMatch(/^id="[^"]+"$/);
+			expect((svg.match(/<stop /g) ?? []).length, format).toBe(3);
+			const id = /id="([^"]+)"/.exec(templates[0]![1]!)![1];
+			for (const g of linked) {
+				expect(g[2], format).toBe("/>");
+				expect(g[1], format).toContain(`xlink:href="#${id}"`);
+				expect(g[1], format).toMatch(/gradientTransform="translate\(2 \.5\)"/);
+			}
+		}
+	});
+
+	it("leaves gradients with different stops alone", () => {
+		for (const format of ["smil", "static"] as const) {
+			let n = 0;
+			const svg = build(format, (file) => art(`<stop offset="0" stop-color="#${(n++).toString(16).padStart(6, "0")}"/><stop offset="1" stop-color="#FFFFFF"/>`)(file));
+			expect(svg, format).not.toMatch(/<linearGradient[^>]*xlink:href/);
+		}
+	});
+});

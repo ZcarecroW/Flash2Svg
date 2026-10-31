@@ -9,6 +9,8 @@ export interface PanelSettings {
 	output: string;
 	rememberInDocument: boolean;
 	openAfterExport: boolean;
+	/** Keep the extracted scene data next to the output (<name>.scene/, for the command line). */
+	keepScene: boolean;
 	open: Record<string, boolean>;
 }
 
@@ -34,6 +36,7 @@ function defaults(): PanelSettings {
 		output: "",
 		rememberInDocument: false,
 		openAfterExport: false,
+		keepScene: false,
 		open: { output: true, animation: true, graphics: false, images: false, sounds: false, advanced: false, preview: true },
 	};
 }

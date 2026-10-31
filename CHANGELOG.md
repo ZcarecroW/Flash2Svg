@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+- **User guide** at <https://zcarecrow.github.io/Flash2Svg/>: 19 pages with screenshots of the
+  panel and 14 demo animations made in Animate and exported with Flash2SVG, each playable in every
+  format with its file size.
+- **Gradients share their stops.** In SMIL, CSS and JS player output, gradients with the same
+  colours (every frame of a gradient shape tween, copies of a drawing) take their stops from one
+  shared gradient instead of each carrying its own: the shape tween demo 186 → 110 KB (1,853 → 34
+  `<stop>` elements to parse; gzipped 30.6 → 29.1 KB), the same pixels in Edge, Firefox and
+  WebKit. Still frames keep their gradients whole, for editors.
+- **Layer filters sized right.** A filter on a layer (*layer effects*) measured its region on the
+  layer's symbols and text only: on a layer of drawn shapes it fell back to a guess, up to 11 times
+  the content's width and height. Browsers filter that whole area on every frame, and the command
+  line's GIF/WebP took seconds a frame (a fuzzed case: 145 s → 6 s). Now everything on the layer
+  counts, in its smallest keyframe (so a blur is never cut off).
+- **Exports that hung on a dialog.** Animate's first *save a copy* of a document returns before
+  the copy is written; opening it that early showed "An error occurred opening file" and the
+  export waited for someone to close it. The copy is now opened once it is complete (and gets a
+  new name every time, never a leftover of an interrupted export).
+- **Panel.** The preview fits the panel (it showed big drawings at full size with scroll bars);
+  the panel also notices a document switch when Animate doesn't announce it (it checks again
+  when clicked into), and a slow answer about a document closed meanwhile no longer wins over the
+  current one. *Advanced › Keep the scene data* keeps the extracted scene next to the export, to
+  export it again from the command line with other settings.
+- **Command line:** `--guides` includes guide layers.
+- **Warnings:** a camera with a tint or colour filter says those aren't exported (its position,
+  zoom and rotation are); a symbol whose only text is a single character no longer warns that it
+  "could not convert text to outlines".
 - **Intros that loop back to a label.** A timeline whose last frame jumps back to a later frame
   (`gotoAndPlay("loop")`, the banner idiom "intro once, then loop") replayed its intro on every
   loop in SMIL and CSS. Now the intro plays once and the rest loops, as in Flash (and in the JS

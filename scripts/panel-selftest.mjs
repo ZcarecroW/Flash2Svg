@@ -1,10 +1,10 @@
 // Runs the installed panel's self-test inside Animate: writes the job file, launches Animate,
 // waits for the panel to export the fixtures and quit, then prints the results.
 // Needs a --selftest build installed (npm run build -- --selftest && npm run package && node scripts/dev-install.mjs --zxp).
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
 import { findAnimate, isAnimateRunning } from "./lib/animate.mjs";
@@ -64,6 +64,8 @@ const jobs = [
 	{ fla: fla("f08-filters"), output: join(out, "filters.json"), settings: { format: "lottie" }, preview: {}, expect: { files: 1, lottie: true, contains: [/"ty":25/, /"ty":29/, /"tt":3/, /"bm":10/], preview: { svg: true, filters: true } } },
 	{ fla: fla("f02-eases"), output: join(out, "eases-in-dotlottie.json"), settings: { format: "lottie" }, preview: { player: "dotlottie" }, expect: { files: 1, lottie: true, preview: { canvas: true, moving: true } } },
 	{ fla: fla("f27-stop"), output: join(out, "stop-click.lottie"), settings: { format: "dotlottie", begin: "click" }, preview: { click: true }, expect: { files: 1, dotlottie: true, preview: { canvas: true, state: "idle", stateAfterClick: "intro" } } },
+	// the scene data kept for the command line: the CLI exports it again
+	{ fla: fla("f42-images"), output: join(out, "kept", "images.svg"), settings: { format: "smil" }, keepScene: true, expect: { files: 1, scene: true } },
 	// selected library symbols: one file per symbol, named after it
 	{ fla: fla("f04-nested"), output: join(out, "lib.svg"), settings: { format: "css" }, source: "library", select: ["spinner", "counter"], expect: { files: 2, names: ["lib_spinner.svg", "lib_counter.svg"] } },
 	// a second scene: only the current one is exported, with a warning
@@ -185,6 +187,14 @@ res.results.forEach((r, i) => {
 	if (exp.contains && r.files[0]) {
 		const svg = text(r.files[0]);
 		for (const re of exp.contains) if (!re.test(svg)) problems.push(`no ${re} in the output`);
+	}
+	if (exp.scene && r.files[0]) {
+		const scene = join(dirname(r.files[0]), basename(r.files[0], extname(r.files[0])) + ".scene", "scene.json");
+		if (!existsSync(scene)) problems.push(`no scene data at ${scene}`);
+		else {
+			const cli = spawnSync(process.execPath, [join(repo, "dist", "cli", "flash2svg.js"), scene, "--format", "css", "-o", join(dirname(r.files[0]), "from-cli.svg")], { encoding: "utf8" });
+			if (cli.status !== 0 || !existsSync(join(dirname(r.files[0]), "from-cli.svg"))) problems.push(`the CLI couldn't export the kept scene: ${cli.stderr}`);
+		}
 	}
 	if (exp.soundFiles && r.files[0]) {
 		const dir = join(dirname(r.files[0]), "sounds");

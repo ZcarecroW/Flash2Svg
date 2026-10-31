@@ -25,6 +25,14 @@
 	function onLoad() {
 		const svg = svgEl();
 		if (!svg) return;
+		// fit the preview: the stage's proportions, the drawing scaled into them (by its viewBox)
+		const vb = svg.viewBox?.baseVal;
+		if (vb && vb.width && vb.height && frame) {
+			frame.style.aspectRatio = `${vb.width} / ${vb.height}`;
+			svg.setAttribute("width", "100%");
+			svg.setAttribute("height", "100%");
+			svg.style.display = "block";
+		}
 		playing = true;
 		const anims = frame?.contentDocument?.getAnimations?.() ?? [];
 		const smil = svg.querySelector("animate,animateTransform");

@@ -39,11 +39,16 @@
 		info.open ? `${info.name} · ${info.isSymbol ? "symbol " : ""}${info.timeline} · ${info.frameCount} fr @ ${info.frameRate} fps${info.type === "htmlcanvas" ? " · HTML5 Canvas" : ""}` : "No document open",
 	);
 
+	let refreshes = 0;
 	async function refresh() {
 		if (busy || !inCep) return;
+		const n = ++refreshes;
 		try {
 			const prev = info.path;
-			info = await docInfo();
+			const next = await docInfo();
+			// a later refresh is under way (a document closed and another opened): its answer counts
+			if (n !== refreshes) return;
+			info = next;
 			if (info.open && info.path !== prev) {
 				const saved = await loadDocSettings().catch(() => null);
 				if (saved) {
@@ -129,6 +134,9 @@
 		for (const ev of ["documentChanged", "documentOpened", "documentClosed", "documentSaved", "documentNew", "timelineChanged"]) {
 			onHostEvent(`com.adobe.events.flash.${ev}`, refresh);
 		}
+		// also when the panel is clicked into: Animate's events don't always arrive (a script that
+		// closes and opens documents at once)
+		window.addEventListener("focus", refresh);
 		refresh();
 		if (__SELFTEST__ && inCep) runSelfTestIfRequested().catch((e) => (error = "Self-test: " + (e as Error).message));
 	});
@@ -151,7 +159,7 @@
 			if (!info.open) throw new Error("Open a document first.");
 			const req = $state.snapshot(panel);
 			result = await runExport(
-				{ settings: req.export, source: req.source, frames: req.frames, rangeStart: req.rangeStart, rangeEnd: req.rangeEnd, output: req.output },
+				{ settings: req.export, source: req.source, frames: req.frames, rangeStart: req.rangeStart, rangeEnd: req.rangeEnd, output: req.output, keepScene: req.keepScene },
 				info,
 				(p, m) => {
 					progress = p;
@@ -469,6 +477,7 @@
 		>
 		<label class="check"><input type="checkbox" bind:checked={panel.rememberInDocument} /> Remember settings in the FLA</label>
 		<label class="check"><input type="checkbox" bind:checked={panel.openAfterExport} /> Open in browser after export</label>
+		<label class="check" title="The data the exporter read from Animate, as &lt;name&gt;.scene/scene.json next to the output: the command line compiler exports it again with other settings, without Animate"><input type="checkbox" bind:checked={panel.keepScene} /> Keep the scene data (for the command line)</label>
 		<div class="row preset-add">
 			<input type="text" placeholder="Save current settings as…" bind:value={newPreset} onkeydown={(e) => e.key === "Enter" && addPreset()} />
 			<button class="secondary" onclick={addPreset} disabled={!newPreset.trim()}>Save</button>

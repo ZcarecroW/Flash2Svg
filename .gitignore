@@ -19,3 +19,7 @@ tools/zxpsign/
 
 # svelte-check --tsgo working folder
 .svelte-check/
+
+# the user guide: built site, demo documents (made from build-demos.jsfl)
+docs/guide/dist/
+docs/guide/demos/fla/

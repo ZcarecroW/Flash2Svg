@@ -1,0 +1,40 @@
+
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" preserveAspectRatio="none" x="0px" y="0px" width="480px" height="270px" viewBox="0 0 480 270">
+<defs>
+<linearGradient id="Gradient_62" gradientUnits="userSpaceOnUse" x1="292.075" y1="82.92500000000001" x2="187.825" y2="187.175" spreadMethod="pad">
+<stop  offset="0%" stop-color="#FF6B6B"/>
+
+<stop  offset="50.19607843137255%" stop-color="#FFC145"/>
+
+<stop  offset="100%" stop-color="#9B5DE5"/>
+</linearGradient>
+
+<linearGradient id="Gradient_63" gradientUnits="userSpaceOnUse" x1="240" y1="61.27499999999999" x2="240" y2="208.72500000000002" spreadMethod="pad">
+<stop  offset="0%" stop-color="#FF6B6B"/>
+
+<stop  offset="50.19607843137255%" stop-color="#FFC145"/>
+
+<stop  offset="100%" stop-color="#9B5DE5"/>
+</linearGradient>
+
+<g id="Layer0_0_FILL">
+<path fill="url(#Gradient_62)" stroke="none" d="
+M 263.5 191.55
+L 216.5 191.55 240 215.05 263.5 191.55
+M 320 135.05
+L 296.55 111.6 296.55 158.5 320 135.05
+M 183.4 158.45
+L 183.4 111.65 160 135.05 183.4 158.45
+M 240 55.05
+L 216.65 78.4 263.35 78.4 240 55.05 Z"/>
+
+<path fill="url(#Gradient_63)" stroke="none" d="
+M 296.55 78.4
+L 263.35 78.4 216.65 78.4 183.4 78.4 183.4 111.65 183.4 158.45 183.4 191.55 216.5 191.55 263.5 191.55 296.55 191.55 296.55 158.5 296.55 111.6 296.55 78.4 Z"/>
+</g>
+</defs>
+
+<g transform="matrix( 1, 0, 0, 1, 0,0) ">
+<use xlink:href="#Layer0_0_FILL"/>
+</g>
+</svg>

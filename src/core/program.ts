@@ -464,12 +464,21 @@ function wrapLayerEffects(programs: Record<string, Program>, prog: Program, tl: 
 		if (filters.length && filters[0]!.t > 0) filters.unshift({ t: 0, filters: [] });
 		const modes = [...new Set(entries.map((e) => e.blendMode ?? "normal"))];
 		if (modes.length > 1) warnings.push(`Layer ${pl.name}: changing layer blend modes are not animated`);
-		let box: { l: number; t: number; r: number; b: number } | null = null;
-		for (const it of pl.items) {
-			const b = it.kind === "instance" ? it.bounds : it.kind === "text" ? it.element.bounds : null;
-			if (!b) continue;
-			const r = { l: b.left, t: b.top, r: b.left + b.width, b: b.top + b.height };
-			box = box ? { l: Math.min(box.l, r.l), t: Math.min(box.t, r.t), r: Math.max(box.r, r.r), b: Math.max(box.b, r.b) } : r;
+		// what the filter region is measured against (a multiple of the content's box): everything on
+		// the layer, shapes too, in its smallest keyframe — estimated too big, a blur would be cut off;
+		// too small (only the text of a layer of shapes), the region grew to 11 times the content
+		type Box = { l: number; t: number; r: number; b: number };
+		const area = (x: Box) => (x.r - x.l) * (x.b - x.t);
+		let box: Box | null = null;
+		for (const kf of tl.layers[pl.index]?.keyframes ?? []) {
+			let k: Box | null = null;
+			for (const e of kf.elements) {
+				const b = e.bounds;
+				if (!b || ![b.left, b.top, b.width, b.height].every(Number.isFinite)) continue;
+				const r = { l: b.left, t: b.top, r: b.left + b.width, b: b.top + b.height };
+				k = k ? { l: Math.min(k.l, r.l), t: Math.min(k.t, r.t), r: Math.max(k.r, r.r), b: Math.max(k.b, r.b) } : r;
+			}
+			if (k && (!box || area(k) < area(box))) box = k;
 		}
 		const wrapper: InstanceItem = {
 			kind: "instance",
@@ -573,6 +582,8 @@ function buildProgram(tl: TimelineData, opts: CompileOptions, warnings: string[]
  * camera frame in the world. The view transform is translate(stage centre) * inverse(camera).
  */
 function cameraView(tl: TimelineData, li: number, opts: CompileOptions, warnings: string[], doc: SceneModel["doc"]): TransformTracks | undefined {
+	if (tl.camera?.some((c) => (c.tint && c.tint.percent) || (c.colorFilter && Object.values(c.colorFilter).some((v) => v))))
+		warnings.push("The camera's colour effects (tint, colour filter) aren't exported: only its position, zoom and rotation");
 	const layer = tl.layers[li]!;
 	const items = buildLayerItems(tl, layer, li, { ...opts, smooth: true }, warnings).filter((i): i is InstanceItem => i.kind === "instance");
 	if (!items.length) return undefined;

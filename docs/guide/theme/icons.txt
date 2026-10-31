@@ -1,0 +1,16 @@
+magnifier/core/outline/24
+sun/core/outline/24
+moon/core/outline/24
+menu/core/outline/24
+copy/core/outline/24
+check/core/outline/24
+chevron-right/core/outline/24
+chevron-left/core/outline/24
+arrow-up-right/core/outline/24
+download/core/outline/24
+media-play/core/outline/24
+media-pause/core/outline/24
+lightbulb/core/outline/24
+triangle-warning/core/outline/24
+circle-info/core/outline/24
+logo-github/nucleo/glyph/24

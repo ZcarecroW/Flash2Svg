@@ -37,8 +37,10 @@ public static class F2sWin {
 		bool modal = !IsWindowEnabled(main);
 		EnumWindows((h, l) => {
 			uint p; GetWindowThreadProcessId(h, out p);
-			// the splash screen (shown on for a moment after the main window) has no title
-			if (p != pid || h == main || !IsWindowVisible(h) || Text(h).Length == 0) return true;
+			// the splash screen (shown on for a moment after the main window) has no title; some
+			// of Animate's error dialogs ("An error occurred opening file") have none either, but
+			// they disable the main window
+			if (p != pid || h == main || !IsWindowVisible(h) || (Text(h).Length == 0 && !modal)) return true;
 			string cls = Cls(h);
 			if (cls != "#32770" && !(modal && GetWindow(h, 4) != IntPtr.Zero && IsWindowEnabled(h))) return true;
 			var texts = new List<string>();

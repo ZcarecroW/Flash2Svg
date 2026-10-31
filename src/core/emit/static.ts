@@ -43,7 +43,8 @@ export function renderStatic(ctx: Context, rootId: string, opts: StaticOptions):
 	const prog = ctx.programs[rootId];
 	if (!prog) throw new Error(`Unknown timeline ${rootId}`);
 	root.children.push(...r.timeline(prog, opts.frame, opts.ticks ?? opts.frame, 0));
-	return { svg: doc.toString(root, { pretty: opts.pretty }), assets: doc.assets, drawingBytes: doc.drawingBytes };
+	// (stills go to editors too, whose importers may not follow gradient references; one frame rarely repeats stops)
+	return { svg: doc.toString(root, { pretty: opts.pretty, shareStops: false }), assets: doc.assets, drawingBytes: doc.drawingBytes };
 }
 
 export class StaticRenderer {
