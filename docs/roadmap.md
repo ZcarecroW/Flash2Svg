@@ -42,7 +42,7 @@ support (sources below) before starting a package.
 |---|---|---|---|---|
 | 1 | Media encoding settings | very high | medium | ✅ images, downscaling, audio, budget view, fonts, video components |
 | 2 | Player: compositor animations, pause off-screen, reduced motion | high | small | ✅ (canvas renderer ⬜) |
-| 3 | Shape tweens as path morphing (SMIL and player) | very high for shape tweens | medium–high | ✅ |
+| 3 | Shape tweens as path morphing (SMIL and player) | very high for shape tweens | medium–high | ✅ (also gradients that turn) |
 | 4 | CSS: `linear()` easing, individual transform properties | medium | small–medium | ✅ (also decimals from the displayed size, .svgz) |
 | 5 | Interactivity: triggers, scroll, label state machine | high | medium | ✅ |
 | 6 | Lottie / dotLottie export | very high (reach) | high | ✅ (effects, built filters, state machine, panel preview, tinted bitmaps, loop seam, labels as states, shared tiles) |
@@ -101,7 +101,7 @@ support (sources below) before starting a package.
   - SMIL: looping movie clips repeat the morph values with every loop on the global clock (f45: 334 → 587 KB at first); tracks that repeat are now written once with their own repeating timing (→ 104 KB).
   - Sizes (SMIL): f05 13.3 → 2.3 KB, f39 (119 frames) 75.5 → 12.7 KB, gzip 17.0 → 2.4 KB; player f39 61.6 → 21.1 KB. Stepped output 20–47 % smaller (gzip about the same).
   - Keyframes inside symbols (Animate re-centres them: an extra group) join the morph by box and colours. A keyframe Animate draws more than a quarter pixel off its morph start stays its own drawing.
-  - ⬜ Gradient/pattern matrices that turn while blending: player only (SMIL keeps frames).
+  - ✅ Gradient matrices that turn while blending: SMIL animates translate, rotate, skewX and scale from the decomposition at every frame, each simplified (f53: 29.3 → 5.3 KB, exact in Edge, Firefox, WebKit). Pattern matrices that turn keep frames: measured, WebKit draws an animated turned and scaled pattern off (static equivalents render alike).
 
 ### 4. Leaner CSS
 - ✅ `linear()` easing (`src/core/emit/keyframes.ts`): keys on one line in value space (frame-by-frame samples, stepped output, multi-piece eases) become one keyframe pair with a `linear()` timing function where that is shorter.

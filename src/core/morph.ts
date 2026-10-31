@@ -48,6 +48,8 @@ export interface MorphPart {
 	ratio?: Track;
 	/** SMIL can animate every channel. */
 	smil: boolean;
+	/** Only a gradient or pattern matrix that turns stands in the way: SMIL animates its rotation per frame. */
+	turns?: boolean;
 }
 
 export interface Morph {
@@ -620,6 +622,7 @@ function fitRun(arts: Artwork[], scans: Scan[], ratios: number[], from: number, 
 	}
 	const channels: MorphChannel[] = [];
 	let smil = true;
+	let turns = false;
 	first.slots.forEach((slot, i) => {
 		const ch: MorphChannel = { node: slot.node, attr: slot.attr, kind: slot.kind };
 		if (slot.kind === "d") Object.assign(ch, pathChannel(shapes[i]!, dFits[i]!));
@@ -632,12 +635,16 @@ function fitRun(arts: Artwork[], scans: Scan[], ratios: number[], from: number, 
 		}
 		if (slot.kind === "matrix") {
 			const rs = ch.s ? sharedRotation(ch.s as unknown as Mat, ch.e as unknown as Mat) : null;
-			if (rs) ch.rs = rs;
-			else smil = false;
+			// (WebKit draws an animated pattern that is turned and scaled a little off: patterns that
+			// turn keep their frames; gradients animate)
+			const pattern = slot.attr === "patternTransform";
+			if (rs && !(pattern && (Math.abs(rs[0]) > 1e-6 || Math.abs(rs[1]) > 1e-6))) ch.rs = rs;
+			else if (pattern) smil = false;
+			else turns = true;
 		}
 		channels.push(ch);
 	});
-	return { from, to, art: arts[from]!, channels, ratio: own, smil };
+	return { from, to, art: arts[from]!, channels, ratio: own, smil: smil && !turns, ...(turns ? { turns } : {}) };
 }
 
 /** Each frame's position between the run's first and last frame, from all path numbers. */

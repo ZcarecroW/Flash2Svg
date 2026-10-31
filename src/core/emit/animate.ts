@@ -4,7 +4,8 @@
  * animate (filter primitive attributes).
  */
 import type { Context } from "../context.ts";
-import { fmt, fmtMatrix } from "../geom.ts";
+import { fmt, fmtMatrix, nearestAngle } from "../geom.ts";
+import { simplify } from "../tracks.ts";
 import type { Mat } from "../model.ts";
 import { channelNumbers, channelText, channelVaries, matrixScale, type MorphChannel } from "../morph.ts";
 import { fromProps, type ColorProp, type TransformProp } from "../program.ts";
@@ -69,7 +70,8 @@ const EPS_TICK = 0.01; // width of an instantaneous jump, in ticks
 
 export function renderAnimated(ctx: Context, rootId: string, opts: AnimateOptions): AnimateResult {
 	if (opts.begin === "scroll") opts = { ...opts, loop: "never", delay: 0 };
-	const { horizon, root } = bake(ctx, rootId, { ...opts, morph: opts.format === "smil" && opts.morph !== false });
+	const smilMorph = opts.format === "smil" && opts.morph !== false;
+	const { horizon, root } = bake(ctx, rootId, { ...opts, morph: smilMorph, turning: smilMorph });
 	const doc = new OutputDoc(ctx, { embedImages: opts.embedImages, idPrefix: opts.idPrefix ?? "" });
 	const svgId = doc.uid("anim");
 	const svg = svgRoot(ctx, { id: svgId });
@@ -297,6 +299,44 @@ class Writer {
 			const text = (v: number) => channelText(ch, channelNumbers(ch, v, v), digits);
 			node.attrs[ch.attr] = text(trackValueAt(track, at));
 			if (!channelVaries(ch) || isConstantTrack(track)) continue;
+			if (ch.kind === "matrix" && !ch.rs) {
+				// a matrix that turns: translate, rotate, skewX and scale from its decomposition at every
+				// frame (matrices blended linearly don't turn evenly), each cut to the keys linear
+				// interpolation needs within half a printed step
+				const dense = everyFrame(track);
+				let last = 0;
+				const parts = dense.map((k) => {
+					const p = svgParts(channelNumbers(ch, k.v, k.v) as unknown as Mat);
+					p[2] = last = nearestAngle(p[2], last);
+					return p;
+				});
+				const anim = (type: string, extra: Record<string, string> = {}) => (x: Record<string, string>) => el("animateTransform", { attributeName: ch.attr, type, ...extra, ...x });
+				if (dense.every((k) => k.ease === "hold")) {
+					// one step per frame: the discrete writer (it repeats compactly with the loops)
+					const at = new Map(dense.map((k, j) => [k.v, parts[j]!]));
+					const p = (v: number) => at.get(v) ?? svgParts(channelNumbers(ch, v, v) as unknown as Mat);
+					const ma = new MorphAnim(this, track);
+					node.children.push(...ma.values((v) => `${fmt(p(v)[0], digits)} ${fmt(p(v)[1], digits)}`, anim("translate")));
+					node.children.push(...ma.values((v) => fmt(p(v)[2], 3), anim("rotate", { additive: "sum" })));
+					if (parts.some((q) => Math.abs(q[3]) > 1e-4)) node.children.push(...ma.values((v) => fmt(p(v)[3], 3), anim("skewX", { additive: "sum" })));
+					node.children.push(...ma.values((v) => `${fmt(p(v)[4], 5)} ${fmt(p(v)[5], 5)}`, anim("scale", { additive: "sum" })));
+					continue;
+				}
+				const comp = (i: number, d: number): GTrack => simplify(dense.map((k, j) => ({ t: k.t, v: parts[j]![i]!, ease: k.ease })), 0.5 * 10 ** -d);
+				// a part that doesn't change is written still (smil() leaves constant tracks out): the
+				// translate always, it replaces the attribute's poster value the others add to
+				const part = (tracks: GTrack[], text: (v: number[]) => string, make: (a: Record<string, string>) => XmlNode, identity: string | null) => {
+					const out = this.smil(tracks, text, make);
+					if (out.length) return out;
+					const v = text(tracks.map((t) => t[0]!.v));
+					return v === identity ? [] : this.windowTimings().map((t) => make({ values: v, ...t }));
+				};
+				node.children.push(...part([comp(0, digits), comp(1, digits)], (v) => `${fmt(v[0]!, digits)} ${fmt(v[1]!, digits)}`, anim("translate"), null));
+				node.children.push(...part([comp(2, 3)], (v) => fmt(v[0]!, 3), anim("rotate", { additive: "sum" }), "0"));
+				if (parts.some((p) => Math.abs(p[3]) > 1e-4)) node.children.push(...part([comp(3, 3)], (v) => fmt(v[0]!, 3), anim("skewX", { additive: "sum" }), "0"));
+				node.children.push(...part([comp(4, 5), comp(5, 5)], (v) => `${fmt(v[0]!, 5)} ${fmt(v[1]!, 5)}`, anim("scale", { additive: "sum" }), "1 1"));
+				continue;
+			}
 			const a = new MorphAnim(this, track);
 			if (ch.kind === "matrix") {
 				// SMIL has no matrix animation: translate and scale animated, the rotation and skew
@@ -1161,6 +1201,27 @@ function mergeTracks(tracks: GTrack[], H: number): MKey[] | null {
 
 function cloneNode(n: XmlNode): XmlNode {
 	return { name: n.name, attrs: { ...n.attrs }, children: n.children.map((c) => (typeof c === "string" ? c : cloneNode(c))) };
+}
+
+/** A matrix as SVG's translate · rotate · skewX · scale: [tx, ty, degrees, skew degrees, sx, sy]. */
+function svgParts(m: Mat): [number, number, number, number, number, number] {
+	const [a, b, c, d, e, f] = m;
+	const r = Math.atan2(b, a);
+	const sx = Math.hypot(a, b);
+	// the y axis in the rotated frame: (sy · tan k, sy)
+	const c1 = Math.cos(r) * c + Math.sin(r) * d,
+		d1 = -Math.sin(r) * c + Math.cos(r) * d;
+	return [e, f, (r * 180) / Math.PI, (Math.atan2(c1, d1) * 180) / Math.PI, sx, Math.hypot(c1, d1) * Math.sign(d1 || 1)];
+}
+
+/** A morph's ratio track with a key at every frame (holds kept). */
+function everyFrame(track: GTrack): GTrack {
+	if (track.length < 2 || track.every((k) => k.ease === "hold")) return track;
+	const out: GTrack = [];
+	const last = track[track.length - 1]!;
+	for (let t = Math.ceil(track[0]!.t); t < last.t; t++) out.push({ ...track[0]!, t, v: trackValueAt(track, t), ease: "linear" });
+	out.push({ ...last });
+	return out;
 }
 
 function hasUse(n: XmlNode): boolean {

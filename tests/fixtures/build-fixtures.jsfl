@@ -2264,6 +2264,34 @@
 		extendAll(24);
 	});
 
+	// ---------------------------------------------------------------- f53: a shape tween whose gradient turns
+	build("f53-gradient-turn", function () {
+		newDoc("timeline", 300, 300, 24);
+		layer("tween");
+		var t = tl();
+		var li = t.currentLayer;
+		function gradientRect(angle) {
+			var r = angle * Math.PI / 180, k = 0.08;
+			var fill = doc.getCustomFill("toolbar");
+			fill.style = "radialGradient";
+			fill.colorArray = ["#FF3300", "#FFFF00", "#0033CC"];
+			fill.posArray = [0, 128, 255];
+			// an ellipse (twice as wide as high) that turns
+			fill.matrix = { a: k * Math.cos(r), b: k * Math.sin(r), c: -k * 0.5 * Math.sin(r), d: k * 0.5 * Math.cos(r), tx: 150, ty: 150 };
+			doc.setCustomFill(fill);
+			noStroke();
+			doc.addNewRectangle({ left: 50, top: 50, right: 250, bottom: 250 }, 0, false, true);
+		}
+		gradientRect(0);
+		t.insertBlankKeyframe(23);
+		t.currentFrame = 23;
+		gradientRect(90);
+		t.setSelectedFrames(0, 1);
+		t.setFrameProperty("tweenType", "shape");
+		var tt = t.layers[li].frames[0].tweenType;
+		log.push("f53 tween: " + tt);
+	});
+
 	FLfile.write(outDir + "/build-log.txt", log.join("\n"));
 	fl.closeAll(false);
 	fl.quit(false);

@@ -191,6 +191,13 @@
   SVG compressed by the server is smaller: the 46 test documents as SMIL 1070 KB, .svgz 372 KB,
   Brotli 341 KB. Node's zlib packs it (the CLI and the panel; 3–8 % smaller and faster than the
   JavaScript fallback).
+- **SMIL morphs gradients that turn.** A shape tween whose radial gradient turns used to be drawn
+  frame by frame in SMIL; now its `gradientTransform` is animated as translate, rotate, skew and
+  scale from the matrix's decomposition at every frame (matrices blended linearly don't turn
+  evenly), each cut to the keys linear interpolation needs: exact at every frame in Edge, Firefox
+  and WebKit. Test document f53: 29.3 → 5.3 KB. Repeating bitmap fills that turn keep their frames:
+  WebKit draws an animated pattern that is turned and scaled a little off (also when only its
+  rotation is fixed, now frames as well).
 - **Lottie: repeating bitmap fills share their tiles.** A fill's tiles are laid out once in the
   pattern's own space and placed by the pattern's transform, so the frames of a shape tween share
   one grid even while the fill turns (each frame used to carry its own tiles; keyed by content,

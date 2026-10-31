@@ -44,6 +44,8 @@ export interface BakeOptions {
 	maxTicks?: number;
 	/** Shape tweens as path morphs where SMIL can animate them (see morph.ts); else frame by frame. */
 	morph?: boolean;
+	/** ... also those whose gradient or pattern matrix turns (the SMIL writer animates the rotation per frame). */
+	turning?: boolean;
 }
 
 export interface BakedTimeline {
@@ -182,7 +184,7 @@ export function bake(ctx: Context, rootId: string, opts: BakeOptions): BakeResul
 	const rootFrames = new Int32Array(H);
 	for (let t = 0; t < H; t++) rootFrames[t] = t < frames.length ? frames[t]! : loop ? frames[t % frames.length]! : frames[frames.length - 1]!;
 
-	const baker = new Baker(ctx, opts.smooth, H, opts.morph);
+	const baker = new Baker(ctx, opts.smooth, H, opts.morph, opts.turning);
 	const root = baker.timeline(prog, rootFrames, 0);
 	return { horizon: { ticks: H, loop, fps, tail }, root, frames: rootFrames, timelines: baker.all };
 }
@@ -245,11 +247,13 @@ class Baker {
 	readonly smooth: boolean;
 	readonly H: number;
 	readonly morph: boolean;
-	constructor(ctx: Context, smooth: boolean, H: number, morph = false) {
+	readonly turning: boolean;
+	constructor(ctx: Context, smooth: boolean, H: number, morph = false, turning = false) {
 		this.ctx = ctx;
 		this.smooth = smooth;
 		this.H = H;
 		this.morph = morph;
+		this.turning = turning;
 	}
 
 	timeline(prog: Program, frames: Int32Array, depth: number): BakedTimeline {
@@ -293,7 +297,7 @@ class Baker {
 			case "artSeq": {
 				// shape tweens: frames blended by a morph drawing, see morph.ts
 				const morph = this.morph ? this.ctx.morph(item) : null;
-				const parts = morph ? morph.parts.filter((p) => p.smil) : [];
+				const parts = morph ? morph.parts.filter((p) => p.smil || (this.turning && p.turns)) : [];
 				// one node per distinct drawing (or morph), shown on the ticks where it is the current frame
 				const byArt = new Map<string, number[]>();
 				const byPart = new Map<MorphPart, number[]>();
