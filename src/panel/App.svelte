@@ -332,6 +332,9 @@
 		<label class="check"><input type="checkbox" bind:checked={panel.export.includeBackground} /> Include stage colour</label>
 		<label class="check"><input type="checkbox" bind:checked={panel.export.embedImages} /> Embed images and sounds</label>
 		<label class="check"><input type="checkbox" bind:checked={panel.export.textAsOutlines} /> Dynamic text as outlines</label>
+		{#if !panel.export.textAsOutlines && !lottie}
+			<label class="check" title="Dynamic and input text: the installed fonts go into the SVG as WOFF2 subsets of the characters used (fonts whose licence forbids it are left out)"><input type="checkbox" bind:checked={panel.export.embedFonts} /> Embed fonts</label>
+		{/if}
 		<label class="check"><input type="checkbox" bind:checked={panel.export.includeHiddenLayers} /> Include hidden layers</label>
 		<label class="check"><input type="checkbox" bind:checked={panel.export.includeGuides} /> Include guide layers</label>
 	</Section>

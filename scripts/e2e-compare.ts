@@ -15,6 +15,7 @@ import { createContext, type FileSource } from "../src/core/context.ts";
 import { createCodecs } from "../src/core/codecs.ts";
 import { encodeImages, type ImageSettings } from "../src/core/images.ts";
 import { renderStatic } from "../src/core/emit/static.ts";
+import { withFonts } from "./lib/fonts.ts";
 import type { SceneModel } from "../src/core/model.ts";
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -31,8 +32,9 @@ const list = args.find((a) => !a.startsWith("--"));
 // than a pixel (the box flipping through scale 0); f40: strokes that scale only horizontally or
 // vertically are drawn as normal strokes (both are known limits). f45: where a shape that splits
 // overlaps itself during the tween, Animate's rendering leaves the overlap empty; its SVG export
-// (what we follow) fills it.
-const TOLERANCE: Record<string, number> = { "f22-layers": 0.006, "f31-text2": 0.008, "f35-edge": 0.005, "f40-strokes": 0.004, "f45-morph": 0.012 };
+// (what we follow) fills it. f49: dynamic text — the browser's text rasterising differs from
+// Animate's (Animate's own outline export of the same text: 1.3 %); positions match within 1–2 px.
+const TOLERANCE: Record<string, number> = { "f22-layers": 0.006, "f31-text2": 0.008, "f35-edge": 0.005, "f40-strokes": 0.004, "f45-morph": 0.012, "f49-fonts": 0.02 };
 const imagesOpt = opt("images", "");
 const images: Partial<ImageSettings> | null = !imagesOpt ? null : imagesOpt === "lossless" ? {} : { imageLossy: imagesOpt as ImageSettings["imageLossy"] };
 const codecs = createCodecs(nodeWasmLoader());
@@ -77,10 +79,12 @@ const page = await browser.newPage({ deviceScaleFactor: 1 });
 const rows: Row[] = [];
 let failed = 0;
 
+// --text: dynamic and input text as <text> with the embedded fonts (default: Animate's outlines)
+const realText = process.argv.includes("--text");
 for (const name of names) {
 	const dir = join(out, name);
 	const modelDir = join(dir, "model");
-	let model: SceneModel = JSON.parse(readFileSync(join(modelDir, "scene.json"), "utf8"));
+	let model: SceneModel = await withFonts(JSON.parse(readFileSync(join(modelDir, "scene.json"), "utf8")));
 	let files: FileSource = {
 		readText: (rel) => readFileSync(join(modelDir, rel), "utf8"),
 		readBinary: (rel) => readFileSync(join(modelDir, rel)),
@@ -108,7 +112,7 @@ for (const name of names) {
 		const single = join(dir, "ref", "f.png");
 		const refPath = existsSync(refFile) ? refFile : count === 1 && existsSync(single) ? single : null;
 		if (!refPath) continue;
-		const { svg } = renderStatic(ctx, root, { frame: f, movieClips: "first", includeBackground: true, embedImages: true, textAsOutlines: true });
+		const { svg } = renderStatic(ctx, root, { frame: f, movieClips: "first", includeBackground: true, embedImages: true, textAsOutlines: !realText });
 		writeFileSync(join(cmp, `f${f + 1}.svg`), svg);
 		const ref = PNG.sync.read(readFileSync(refPath));
 		// Animate exports PNGs with a transparent stage: composite over the stage colour

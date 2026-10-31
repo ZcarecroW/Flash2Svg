@@ -173,6 +173,18 @@ for frame actions. Other code in a handler is warned about. Instances with click
 the hand cursor. SMIL, CSS and still frames turn *Go to Web Page* into an SVG link; for the other
 handlers they warn.
 
+### Fonts
+
+Dynamic and input text stays text (selectable, searchable) and brings its fonts along: the
+installed font files are found by name, cut down to the characters the text uses (HarfBuzz's
+subsetter, WebAssembly, no hinting) and embedded as WOFF2 in an `@font-face` rule — Arial for 24
+characters takes 2.6 KB. Input fields carry all of Latin-1 so typing works. The text is laid out
+by the font's own metrics like Animate does (baselines from its ascent and descent, multiline
+fields wrapped at the field's width; within 1–2 px of Animate). Fonts whose licence forbids
+embedding (OS/2 *fsType*) or that aren't installed are left to the viewer's fonts, with a
+warning. *Embed fonts* (in *Text*) / `--no-embed-fonts` turns it off; *Dynamic text as outlines*
+draws Animate's outlines instead. The size overview shows the fonts as their own part.
+
 ### Accessibility
 
 What is set in Animate's *Accessibility* panel goes into every SVG format: the document's name

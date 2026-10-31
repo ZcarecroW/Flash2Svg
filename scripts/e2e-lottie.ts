@@ -12,6 +12,7 @@ import { chromium, type Page } from "playwright-core";
 import { PNG } from "pngjs";
 import { compileScene } from "../src/core/compile.ts";
 import type { SceneModel } from "../src/core/model.ts";
+import { withFonts } from "./lib/fonts.ts";
 import { openHarness, skottie, startServer, WebPlayers, type LottiePlayer } from "./lib/lottie-players.ts";
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -70,7 +71,7 @@ async function still(file: string, w: number, h: number): Promise<PNG> {
 
 for (const name of names) {
 	const modelDir = join(out, name, "model");
-	const model: SceneModel = JSON.parse(readFileSync(join(modelDir, "scene.json"), "utf8"));
+	const model: SceneModel = await withFonts(JSON.parse(readFileSync(join(modelDir, "scene.json"), "utf8")));
 	const files = { readText: (rel: string) => readFileSync(join(modelDir, rel), "utf8"), readBinary: (rel: string) => readFileSync(join(modelDir, rel)) };
 	const dir = join(out, name, "lottie");
 	mkdirSync(dir, { recursive: true });

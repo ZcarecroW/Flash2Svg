@@ -54,6 +54,16 @@ const codecsBuild = {
 	define: { process: "undefined", "import.meta.url": JSON.stringify("file:///flash2svg/codecs.js") },
 };
 
+// font codecs for the panel, loaded only when an export has dynamic text: HarfBuzz's subsetter
+// (wasm/harfbuzz-subset.wasm) and the WOFF2 encoder (emscripten, its WebAssembly inside)
+const fontsBuild = {
+	...codecsBuild,
+	entryPoints: [join(repo, "src/panel/fonts-entry.ts")],
+	outfile: join(ext, "panel/fonts.js"),
+	define: { ...codecsBuild.define, "globalThis.process": "undefined", "import.meta.url": JSON.stringify("file:///flash2svg/fonts.js") },
+	external: ["node:*"],
+};
+
 // mpg123-decoder's unused worker variant (see src/core/vendor/no-worker.ts)
 const NO_WORKER = { "@eshaz/web-worker": join(repo, "src/core/vendor/no-worker.ts") };
 
@@ -115,6 +125,7 @@ function copyStatic() {
 		mkdirSync(dir, { recursive: true });
 		for (const src of WASM) copyFileSync(join(repo, "node_modules", src), join(dir, src.slice(src.lastIndexOf("/") + 1)));
 		copyFileSync(join(repo, "node_modules/wasm-media-encoders/wasm/mp3.wasm"), join(dir, "mp3.wasm"));
+		copyFileSync(join(repo, "node_modules/harfbuzzjs/dist/harfbuzz-subset.wasm"), join(dir, "harfbuzz-subset.wasm"));
 	}
 	// the panel's dotLottie preview
 	copyFileSync(join(repo, "node_modules/@lottiefiles/dotlottie-web/dist/dotlottie-player.wasm"), join(ext, "wasm", "dotlottie-player.wasm"));
@@ -139,6 +150,7 @@ if (watch) {
 	await esbuild.build(panelBuild);
 	await esbuild.build(codecsBuild);
 	await esbuild.build(audioBuild);
+	await esbuild.build(fontsBuild);
 	await esbuild.build(lottieWebBuild);
 	await esbuild.build(dotLottieBuild);
 	await esbuild.build(cliBuild);

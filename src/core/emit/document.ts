@@ -7,7 +7,9 @@ import { templateNodes } from "../morph.ts";
 import type { Context } from "../context.ts";
 import { fmt, fmtMatrix } from "../geom.ts";
 import { imageMime } from "../mime.ts";
+import { fontKey, type EmbeddedFont } from "../fonts.ts";
 import type { AccInfo, FilterData, Mat } from "../model.ts";
+import type { FontSet } from "./text.ts";
 import { cdata, clone, el, serialize, walk, type XmlNode } from "../xml.ts";
 import { buildFilters, colorMatrix, matrixString, type ColorMatrixValues } from "./filters.ts";
 
@@ -40,7 +42,20 @@ export class OutputDoc {
 	constructor(ctx: Context, opts: { embedImages: boolean; idPrefix: string }) {
 		this.ctx = ctx;
 		this.opts = opts;
+		// embedded fonts, their CSS family with this export's prefix (inlined SVGs don't share subsets)
+		for (const f of ctx.model.fonts ?? []) this.fontMap.set(fontKey(f.face, f.bold, f.italic), { ...f, family: opts.idPrefix + f.family });
 	}
+
+	private fontMap = new Map<string, EmbeddedFont>();
+	private usedFonts = new Set<EmbeddedFont>();
+	/** The embedded fonts for text; those asked for get an @font-face rule. */
+	readonly fonts: FontSet = {
+		get: (face, bold, italic) => {
+			const f = this.fontMap.get(fontKey(face, bold, italic));
+			if (f) this.usedFonts.add(f);
+			return f;
+		},
+	};
 
 	/** A new document-unique id; every id starts with `opts.idPrefix` (never added twice). */
 	uid(base: string): string {
@@ -281,7 +296,10 @@ export class OutputDoc {
 
 	toString(root: XmlNode, opts: { pretty?: boolean; xmlDeclaration?: boolean } = {}): string {
 		const children: XmlNode[] = [];
-		if (this.styles.length) children.push(el("style", {}, [cdata(this.styles.join("\n"))]));
+		const faces = [...this.usedFonts].map(
+			(f) => `@font-face{font-family:"${f.family}";src:url(data:font/woff2;base64,${f.woff2}) format("woff2");font-weight:${f.bold ? 700 : 400};font-style:${f.italic ? "italic" : "normal"}}`,
+		);
+		if (faces.length || this.styles.length) children.push(el("style", {}, [cdata([...faces, ...this.styles].join("\n"))]));
 		if (this.defs.length) {
 			// serialized one by one, which also tells what each drawing costs
 			const parts = this.defs.map((d) => serialize(d, { pretty: opts.pretty }, 2));

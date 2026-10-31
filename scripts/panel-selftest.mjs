@@ -51,6 +51,7 @@ const jobs = [
 	{ fla: fla("f03-transforms"), output: join(out, "transforms-visible.svg"), settings: { format: "smil", begin: "visible" }, expect: { files: 1, contains: [/IntersectionObserver/, /pauseAnimations/] } },
 	{ fla: fla("f45-morph"), output: join(out, "morph-auto.svg"), settings: { format: "auto", scale: "fit" }, expect: { files: 1, warning: /Automatic format: SMIL/, contains: [/<animate attributeName="d"/, /width="100%" height="100%"/] } },
 	{ fla: fla("f36-scenes"), output: join(out, "all-scenes.svg"), settings: { format: "player" }, source: "scenes", expect: { files: 1, contains: [/#CC0000/, /"ac":\{"11":\[\[2,12,1\]\]\}/] } },
+	{ fla: fla("f49-fonts"), output: join(out, "fonts.svg"), settings: { format: "smil" }, expect: { files: 1, parts: ["fonts"], contains: [/@font-face\{font-family:"[^"]+f2s-Arial";src:url\(data:font\/woff2;base64,/] } },
 	// Lottie: the file name follows the format (.svg chosen, .json / .lottie written); bitmaps embedded,
 	// linked next to the JSON, or inside the archive
 	{ fla: fla("f45-morph"), output: join(out, "morph-lottie.svg"), settings: { format: "lottie" }, preview: {}, expect: { files: 1, ext: ".json", lottie: true, parts: ["drawing", "animation"], preview: { svg: true, moving: true } } },

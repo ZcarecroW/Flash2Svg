@@ -130,7 +130,7 @@ export function renderPlayer(ctx: Context, rootId: string, s: ExportSettings): {
 					const labelled = outlineText(it.element, el("use", {}));
 					return { k: "a", s: it.start, e: it.end, r: id, ...(labelled.name === "g" ? { ac: labelled.attrs as Record<string, string> } : {}) };
 				}
-				return { k: "r", s: it.start, e: it.end, x: serialize(textNode(it.element, ctx.precision.space(space))) };
+				return { k: "r", s: it.start, e: it.end, x: serialize(textNode(it.element, ctx.precision.space(space), doc.fonts)) };
 			}
 			case "instance":
 				return instance(it);

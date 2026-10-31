@@ -4,6 +4,8 @@
  * pixels, degrees, 0-based frame indices, colour amounts 0-255 and percents 0-100.
  */
 
+import type { EmbeddedFont } from "./fonts.ts";
+
 export const SCENE_MODEL_VERSION = 1;
 
 /** [a, b, c, d, tx, ty] — same layout as Animate's Matrix object. */
@@ -30,6 +32,8 @@ export interface SceneModel {
 	atlas: Record<string, AtlasItem>;
 	bitmaps: Record<string, BitmapData>;
 	sounds: Record<string, SoundData>;
+	/** Fonts embedded for dynamic and input text (set by encodeFonts, see fonts.ts). */
+	fonts?: EmbeddedFont[];
 	warnings: string[];
 }
 

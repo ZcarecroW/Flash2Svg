@@ -2161,6 +2161,37 @@
 		extendAll(24);
 	});
 
+	// ---------------------------------------------------------------- f49: dynamic and input text (embedded fonts)
+	build("f49-fonts", function () {
+		newDoc("timeline", 500, 360, 24);
+		function text(l, t, r, b, s, type, face, size, color, bold, italic, multiline) {
+			doc.selectNone();
+			doc.addNewText({ left: l, top: t, right: r, bottom: b }, s);
+			doc.selectNone();
+			// nothing is selected after addNewText: the Text object itself (the frame's newest element)
+			var tt = tl(), els = tt.layers[tt.currentLayer].frames[tt.currentFrame].elements;
+			var el = els[els.length - 1];
+			el.textType = type;
+			if (type != "static") el.lineType = multiline ? "multiline" : "single line";
+			el.setTextAttr("face", face);
+			el.setTextAttr("size", size);
+			el.setTextAttr("fillColor", color);
+			el.setTextAttr("bold", !!bold);
+			el.setTextAttr("italic", !!italic);
+			return el;
+		}
+		layer("texts");
+		text(20, 20, 480, 50, "Dynamic Arial: Hello Ünïcödé € 123", "dynamic", "Arial", 22, "#003399");
+		text(20, 70, 480, 100, "Bold italic Times New Roman", "dynamic", "Times New Roman", 24, "#990000", true, true);
+		text(20, 120, 300, 200, "Georgia, two lines of dynamic text that wrap in the field.", "dynamic", "Georgia", 16, "#222222", false, false, true).name = "para";
+		text(320, 120, 480, 150, "Type here", "input", "Verdana", 14, "#000000");
+		// dynamic text inside a moving movie clip
+		symbol("label", "movie clip", function () { text(-60, -12, 60, 12, "Moving label", "dynamic", "Arial", 16, "#006600", true); });
+		layer("mover");
+		classicTween("label", 100, 290, 23, function (e) { e.x = 380; });
+		extendAll(24);
+	});
+
 	FLfile.write(outDir + "/build-log.txt", log.join("\n"));
 	fl.closeAll(false);
 	fl.quit(false);

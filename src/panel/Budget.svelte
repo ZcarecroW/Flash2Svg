@@ -12,6 +12,7 @@
 		{ key: "animation", label: "Animation", title: "SMIL animations, CSS or the player's timeline data" },
 		{ key: "images", label: "Images", title: "Embedded bitmaps" },
 		{ key: "sounds", label: "Sounds", title: "Embedded sounds" },
+		{ key: "fonts", label: "Fonts", title: "Embedded fonts (WOFF2 subsets) of dynamic and input text" },
 		{ key: "runtime", label: "Player", title: "The JS player's script" },
 		{ key: "linked", label: "Linked files", title: "Bitmaps and sounds written next to the SVG" },
 	];

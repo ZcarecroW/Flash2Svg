@@ -15,6 +15,7 @@ import { compileScene, type OutputFormat } from "../src/core/compile.ts";
 import { createContext } from "../src/core/context.ts";
 import { renderStatic } from "../src/core/emit/static.ts";
 import { playhead } from "../src/core/emit/timing.ts";
+import { withFonts } from "./lib/fonts.ts";
 import type { SceneModel } from "../src/core/model.ts";
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -82,7 +83,7 @@ async function shot(file: string, width: number, height: number, seek: { format:
 
 for (const name of names) {
 	const modelDir = join(out, name, "model");
-	const model: SceneModel = JSON.parse(readFileSync(join(modelDir, "scene.json"), "utf8"));
+	const model: SceneModel = await withFonts(JSON.parse(readFileSync(join(modelDir, "scene.json"), "utf8")));
 	const files = { readText: (rel: string) => readFileSync(join(modelDir, rel), "utf8"), readBinary: (rel: string) => readFileSync(join(modelDir, rel)) };
 	const dir = join(out, name, "browser");
 	mkdirSync(dir, { recursive: true });

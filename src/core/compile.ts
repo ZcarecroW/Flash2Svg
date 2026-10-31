@@ -57,6 +57,11 @@ export interface ExportSettings extends ImageSettings, SoundSettings {
 	includeGuides: boolean;
 	embedImages: boolean;
 	textAsOutlines: boolean;
+	/**
+	 * Dynamic and input text: embed the installed fonts as WOFF2 subsets (see encodeFonts in
+	 * fonts.ts, run before compileScene). Default true.
+	 */
+	embedFonts?: boolean;
 	posterFrame: "first" | "last";
 	/** "Reduce motion" in the system settings shows the poster frame (the player: until a click). */
 	reducedMotion: boolean;
@@ -94,6 +99,7 @@ export const DEFAULT_SETTINGS: ExportSettings = {
 	includeGuides: false,
 	embedImages: true,
 	textAsOutlines: false,
+	embedFonts: true,
 	posterFrame: "first",
 	reducedMotion: true,
 	morph: true,
@@ -174,6 +180,8 @@ export interface SizeParts {
 	sounds: number;
 	/** The player's script. */
 	runtime: number;
+	/** Embedded fonts (@font-face). */
+	fonts: number;
 }
 
 /** Drawings (shapes, outlined text) per symbol and layer, biggest first. */
@@ -215,7 +223,7 @@ export function compileScene(model: SceneModel, files: FileSource, partial: Part
 		files: [],
 		assets: [],
 		warnings: ctx.warnings,
-		stats: { durationSeconds: 0, frames: 0, bytes: 0, parts: { drawing: 0, animation: 0, images: 0, sounds: 0, runtime: 0 }, drawings: [] },
+		stats: { durationSeconds: 0, frames: 0, bytes: 0, parts: { drawing: 0, animation: 0, images: 0, sounds: 0, runtime: 0, fonts: 0 }, drawings: [] },
 	};
 	const drawingBytes = new Map<string, number>();
 	const addDrawings = (m: Map<string, number>) => {
@@ -252,10 +260,10 @@ export function compileScene(model: SceneModel, files: FileSource, partial: Part
 			const img = images.reduce((n, i) => n + i.bytes.length, 0);
 			const rest = Math.max(0, bytes.length - img);
 			const anim = Math.round((rest * p.animation) / Math.max(1, p.animation + p.drawing));
-			parts = { drawing: rest - anim, animation: anim, images: img, sounds: 0, runtime: 0 };
+			parts = { drawing: rest - anim, animation: anim, images: img, sounds: 0, runtime: 0, fonts: 0 };
 			out.files.push({ suffix: "", svg: "", ext: ".lottie", bytes });
 		} else {
-			parts = { ...p, sounds: 0, runtime: 0 };
+			parts = { ...p, sounds: 0, runtime: 0, fonts: 0 };
 			out.files.push({ suffix: "", svg: json, ext: ".json" });
 			for (const i of r.images) assets.set(i.name, { path: i.name, source: i.source });
 		}
@@ -360,7 +368,10 @@ export function sizeParts(svg: string): SizeParts {
 		if (/application\/json/.test(m[1]!)) animation += m[0].length - count(/data:audio\/[^"\\]*/g, m[2]!);
 		else runtime += m[0].length;
 	}
-	return { drawing: Math.max(0, svg.length - images - sounds - runtime - animation), animation, images, sounds, runtime };
+	// fonts sit in the <style> too
+	const fonts = count(/@font-face\{[^}]*\}/g, svg);
+	animation -= fonts;
+	return { drawing: Math.max(0, svg.length - images - sounds - runtime - animation - fonts), animation, images, sounds, runtime, fonts };
 }
 
 /** The drawings' bytes (per artwork, see OutputDoc.drawingBytes) by symbol and layer, biggest first. */

@@ -12,6 +12,8 @@ import { encodeSounds } from "../core/audio.ts";
 import { createAudioCodecs } from "../core/audio-codecs.ts";
 import { createCodecs } from "../core/codecs.ts";
 import { encodeImages } from "../core/images.ts";
+import { createFontCodecs, encodeFonts } from "../core/fonts.ts";
+import { nodeFontFiles } from "./fonts-node.ts";
 import type { SceneModel } from "../core/model.ts";
 import { nodeWasmLoader } from "./wasm.ts";
 
@@ -44,6 +46,8 @@ const HELP = `flash2svg <scene.json> [options]
   --sound-bitrate <kbps>  on MP3's scale, Opus uses half (default: each sound's setting from Animate)
   --sound-mode <name=m>   per sound (library name): lossy | lossless (WAV); repeatable
   --text-outlines         draw dynamic text as outlines
+  --no-embed-fonts        dynamic text uses the viewer's fonts (default: the installed fonts are
+                          embedded as WOFF2 subsets of the characters used)
   --no-hidden-layers      skip hidden layers
   --poster <first|last>   frame shown where animation does not run, and with "reduce motion"
                           (.lottie: before a click / hover / script start)
@@ -162,6 +166,9 @@ async function main(argv: string[]) {
 				s.soundModes = { ...s.soundModes, [m[1]!]: m[2] as "lossy" | "lossless" };
 				break;
 			}
+			case "--no-embed-fonts":
+				s.embedFonts = false;
+				break;
 			case "--text-outlines":
 				s.textAsOutlines = true;
 				break;
@@ -215,6 +222,13 @@ async function main(argv: string[]) {
 	if (s.format === "player" && Object.keys(model.sounds).length) {
 		const r = await encodeSounds(model, files, s, createAudioCodecs(loader));
 		({ model, files } = r);
+		warnings = [...warnings, ...r.warnings];
+	}
+	// fonts of dynamic and input text (SVG formats)
+	if (s.embedFonts !== false && !s.textAsOutlines && s.format !== "lottie" && s.format !== "dotlottie") {
+		const { compress } = await import("woff2-encoder");
+		const r = await encodeFonts(model, nodeFontFiles(), createFontCodecs(loader, compress));
+		model = r.model;
 		warnings = [...warnings, ...r.warnings];
 	}
 	const result = compileScene(model, files, s, 0, { gzip: (d) => gzipSync(d, { level: 9 }) });

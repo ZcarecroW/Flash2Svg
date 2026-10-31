@@ -147,7 +147,7 @@ export class StaticRenderer {
 			}
 			case "text":
 				if (this.opts.textAsOutlines || item.element.textType === "static") return item.art ? outlineText(item.element, this.doc.useArt(item.art)) : null;
-				return textNode(item.element, this.ctx.precision.space(prog.id));
+				return textNode(item.element, this.ctx.precision.space(prog.id), this.doc.fonts);
 			case "instance": {
 				const node = this.instance(prog, item, frame, ticks, depth);
 				const link = node && clickLink(prog.interactions, item.name);

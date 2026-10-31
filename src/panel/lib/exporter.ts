@@ -8,6 +8,7 @@ import type { createAudioCodecs } from "../../core/audio-codecs.ts";
 import { encodeImages, type Codecs, type ImageReport, type WasmLoader } from "../../core/images.ts";
 import type { createCodecs } from "../../core/codecs.ts";
 import type { SceneModel } from "../../core/model.ts";
+import { encodeFonts, fontFiles, fontFolders, type FontCodecs, type FontFs } from "../../core/fonts.ts";
 import { evalJson, evalScript, extensionPath, fromFileUri, node, toFileUri } from "./cep.ts";
 
 export interface DocInfo {
@@ -111,6 +112,7 @@ function lazyBundle<T>(file: string, global: string, what: string): () => Promis
 /** The image codecs (panel/codecs.js) and the audio codecs (panel/audio.js). */
 const panelCodecs = lazyBundle<Codecs>("codecs.js", "Flash2SvgCodecs", "image codecs");
 const panelAudio = lazyBundle<AudioCodecs>("audio.js", "Flash2SvgAudio", "audio codecs");
+const panelFonts = lazyBundle<FontCodecs>("fonts.js", "Flash2SvgFonts", "font codecs");
 // (the bundles' entry points: src/panel/codecs-entry.ts, audio-entry.ts)
 export type { createAudioCodecs, createCodecs };
 
@@ -237,6 +239,16 @@ async function exportInto(
 		onProgress(0.85, "Encoding sounds");
 		const enc = await encodeSounds(model, files, req.settings, await panelAudio());
 		({ model, files, report: sounds } = enc);
+		imageWarnings.push(...enc.warnings);
+	}
+
+	// fonts of dynamic and input text (SVG formats)
+	const lottieOut = settings.format === "lottie" || settings.format === "dotlottie";
+	if (settings.embedFonts !== false && !settings.textAsOutlines && !lottieOut) {
+		const nd = nodeOrThrow();
+		const files = fontFiles(nd.fs as unknown as FontFs, nd.path.join, fontFolders(nd.os.platform(), (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env ?? {}, nd.os.homedir(), nd.path.join));
+		const enc = await encodeFonts(model, files, await panelFonts());
+		model = enc.model;
 		imageWarnings.push(...enc.warnings);
 	}
 

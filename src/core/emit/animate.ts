@@ -263,7 +263,7 @@ class Writer {
 			}
 			case "text": {
 				const it = n.item as Extract<typeof n.item, { kind: "text" }>;
-				content = this.opts.textAsOutlines || it.element.textType === "static" ? (it.art ? outlineText(it.element, this.doc.useArt(it.art)) : null) : textNode(it.element, this.ctx.precision.space(this.space));
+				content = this.opts.textAsOutlines || it.element.textType === "static" ? (it.art ? outlineText(it.element, this.doc.useArt(it.art)) : null) : textNode(it.element, this.ctx.precision.space(this.space), this.doc.fonts);
 				break;
 			}
 			case "instance": {

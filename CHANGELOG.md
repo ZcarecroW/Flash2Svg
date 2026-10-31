@@ -191,6 +191,16 @@
   SVG compressed by the server is smaller: the 46 test documents as SMIL 1070 KB, .svgz 372 KB,
   Brotli 341 KB. Node's zlib packs it (the CLI and the panel; 3–8 % smaller and faster than the
   JavaScript fallback).
+- **Fonts for dynamic and input text.** The installed fonts are embedded as WOFF2 subsets of the
+  characters used (`@font-face`, HarfBuzz's subsetter and a WOFF2 encoder, both WebAssembly, loaded
+  only when a document has such text; no hinting: Arial for 24 characters 14.3 → 2.6 KB), so the
+  text looks the same on every computer and stays text. Fonts are found by their name tables
+  (system and user font folders, collections; ~0.3 s), licences that forbid embedding are
+  respected. Laid out by the fonts' metrics as Animate does — which also fixed our dynamic text
+  sitting 2 px too low and right (the field's matrix already includes its gutter) and wraps
+  multiline fields. Test document f49 (Arial, Times bold italic, Georgia, an input field, text in
+  a moving clip): Edge and WebKit load every face; SMIL, CSS and the player pass in Edge, Firefox
+  and WebKit; *Embed fonts* (`--no-embed-fonts`).
 - **All scenes in a row.** *Source: All scenes in a row* exports a document with several scenes
   as one animation, the scenes one after the other as Flash plays them: frame numbers, scene jumps
   (`gotoAndPlay(5, "Scene 2")`, also in code-snippet handlers), `nextScene()` / `prevScene()`

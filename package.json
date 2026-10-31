@@ -57,5 +57,9 @@
   },
   "allowScripts": {
     "esbuild@0.28.2": true
+  },
+  "dependencies": {
+    "harfbuzzjs": "1.6.4",
+    "woff2-encoder": "2.0.0"
   }
 }
