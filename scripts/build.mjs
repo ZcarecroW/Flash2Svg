@@ -94,6 +94,17 @@ const dotLottieBuild = {
 	define: { ...panelBuild.define, "import.meta.url": JSON.stringify("file:///flash2svg/dotlottie.js") },
 };
 
+// <flash2svg-player>: a web component for pages (dist/web), an ES module and a classic script
+const webBuild = {
+	entryPoints: [join(repo, "src/web/flash2svg-player.ts")],
+	bundle: true,
+	minify: true,
+	format: "esm",
+	target: "es2020",
+	outfile: join(dist, "web/flash2svg-player.js"),
+	legalComments: "none",
+};
+
 const cliBuild = {
 	entryPoints: [join(repo, "src/cli/flash2svg.ts")],
 	bundle: true,
@@ -154,6 +165,8 @@ if (watch) {
 	await esbuild.build(lottieWebBuild);
 	await esbuild.build(dotLottieBuild);
 	await esbuild.build(cliBuild);
+	await esbuild.build(webBuild);
+	await esbuild.build({ ...webBuild, format: "iife", outfile: join(dist, "web/flash2svg-player.iife.js") });
 	const kb = (n) => (n / 1024).toFixed(1) + " KB";
 	console.log(`player runtime ${kb(runtimeSize[0])} (with sound ${kb(runtimeSize[1])}, morphs ${kb(runtimeSize[2])}); extension ${version} in ${ext}`);
 }

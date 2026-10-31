@@ -41,6 +41,7 @@
     "esbuild": "^0.28.2",
     "esbuild-svelte": "^0.9.5",
     "fflate": "^0.8.3",
+    "harfbuzzjs": "^1.6.4",
     "libopus-wasm": "^0.4.1",
     "lottie-web": "^5.13.0",
     "mpg123-decoder": "^1.0.3",
@@ -53,13 +54,10 @@
     "svelte-check": "^4.7.7",
     "typescript": "^6.0.3",
     "vitest": "^5.0.5",
-    "wasm-media-encoders": "^0.7.0"
+    "wasm-media-encoders": "^0.7.0",
+    "woff2-encoder": "^2.0.0"
   },
   "allowScripts": {
     "esbuild@0.28.2": true
-  },
-  "dependencies": {
-    "harfbuzzjs": "1.6.4",
-    "woff2-encoder": "2.0.0"
   }
 }

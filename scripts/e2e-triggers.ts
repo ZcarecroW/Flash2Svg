@@ -4,6 +4,7 @@
 //   a frame; the SVG is screenshotted there and compared with the static renderer's frame.
 // - visible: below the fold the animation must hold at its start; scrolled into view, it runs.
 // Usage: node scripts/e2e-triggers.ts [name,...] [--browser=msedge|firefox|webkit] [--every=6]
+import * as esbuild from "esbuild";
 import { createServer } from "node:http";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -25,10 +26,12 @@ const dir = join(out, "triggers");
 mkdirSync(dir, { recursive: true });
 
 // one origin for pages and SVGs: <object> scripts can then see the page around them
+const requested = new Set<string>();
 const server = createServer((req, res) => {
+	requested.add(decodeURIComponent((req.url ?? "/").split("?")[0]!.slice(1)));
 	const file = join(dir, decodeURIComponent((req.url ?? "/").split("?")[0]!.slice(1)));
 	if (!file.startsWith(dir) || !existsSync(file)) return void res.writeHead(404).end();
-	res.writeHead(200, { "content-type": file.endsWith(".svg") ? "image/svg+xml" : "text/html; charset=utf-8" }).end(readFileSync(file));
+	res.writeHead(200, { "content-type": file.endsWith(".svg") ? "image/svg+xml" : file.endsWith(".js") ? "text/javascript" : "text/html; charset=utf-8" }).end(readFileSync(file));
 });
 await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
 const base = `http://127.0.0.1:${(server.address() as { port: number }).port}/`;
@@ -170,6 +173,52 @@ for (const name of names) {
 		if (ratio > THRESHOLD) failures++;
 		console.log(`scale ${scale.padEnd(6)} ${ratio <= THRESHOLD ? "ok" : "FAIL"} (${(ratio * 100).toFixed(2)}% of the pixels differ)`);
 	}
+}
+
+// <flash2svg-player>: fetched only near the screen, put inline, its scripts running; a CSS
+// export in it follows the scroll (scroll timelines need inline SVG)
+{
+	const built = await esbuild.build({ entryPoints: [join(repo, "src", "web", "flash2svg-player.ts")], bundle: true, format: "esm", write: false });
+	writeFileSync(join(dir, "flash2svg-player.js"), built.outputFiles[0]!.text);
+	const name = names[0]!;
+	const modelDir = join(out, name, "model");
+	const model: SceneModel = JSON.parse(readFileSync(join(modelDir, "scene.json"), "utf8"));
+	const files = { readText: (rel: string) => readFileSync(join(modelDir, rel), "utf8"), readBinary: (rel: string) => readFileSync(join(modelDir, rel)) };
+	writeFileSync(join(dir, "wc-player.svg"), compileScene(model, files, { format: "player", includeBackground: true }).files[0]!.svg);
+	writeFileSync(join(dir, "wc-scroll.svg"), compileScene(model, files, { format: "css", includeBackground: true, begin: "scroll", scrollRange: "crossing" }).files[0]!.svg);
+	writeFileSync(
+		join(dir, "wc.html"),
+		html(`<script type="module" src="flash2svg-player.js"></script><flash2svg-player id="p" src="wc-player.svg"></flash2svg-player><div style="height:1500px"></div><flash2svg-player id="c" src="wc-scroll.svg" loading="eager"></flash2svg-player>`),
+	);
+	requested.clear();
+	await page.goto(base + "wc.html");
+	await page.waitForLoadState("load");
+	await page.waitForTimeout(500);
+	const lazy = !requested.has("wc-player.svg") && requested.has("wc-scroll.svg");
+	await page.evaluate((y) => scrollTo(0, y), TOP - 400);
+	await page.waitForTimeout(800);
+	const frame = await page.evaluate(() => (document.getElementById("p") as unknown as { player?: { currentFrame: number } }).player?.currentFrame ?? 0);
+	const inline = await page.evaluate(() => !!document.querySelector("#p > svg") && !document.querySelector("#p")!.shadowRoot);
+	const ok1 = lazy && inline && frame > 3;
+	if (!ok1) failures++;
+	console.log(`web component  player ${ok1 ? "ok" : "FAIL"} (lazy ${lazy}, inline ${inline}, frame ${frame} after 0.8 s)`);
+	// the CSS export inside: its animations run on the scroll position
+	const progress = () =>
+		page.evaluate(() => {
+			const a = (document.querySelector("#c svg") as SVGSVGElement).getAnimations({ subtree: true })[0];
+			const t = a?.currentTime as unknown as { value?: number } | number | null;
+			return typeof t === "number" ? t : (t?.value ?? -1);
+		});
+	const c = await page.evaluate(() => document.getElementById("c")!.getBoundingClientRect().top + scrollY);
+	await page.evaluate((y) => scrollTo(0, y), c - VIEW / 2);
+	await page.waitForTimeout(200);
+	const p1 = await progress();
+	await page.evaluate((y) => scrollTo(0, y), c - 50);
+	await page.waitForTimeout(200);
+	const p2 = await progress();
+	const ok2 = p1 >= 0 && p2 > p1;
+	if (!ok2) failures++;
+	console.log(`web component  css scroll ${ok2 ? "ok" : "FAIL"} (progress ${p1.toFixed(1)} → ${p2.toFixed(1)} as it scrolls up)`);
 }
 
 await browser.close();

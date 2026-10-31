@@ -150,7 +150,7 @@ support (sources below) before starting a package.
 - ✅ Accessibility: `<title>`, `<desc>`, roles and `aria-label` from Animate's Accessibility panel (document, instances, buttons with shortcut and tab index, *Make object accessible* off → `aria-hidden`), static text outlines labelled with their words, keyboard use of click handlers in the player; checked in the browser's accessibility tree (f48).
 - ✅ Export library symbols as separate SVGs (icon workflows): *Source: Selected library symbols* (one file each) was there already.
 - ✅ Export several scenes: *All scenes in a row* joins them into one timeline (`src/core/scenes.ts`; frame numbers, scene jumps, next/previous scene, labels per scene).
-- ⬜ A web component (`<flash2svg-player>`) with lazy loading.
+- ✅ A web component (`<flash2svg-player>`, `src/web/flash2svg-player.ts`, 1.7 KB) with lazy loading: inline SVG (no shadow root: the player finds its svg through `document.currentScript`), scripts recreated so they run.
 - ⬜ Raster fallbacks (animated WebP/AVIF, MP4, GIF), e.g. for e-mail.
 - ✅ Pick the format automatically (`auto`): the player for sounds / mouse handlers, else CSS unless SMIL is more than 15 % smaller (test documents: CSS 40, SMIL 5, player 3).
 

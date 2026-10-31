@@ -208,6 +208,19 @@ Documents without these settings stay as they were, apart from the static text l
 <!-- …or inline the SVG markup in your page -->
 ```
 
+Or let the `<flash2svg-player>` web component (1.7 KB, `dist/web/flash2svg-player.js`, an ES
+module; `flash2svg-player.iife.js` as a classic script) put the SVG into your page: it loads the
+file when it comes near the screen (`loading="eager"`: at once), places it inline so its scripts
+run and scroll-driven CSS works, and shows its children until then.
+
+```html
+<script type="module" src="flash2svg-player.js"></script>
+<flash2svg-player src="hero.svg"><img src="hero-poster.png" alt="…"></flash2svg-player>
+<script>
+  document.querySelector("flash2svg-player").addEventListener("load", (e) => e.target.player?.play());
+</script>
+```
+
 JS player API (on the `<svg>` element, also dispatched as the `flash2svg:ready` event):
 
 ```js

@@ -191,6 +191,11 @@
   SVG compressed by the server is smaller: the 46 test documents as SMIL 1070 KB, .svgz 372 KB,
   Brotli 341 KB. Node's zlib packs it (the CLI and the panel; 3–8 % smaller and faster than the
   JavaScript fallback).
+- **Web component** `<flash2svg-player src="hero.svg">` (1.7 KB, `dist/web`): loads an export
+  when it comes near the screen, puts it inline (scripts run: the JS player, code snippets, start
+  triggers; scroll-driven CSS works) and shows its children until then; `element.player` is the
+  player's API, `load` / `error` events. Tested: fetched only near the screen, the player runs,
+  a CSS scroll export inside follows the scroll.
 - **Tinted bitmaps in Lottie.** Tint and brightness on a bitmap become Lottie's Fill effect (the
   colour mixed in by the amount, keyed when it changes); lottie-web, dotLottie and Skottie draw it
   like our SVG. Other colour effects on bitmaps (unequal multipliers) still show only their alpha
