@@ -227,9 +227,11 @@ with an unchanged value (2.8 times the rendering work of the filters demo at 144
 15× (284 KB → 19 KB with gzip). Values step with the frames, as in Animate: interpolating them costs
 the same redraws, and Firefox draws a fractional `feOffset` cut to whole pixels (a step a frame
 early). Found on the way: the player added a colour filter to `<defs>` each time a movie clip
-appeared (f24-deep: 1278 after 12 s) — fixed, checked in `e2e-player`. Open, to measure next:
-SMIL colour tweens animate an `feColorMatrix` the same way (the whole time the document plays,
-holds too) — switch matrices per frame instead where that is cheaper; CSS filter functions
+appeared (f24-deep: 1278 after 12 s) — fixed, checked in `e2e-player`. Measured and kept: SMIL colour
+tweens animate an `feColorMatrix` the same way, but switching a colour filter per frame (as CSS
+does) made no difference in the five test documents with colour tweens (rendering work within
+1–5 %, their other animations redraw every frame anyway; gzip 3 % smaller to 21 % larger) and
+would make the fades step. Open: CSS filter functions
 (`blur()`, `drop-shadow()`) interpolate cheaply but are isotropic and without strength — exact
 for some filters? Firefox keeps SMIL times in whole milliseconds (seeks round to 1 ms): loops
 whose length isn't whole milliseconds (.7923269 s next to 1.6666667 s in f35-edge) drift apart,
