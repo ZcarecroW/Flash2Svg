@@ -26,6 +26,7 @@ import type {
 	TimelineData,
 	TweenData,
 } from "./model.ts";
+import { angleAtLength, fitGuided, project, type GuideCurve } from "./motionpath.ts";
 import { blankComments, splitScript, type Interaction } from "./snippets.ts";
 import { simplify, type Ease, type Key, type Track } from "./tracks.ts";
 
@@ -34,6 +35,8 @@ export interface CompileOptions {
 	smooth: boolean;
 	includeHiddenLayers: boolean;
 	includeGuides: boolean;
+	/** A guide layer's drawing as a curve (motionpath.ts), by atlas id; without it guided tweens keep their frames. */
+	guide?: (atlas: string) => GuideCurve | null;
 }
 
 export const TRANSFORM_PROPS = ["x", "y", "rot", "skw", "sx", "sy", "tpx", "tpy"] as const;
@@ -75,6 +78,13 @@ export interface InstanceItem extends ItemBase {
 	/** Alpha applies to each shape inside, not to the instance as a whole (see markShapeAlpha):
 	 * 1 = to fills, 2 = to strokes, 3 = both. */
 	shapeAlpha?: number;
+	/**
+	 * Along a motion guide (motionpath.ts): the transformation point follows `curve` (the parent's
+	 * space) for the whole item; `at` is the distance along it as a share of its length, `rot`
+	 * (orient to path) the rotation besides the curve's direction. The x, y and rot tracks stay
+	 * as they are for the formats that draw frames.
+	 */
+	motion?: { curve: GuideCurve; at: Track; rot?: Track };
 }
 
 export interface GraphicRange {
@@ -802,11 +812,22 @@ function buildLayerItems(tl: TimelineData, layer: LayerData, li: number, opts: C
 	const uid = (s: string) => `${tl.id}|${li}|${s}`;
 	// instance spans keyed by slot
 	const open = new Map<number, { item: InstanceItem; kfs: Keyframe[] }>();
+	// a guided layer: its guide's drawing at a frame, as a curve
+	const guideLayer = layer.type === "guided" && layer.parent >= 0 ? tl.layers[layer.parent] : undefined;
+	const guide = opts.guide;
+	const guideAt =
+		guideLayer?.type === "guide" && guide && opts.smooth
+			? (f: number) => {
+					const k = guideLayer.keyframes.find((g) => f >= g.index && f < g.index + g.duration);
+					const e = k?.elements.length === 1 ? k.elements[0] : undefined;
+					return e?.kind === "shape" && e.atlas ? guide(e.atlas) : null;
+				}
+			: undefined;
 
 	const closeSpan = (slot: number) => {
 		const s = open.get(slot);
 		if (!s) return;
-		finishInstance(s.item, s.kfs, slot, opts, warnings, tl, layer);
+		finishInstance(s.item, s.kfs, slot, opts, warnings, tl, layer, guideAt);
 		items.push(s.item);
 		open.delete(slot);
 	};
@@ -962,7 +983,16 @@ export function colorProps(c: ColorTransform | null): Record<ColorProp, number> 
 		: { rP: 100, gP: 100, bP: 100, aP: 100, rA: 0, gA: 0, bA: 0, aA: 0 };
 }
 
-function finishInstance(item: InstanceItem, kfs: Keyframe[], slot: number, opts: CompileOptions, warnings: string[], tl: TimelineData, layer: LayerData) {
+function finishInstance(
+	item: InstanceItem,
+	kfs: Keyframe[],
+	slot: number,
+	opts: CompileOptions,
+	warnings: string[],
+	tl: TimelineData,
+	layer: LayerData,
+	guideAt?: (f: number) => GuideCurve | null,
+) {
 	// Per-frame truth over the span
 	const n = item.end - item.start;
 	const truth: FrameTruth[] = new Array(n);
@@ -1075,6 +1105,12 @@ function finishInstance(item: InstanceItem, kfs: Keyframe[], slot: number, opts:
 	for (const p of TRANSFORM_PROPS) closeTrack(transform[p]);
 	for (const p of COLOR_PROPS) closeTrack(color[p]);
 
+	// along a motion guide: the whole item on one curve (see motionpath.ts)
+	if (guideAt) {
+		const motion = guidedMotion(segs, tv, n, item.start, guideAt);
+		if (motion) item.motion = motion;
+	}
+
 	// Shift to parent frame time
 	for (const p of TRANSFORM_PROPS) for (const k of transform[p]) k.t += item.start;
 	for (const p of COLOR_PROPS) for (const k of color[p]) k.t += item.start;
@@ -1095,6 +1131,96 @@ function finishInstance(item: InstanceItem, kfs: Keyframe[], slot: number, opts:
 	void warnings;
 	void tl;
 	void layer;
+}
+
+/** How far beside its guide's true curve a frame may be (Animate follows an approximation of it). */
+const NEAR_GUIDE = 0.25;
+
+/**
+ * The item's motion along its guide (motionpath.ts) when every frame of it lies on one curve:
+ * guided classic tweens fitted to the curve, keyframes held between them on it. Null otherwise
+ * (the item keeps its frames): a keyframe beside the curve, another guide, a tween that isn't
+ * guided, orient to path on some tweens only.
+ */
+function guidedMotion(
+	segs: { a: number; b: number; kf: Keyframe }[],
+	tv: Record<TransformProp, number>[],
+	n: number,
+	start: number,
+	guideAt: (f: number) => GuideCurve | null,
+): InstanceItem["motion"] | null {
+	let curve: GuideCurve | null = null;
+	for (const s of segs) {
+		const c = guideAt(s.a + start);
+		if (!c || (curve && c !== curve)) return null;
+		curve = c;
+	}
+	if (!curve) return null;
+	const guided = (s: (typeof segs)[number]) => {
+		const tw = s.kf.tween;
+		return !!tw && tw.type === "classic" && tw.guided && s.b - s.a > 1;
+	};
+	const orients = new Set(segs.filter(guided).map((s) => !!s.kf.tween!.orientToPath));
+	if (!orients.size || orients.size > 1) return null;
+	const orient = orients.has(true);
+	const at: Track = [],
+		rot: Track = [];
+	// (rotations unwrapped against what came before: a hold after a tween mustn't spin round)
+	const put = (track: Track, keys: Key[], a: number, angles: boolean) => {
+		const last = track[track.length - 1];
+		const off = angles && last && keys.length ? nearestAngle(keys[0]!.v, last.v) - keys[0]!.v : 0;
+		appendKeys(
+			track,
+			keys.map((k) => ({ ...k, t: k.t + a + start, v: k.v + off })),
+		);
+	};
+	for (const s of segs) {
+		const tw = s.kf.tween;
+		if (guided(s)) {
+			if (s.b >= n) return null;
+			const frames = Array.from({ length: s.b - s.a + 1 }, (_, i) => s.a + i);
+			const curveOf = easeFor(tw!, "rotation");
+			const pace = easeFor(tw!, "position");
+			const ease = orient && curveOf ? easeTrack(curveOf, s.b - s.a) : null;
+			if (orient && !ease) return null;
+			const fit = fitGuided(
+				curve,
+				frames.map((f) => [tv[f]!.x, tv[f]!.y] as [number, number]),
+				TOL.x,
+				ease ? { rot: frames.map((f) => tv[f]!.rot), ease, tol: TOL.rot } : undefined,
+				NEAR_GUIDE,
+				pace ? easeTrack(pace, s.b - s.a) : undefined,
+			);
+			if (!fit) return null;
+			put(at, fit.at, s.a, false);
+			if (fit.rot) put(rot, fit.rot, s.a, true);
+			continue;
+		}
+		// a tween that doesn't follow the guide: frames
+		if (tw && (tw.type === "classic" || tw.type === "motionObject") && s.b - s.a > 1) return null;
+		// a keyframe held: on the curve, standing still
+		const p = project(curve, tv[s.a]!.x, tv[s.a]!.y);
+		if (p.dist > NEAR_GUIDE) return null;
+		for (let f = s.a + 1; f < s.b; f++) if (Math.hypot(tv[f]!.x - tv[s.a]!.x, tv[f]!.y - tv[s.a]!.y) > TOL.x) return null;
+		put(at, [{ t: 0, v: p.s / curve.length, ease: "hold" }], s.a, false);
+		if (orient) put(rot, [{ t: 0, v: tv[s.a]!.rot - angleAtLength(curve, p.s), ease: "hold" }], s.a, true);
+	}
+	closeTrack(at);
+	if (!orient) return { curve, at };
+	closeTrack(rot);
+	return { curve, at, rot };
+}
+
+/** An ease curve as progress keys 0..1 over frames 0..dur. */
+function easeTrack(curve: EaseCurve, dur: number): Track {
+	if (isLinear(curve))
+		return [
+			{ t: 0, v: 0, ease: "linear" },
+			{ t: dur, v: 1, ease: "hold" },
+		];
+	const keys: Track = easePieces(curve, { clampY: true }).map((p) => ({ t: p.x0 * dur, v: p.y0, ease: p.bezier }));
+	keys.push({ t: dur, v: 1, ease: "hold" });
+	return keys;
 }
 
 function appendKeys(track: Track, keys: Key[]) {

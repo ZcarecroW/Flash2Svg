@@ -355,7 +355,7 @@ class Clip {
 			// the camera moves the whole stage: a Web Animation too (no repaint of the scene)
 			if (WAAPI && !this.tl.hl) {
 				this.vanim ??= animate(this.player, this.node, vw, vw, null, 0, this.tl.n);
-				sync(this.player, this.vanim, (this.tw / this.P.fps) * 1000, this.player.running && this.flows);
+				sync(this.player, this.vanim, (this.tw / this.P.fps) * 1000, this.player.live && this.flows);
 			} else this.node.setAttribute("transform", matrixOf(this.P, vw, t, 0, 0));
 		}
 		for (const inst of this.items.values()) inst.render(t, frac, this);
@@ -577,7 +577,7 @@ class Inst {
 		if (this.anims) {
 			const player = this.owner.player;
 			const ms = ((this.owner.tw - it.s) / P.fps) * 1000;
-			const run = player.running && this.owner.flows;
+			const run = player.live && this.owner.flows;
 			for (const a of this.anims) sync(player, a, ms, run);
 		}
 		if (!this.animTransform) {
@@ -872,6 +872,14 @@ class Player {
 	private raf = 0;
 	private last = 0;
 	running = false;
+	/** Not looping, and held: the root stopped (everything holds then, as in SMIL and CSS). */
+	get done() {
+		return !this.loop && !this.root.playing;
+	}
+	/** Running, and not held: Web Animations run. */
+	get live() {
+		return this.running && !this.done;
+	}
 	/** seconds played (with speed), the time base of sounds */
 	clock = 0;
 	/** set while seeking: frames passed on the way don't start sounds */
@@ -941,7 +949,8 @@ class Player {
 			this.time -= fd;
 			this.step();
 		}
-		this.root.render(this.time / fd);
+		// (held: no tween runs on into the next frame)
+		this.root.render(this.done ? 0 : this.time / fd);
 		this.raf = requestAnimationFrame(this.frameLoop);
 	};
 
@@ -949,9 +958,16 @@ class Player {
 		this.inTick = true;
 		try {
 			// "once": everything holds when the root timeline stops; otherwise a stopped root leaves
-			// its movie clips running (Flash)
-			if (this.loop || this.root.playing) this.root.tick();
-			else this.root.stopStreams();
+			// its movie clips running (Flash). A one-frame root has played its pass on arriving: it ends
+			// before its movie clips move on (SMIL and CSS hold them on their first frame too)
+			const r = this.root;
+			if (!this.loop && r.playing && r.tl.n === 1 && !this.P.on) {
+				r.playing = false;
+				r.ended = true;
+				this.emit({ type: "end", frame: 0 });
+			}
+			if (this.loop || r.playing) r.tick();
+			else r.stopStreams();
 		} finally {
 			this.inTick = false;
 		}
@@ -1058,7 +1074,7 @@ class Player {
 		}
 		this.time = Math.max(0, seconds - ticks * fd);
 		this.clock = seconds;
-		this.root.render(this.time / fd);
+		this.root.render(this.done ? 0 : this.time / fd);
 		if (wasRunning) this.play();
 	}
 
@@ -1105,7 +1121,7 @@ function scrub(p: Player, seconds: number) {
 	}
 	p.time = Math.max(0, seconds - to * fd);
 	p.clock = seconds;
-	p.root.render(p.time / fd);
+	p.root.render(p.done ? 0 : p.time / fd);
 }
 
 // ------------------------------------------------------------------ mouse handlers

@@ -1,5 +1,40 @@
 # Changelog
 
+## 4.3.0 (2026-11-01)
+
+- **Motion guides as paths** (roadmap package 8). A classic tween along a motion guide is written
+  as motion along the guide's curve: SMIL `animateMotion` (`keyPoints` = distance along the
+  curve, `rotate="auto"`), CSS `offset-path`/`offset-distance` on an element around the
+  instance's own transform, Lottie position keys with spatial tangents (the curve's pieces cut
+  exactly, as cubics). The symbol stays on the curve between frames at any frame rate; the guided
+  test documents and demo get 42–59 % smaller in SMIL and CSS (path demo SMIL 8992 → 3976 B,
+  CSS 9878 → 4077 B), Lottie 43–47 % (gzip 6–8 %).
+  - Measured first in Animate 2024: the transformation point stays on the stroke (Animate follows
+    its own approximation of the curve, up to 0.14 px beside it), its pace is close to but not
+    exactly uniform along the arc (no length model matched within 0.1 px), so the distance along
+    the curve is read from Animate's frames — simplified against the tween's eased progress with
+    the ease between keys (an eased tween: 41 → 18 keys) — and checked at every frame. *Orient to
+    path* is Animate's rotation tween plus the change of the curve's direction, minus that change
+    spread over the tween so it ends at the end keyframe's rotation: two keys besides the curve's
+    own direction.
+  - Measured in Edge 156, Firefox 159 and WebKit 27.2 alike: CSS `offset-path` on SVG elements
+    takes the path in the parent's space, `offset-rotate` defaults to `auto`, `transform` turns
+    inside the motion and `translate` outside it.
+  - Falls back to Animate's frames for instances with a keyframe beside the curve, closed or
+    branching guides, stepped output; the JS player, GIF and WebP keep the frames. Lottie keeps
+    rotation keys for *orient to path* (Skottie doesn't auto-orient at the first key).
+  - Tests: unit tests (curve, fit, orientation rule, spatial keys, compiled output), a new test
+    document f60-guides (eased, oriented with an end rotation, backwards while scaling, a closed
+    guide, two legs with a hold, a looping clip with a guide inside, placed turned), the browser
+    frame check and the Lottie players for the guide demos too (`guide:<name>`); every other
+    export byte for byte the same.
+- **JS player, *Play once*:** with a one-frame main timeline its movie clips moved one frame on
+  before holding (SMIL and CSS hold them on their first frame — the gears demo ended 3° turned),
+  and held movie clips' Web Animations kept running on the graphics card while the frames stood
+  still. The root now ends before they move, and holding pauses their animations and their
+  interpolation (runtime +0.2 KB, 15.4 KB). Found by running the browser and Lottie checks on the
+  guide's demos too (`guide:<name>`, now part of the full run).
+
 ## 4.2.2 (2026-11-01)
 
 - **CSS output drew some animated objects in the wrong place in Chrome and Edge** (Chromium 156,

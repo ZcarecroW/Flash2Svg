@@ -2531,6 +2531,80 @@
 		extendAll(600);
 	});
 
+	// ---------------------------------------------------------------- f60: motion guides as paths
+	build("f60-guides", function () {
+		newDoc("timeline", 640, 480, 24);
+		boxSymbol();
+		symbol("dot", "graphic", function () { oval(-8, -8, 8, 8, "#CC3366"); });
+		/** A stroke through the midpoints of control points C (quadratic pieces), on the current frame. */
+		function curve(C, closed) {
+			doc.selectNone();
+			stroke("#999999", 1);
+			var p = fl.drawingLayer.newPath();
+			var P = [C[0]];
+			for (var i = 1; i < C.length - 2; i++) P.push([(C[i][0] + C[i + 1][0]) / 2, (C[i][1] + C[i + 1][1]) / 2]);
+			P.push(C[C.length - 1]);
+			for (var j = 0; j < P.length - 1; j++) p.addCurve(P[j][0], P[j][1], C[j + 1][0], C[j + 1][1], P[j + 1][0], P[j + 1][1]);
+			if (closed) p.addCurve(P[P.length - 1][0], P[P.length - 1][1], (P[P.length - 1][0] + P[0][0]) / 2, (P[P.length - 1][1] + P[0][1]) / 2 + 60, P[0][0], P[0][1]);
+			p.makeShape(true, false);
+			doc.selectNone();
+			return P;
+		}
+		/** A guided classic tween of `name` on a new layer from C's start to its end, its guide drawn from C. */
+		function guided(lname, name, C, end, frameFn, mod, closed) {
+			var t = tl();
+			layer(lname);
+			var P0 = C[0], Pn = C[C.length - 1];
+			var f = classicTween(name, P0[0], P0[1], end, function (e) { e.x = Pn[0]; e.y = Pn[1]; if (mod) mod(e); }, function (fr) { fr.motionTweenSnap = true; if (frameFn) frameFn(fr); });
+			t.addMotionGuide();
+			t.currentFrame = 0;
+			curve(C, closed);
+			return f;
+		}
+		// eased (ease out), not oriented
+		guided("eased", "box", [[40, 60], [120, 0], [200, 120], [280, 20], [360, 80]], 40, function (f) { f.tweenEasing = 100; });
+		// orient to path, ending turned 45 degrees
+		guided("orient", "box", [[40, 160], [140, 100], [240, 220], [340, 120]], 40, function (f) { f.motionTweenOrientToPath = true; }, function (e) { e.rotation = 45; });
+		// backwards along its guide (drawn from the other end), eased in, scaling down
+		guided("back", "box", [[600, 240], [520, 160], [440, 300], [380, 220]], 50, function (f) { f.tweenEasing = -60; }, function (e) { e.scaleX = e.scaleY = 0.5; });
+		// a closed guide: keeps Animate's frames
+		guided("closed", "dot", [[460, 60], [520, 0], [600, 80], [560, 140]], 30, null, null, true);
+		// two legs along one guide with a hold between (keyframes at 20 and 30 on the curve)
+		var t = tl();
+		guided("legs", "dot", [[40, 300], [100, 240], [200, 360], [300, 280], [360, 320]], 50, null, null);
+		var li = -1;
+		for (var i = 0; i < t.layers.length; i++) if (t.layers[i].name == "legs") li = i;
+		t.currentLayer = li;
+		t.setSelectedLayers(li);
+		t.insertKeyframe(20);
+		t.insertKeyframe(30);
+		t.setSelectedFrames(20, 21);
+		t.setFrameProperty("tweenType", "none");
+		t.setSelectedFrames(30, 31);
+		t.createMotionTween();
+		t.layers[li].frames[30].motionTweenSnap = true;
+		// a looping movie clip with a guided tween inside, placed twice (once turned and smaller)
+		symbol("mover", "movie clip", function () {
+			var tt = tl();
+			tt.layers[0].name = "ball";
+			tt.currentLayer = 0;
+			classicTween("dot", 0, 0, 29, function (e) { e.x = 120; e.y = 0; }, function (fr) { fr.motionTweenSnap = true; fr.tweenEasing = 40; });
+			tt.addMotionGuide();
+			tt.currentFrame = 0;
+			curve([[0, 0], [40, -60], [80, 60], [120, 0]]);
+			for (var k = 0; k < tt.layers.length; k++) if (tt.layers[k].frameCount < 30) { tt.setSelectedLayers(k); tt.insertFrames(30 - tt.layers[k].frameCount, false, tt.layers[k].frameCount); }
+		});
+		// (on top: a layer added above "legs" would sit between it and its guide)
+		t.currentLayer = 0;
+		t.setSelectedLayers(0);
+		layer("clips");
+		place("mover", 420, 380, 0);
+		var m2 = place("mover", 480, 440, 0);
+		m2.rotation = 30;
+		m2.scaleX = m2.scaleY = 0.8;
+		extendAll(60);
+	});
+
 	FLfile.write(outDir + "/build-log.txt", log.join("\n"));
 	fl.closeAll(false);
 	fl.quit(false);

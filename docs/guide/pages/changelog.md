@@ -7,6 +7,10 @@ description: The main changes in each Flash2SVG version since the version 4 rewr
 
 The full list is in the [changelog](https://github.com/ZcarecroW/Flash2Svg/blob/main/CHANGELOG.md); downloads are on the [releases page](https://github.com/ZcarecroW/Flash2Svg/releases).
 
+## 4.3
+
+**Motion along guides.** A classic tween on a motion guide now moves along the guide's curve itself in SMIL, CSS and Lottie, instead of from one frame's position to the next: smooth at any screen refresh rate, turned along the curve with *Orient to path*, at Animate's own pace, and about half the size (the path demo on [Animation](animation.md#motion-guides): SMIL −56 %, CSS −59 %). **JS player:** with *Play once* and a one-frame main timeline, movie clips no longer move one frame on before they hold.
+
 ## 4.2.2
 
 **CSS fixed in Chrome and Edge.** While a CSS export ran, Chrome and Edge drew some objects in the wrong place — an object that moves and scales at once, whose transformation point also shifts (the banner's button on [Animation](animation.md#frame-scripts) sat in the top-left corner). Every CSS export is now also checked running, not only paused. **On scroll** now also works inside boxes with `overflow: hidden`, in an `<object>` and in browsers without scroll-driven animations ([Interactivity](interactivity.md#on-scroll)). In this guide: the scroll demo really follows the scroll, the filters demo shows all seven filters clearly, the banner's button is a clickable link, and a new demo shows [motion guides](animation.md#motion-guides).

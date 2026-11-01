@@ -4,6 +4,7 @@ import { el } from "./xml.ts";
 import type { BitmapFill, SceneModel } from "./model.ts";
 import { applyNineSlice } from "./nineslice.ts";
 import { buildMorph, type Morph } from "./morph.ts";
+import { guideCurve, type GuideCurve } from "./motionpath.ts";
 import { measurePrecision, type Precision } from "./precision.ts";
 import { buildPrograms, markShapeAlpha, type ArtSeqItem, type CompileOptions, type Program } from "./program.ts";
 import { valueAt } from "./tracks.ts";
@@ -41,7 +42,22 @@ export interface Context {
 }
 
 export function createContext(model: SceneModel, files: FileSource, opts: CompileOptions & { digits?: number }): Context {
-	const { programs, warnings } = buildPrograms(model, opts);
+	// guide layers' drawings as curves (motion guides followed along the path, motionpath.ts)
+	const guides = new Map<string, GuideCurve | null>();
+	const guide = (id: string): GuideCurve | null => {
+		if (!guides.has(id)) {
+			const item = model.atlas[id];
+			let c: GuideCurve | null = null;
+			try {
+				if (item) c = guideCurve(files.readText(item.file), item.offset);
+			} catch {
+				c = null;
+			}
+			guides.set(id, c);
+		}
+		return guides.get(id)!;
+	};
+	const { programs, warnings } = buildPrograms(model, { ...opts, guide: opts.guide ?? guide });
 	const cache = new Map<string, Artwork | null>();
 	// artworks made by the compiler itself (9-slice copies), keyed like atlas ids
 	const derived = new Map<string, Artwork | null>();

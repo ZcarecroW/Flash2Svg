@@ -5,7 +5,7 @@ description: What Flash2SVG reproduces from Animate's timeline — classic and m
 
 # Animation
 
-Flash2SVG reads the timeline the way Flash plays it, and checks every tween against the frames Animate itself draws. When its compact description reproduces every frame, it writes that; when it doesn't (motion guides, orient to path, anything unusual), it writes Animate's frames instead.
+Flash2SVG reads the timeline the way Flash plays it, and checks every tween against the frames Animate itself draws. When its compact description reproduces every frame, it writes that; when it doesn't (anything unusual), it writes Animate's frames instead.
 
 ## Tweens and easing
 
@@ -20,6 +20,10 @@ Rotations (*CW*, *CCW* with a number of turns, *Auto*) and tweens of colour effe
 ## Motion guides
 
 A classic tween on a guided layer follows the curve drawn on its **motion guide** — any stroke, drawn with the pencil, the pen or as lines bent into curves. *Orient to path* turns the symbol with the curve. The guide layer itself isn't exported; draw the curve on a normal layer too if it should show.
+
+In SMIL, CSS and Lottie the motion is written **along the curve itself** (SMIL `animateMotion`, CSS `offset-path`, Lottie position keys with curved tangents): the symbol stays on the curve between frames too, at any frame rate, and the file is about half the size of a position per frame. The pace along the curve is Animate's own — checked at every frame, eases included — and so is the turning with *Orient to path*. Several tweens along one guide, keyframes held on it in between, guides inside symbols and looping movie clips are all covered.
+
+Animate's frames are written instead where that doesn't fit: an instance with a keyframe beside the curve (Animate snaps the transformation point onto the guide; a keyframe placed off it jumps there), a guide that is closed or has several strokes, and *Smooth tweens* off. The JS player, GIF and WebP use Animate's frames anyway. CSS motion paths need Safari 15.4, Chrome 55 or Firefox 72 or later.
 
 ::: demo path smil,css,player,lottie The ball follows a motion guide drawn as a free curve; the dart behind it has *Orient to path* on and turns with the curve.
 

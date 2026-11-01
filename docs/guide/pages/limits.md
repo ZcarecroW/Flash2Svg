@@ -54,7 +54,7 @@ Most of the time is Animate handing over the drawings (the progress bar says "Ex
 - **9-slice:** an animated scale is sliced frame by frame for symbols that only hold drawings; named instances and symbols with nested symbols keep normal scaling then (warned).
 - **3D transforms** export as their 2D projection. **IK armatures** and components other than video aren't exported. **Video embedded in the timeline** (FLV) isn't exported.
 - **The camera's** colour effects (tint, colour filter) aren't exported.
-- **Lottie:** sounds, button states and editable text are left out; *subtract* and *add* are approximated. See [Lottie](lottie.md#what-is-not-in-lottie).
+- **Lottie:** sounds, button states and editable text are left out; *subtract* and *add* are approximated. lottie-web draws an *inner gradient bevel* only faintly (Skottie and dotLottie draw it right). See [Lottie](lottie.md#what-is-not-in-lottie).
 - Animate adds the temporary copy each export works on to its *Recent files* list (JSFL can't open a document without that).
 
 ## Reporting a problem

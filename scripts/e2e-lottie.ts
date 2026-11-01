@@ -53,13 +53,27 @@ const TOLERANCE: Record<string, number> = {
 	// an advanced colour effect on a bitmap (unequal multipliers) has no Lottie effect: only its alpha
 	// (warned); tint and brightness are Fill effects and match
 	"f50-bitmap-tint": 0.014,
+	// the guide's filters demo: lottie-web draws its inner gradient bevel (default stops: white,
+	// transparent, black) only faintly — Skottie draws it exactly, gradient glows and plain bevels are
+	// right in lottie-web too (2026-11-01; open, roadmap); ThorVG's narrower blur on the bevels
+	"guide:filters/lottie-web": 0.009,
+	"guide:filters/dotlottie": 0.0017,
 };
 const limit = (name: string, player: string) => TOLERANCE[`${name}/${player}`] ?? TOLERANCE[name] ?? threshold;
 const list = args.find((a) => !a.startsWith("--"));
 // video components play only in a browser (scripts/e2e-video.ts checks them); Animate draws the
 // component's placeholder, Lottie has no video
 const VIDEO = new Set(["f51-video", "f52-video-canvas"]);
-const names = list ? list.split(",") : readdirSync(out).filter((d) => existsSync(join(out, d, "model", "scene.json")) && !VIDEO.has(d));
+// (the user guide's demos too, as guide:<name>: scene data in docs/guide/demos/models, Animate's frames in docs/guide/demos/ref)
+const guideDemos = join(repo, "docs", "guide", "demos");
+const names = list
+	? list.split(",")
+	: [
+			...readdirSync(out).filter((d) => existsSync(join(out, d, "model", "scene.json")) && !VIDEO.has(d)),
+			...readdirSync(join(guideDemos, "models"))
+				.filter((d) => existsSync(join(guideDemos, "models", d, "scene.json")))
+				.map((d) => `guide:${d}`),
+		];
 
 const require = createRequire(import.meta.url);
 const { LottieValidator, get_schema_path } = require("@lottie-animation-community/lottie-specs/src/validator-node.js");
@@ -81,10 +95,12 @@ async function still(file: string, w: number, h: number): Promise<PNG> {
 }
 
 for (const name of names) {
-	const modelDir = join(out, name, "model");
+	const guide = name.startsWith("guide:") ? name.slice(6) : null;
+	const modelDir = guide ? join(guideDemos, "models", guide) : join(out, name, "model");
+	const refDir = guide ? join(guideDemos, "ref", guide) : join(out, name, "ref");
 	const model: SceneModel = await withFonts(JSON.parse(readFileSync(join(modelDir, "scene.json"), "utf8")));
 	const files = { readText: (rel: string) => readFileSync(join(modelDir, rel), "utf8"), readBinary: (rel: string) => readFileSync(join(modelDir, rel)) };
-	const dir = join(out, name, "lottie");
+	const dir = guide ? join(out, "guide-demos", guide, "lottie") : join(out, name, "lottie");
 	mkdirSync(dir, { recursive: true });
 	const { width: w, height: h } = model.doc;
 	const t0 = performance.now();
@@ -114,7 +130,7 @@ for (const name of names) {
 	const bgHex = model.doc.backgroundColor.replace("#", "");
 	const bg = [0, 2, 4].map((i) => parseInt(bgHex.slice(i, i + 2), 16) || 255);
 	const animateRef = (f: number): PNG | null => {
-		const file = join(out, name, "ref", `f${String(f + 1).padStart(4, "0")}.png`);
+		const file = join(refDir, `f${String(f + 1).padStart(4, "0")}.png`);
 		if (!existsSync(file)) return null;
 		const png = PNG.sync.read(readFileSync(file));
 		if (png.width !== Math.ceil(w) || png.height !== Math.ceil(h)) return null;

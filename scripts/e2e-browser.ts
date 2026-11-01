@@ -42,7 +42,16 @@ const TOLERANCE: Record<string, number> = {};
 const limit = (name: string, format: string) => TOLERANCE[`${name}/${format}`] ?? threshold;
 const steps = args.includes("--steps");
 const list = args.find((a) => !a.startsWith("--"));
-const names = list ? list.split(",") : readdirSync(out).filter((d) => existsSync(join(out, d, "model", "scene.json")));
+// (the user guide's demos too, as guide:<name>: docs/guide/demos/models)
+const guideModels = join(repo, "docs", "guide", "demos", "models");
+const names = list
+	? list.split(",")
+	: [
+			...readdirSync(out).filter((d) => existsSync(join(out, d, "model", "scene.json"))),
+			...readdirSync(guideModels)
+				.filter((d) => existsSync(join(guideModels, d, "scene.json")))
+				.map((d) => `guide:${d}`),
+		];
 
 // --browser=firefox: the installed Firefox over WebDriver BiDi (content sandbox off: it crashes
 // headless content processes here); --browser=webkit: Playwright's WebKit build (needs a one-off
@@ -98,10 +107,11 @@ async function shot(file: string, width: number, height: number, seek: { format:
 }
 
 for (const name of names) {
-	const modelDir = join(out, name, "model");
+	const guide = name.startsWith("guide:") ? name.slice(6) : null;
+	const modelDir = guide ? join(guideModels, guide) : join(out, name, "model");
 	const model: SceneModel = await withFonts(JSON.parse(readFileSync(join(modelDir, "scene.json"), "utf8")));
 	const files = { readText: (rel: string) => readFileSync(join(modelDir, rel), "utf8"), readBinary: (rel: string) => readFileSync(join(modelDir, rel)) };
-	const dir = join(out, name, "browser");
+	const dir = guide ? join(out, "guide-demos", guide, "browser") : join(out, name, "browser");
 	mkdirSync(dir, { recursive: true });
 	const { width, height, frameRate } = model.doc;
 	const statics = compileScene(model, files, { format: "static", includeBackground: true });

@@ -12,6 +12,7 @@ import { COLOR_PROPS, TRANSFORM_PROPS, type ColorProp, type InstanceItem, type I
 import { valueAt, type Ease, type Track } from "../tracks.ts";
 import type { Context } from "../context.ts";
 import type { MorphPart } from "../morph.ts";
+import type { GuideCurve } from "../motionpath.ts";
 import type { FilterData } from "../model.ts";
 import { graphicFrame, playhead, playheadFrame } from "./timing.ts";
 
@@ -83,6 +84,8 @@ export interface BakedInstance extends NodeBase {
 	kind: "instance";
 	item: InstanceItem;
 	transform: Record<TransformProp, GTrack>;
+	/** Along a motion guide (program.ts InstanceItem.motion): the curve, the distance along it (share of its length) and, with orient to path, the rotation besides its direction. */
+	motion?: { curve: GuideCurve; at: GTrack; rot?: GTrack };
 	color: Record<ColorProp, GTrack> | null;
 	filters: { t: number; filters: FilterData[] }[];
 	child: BakedTimeline | null;
@@ -399,6 +402,10 @@ class Baker {
 					if (child.animated) bt.animated = true;
 				}
 				const node: BakedInstance = { kind: "instance", item, vis, uid: item.uid, transform, color, filters, child };
+				if (item.motion) {
+					node.motion = { curve: item.motion.curve, at: this.mapTrack(item.motion.at, runs) };
+					if (item.motion.rot) node.motion.rot = this.mapTrack(item.motion.rot, runs);
+				}
 				if (item.symbolType === "button" && childProg && childProg.frameCount > 1) {
 					node.states = [1, 2].filter((f) => f < childProg.frameCount).map((f) => this.timeline(childProg, new Int32Array(this.H).fill(f), depth + 1));
 				}

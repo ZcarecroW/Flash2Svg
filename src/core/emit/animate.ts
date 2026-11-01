@@ -478,7 +478,11 @@ class Writer {
 		}
 
 		// transform components, innermost first: translate(-tp) scale skewX rotate translate(x,y)
-		const t = n.transform;
+		// (along a motion guide the position, and with orient to path the curve's direction, come
+		// from the motion on an element around them: see motionElement)
+		const mo = n.motion;
+		const zero: GTrack = [{ t: 0, v: 0, ease: "hold" }];
+		const t = mo ? { ...n.transform, x: zero, y: zero, rot: mo.rot ?? n.transform.rot } : n.transform;
 		const neg = (tr: GTrack) => tr.map((k) => ({ ...k, v: -k.v }));
 		const d = this.ctx.precision.instance(n.item, this.space);
 		const comps: Comp[] = [
@@ -489,6 +493,7 @@ class Writer {
 			{ type: "translate", tracks: [neg(t.tpx), neg(t.tpy)], digits: [d.tpx, d.tpy] },
 		];
 		inner = this.transformChain(comps, inner, t, [d.x, d.sx]);
+		if (mo) inner = this.motionElement(inner, mo, n.transform, d.x);
 
 		// colour, filters, blend
 		const attrs: Record<string, string> = {};
@@ -750,6 +755,52 @@ class Writer {
 		return g;
 	}
 
+	/**
+	 * Along a motion guide (motionpath.ts): an element around the instance's own transform moves it
+	 * along the guide's curve — SMIL `animateMotion` (keyPoints: the distance as a share of the
+	 * curve's length), CSS `offset-path`/`offset-distance` (measured alike in Edge, Firefox and
+	 * WebKit: the path in the parent's space, `transform` turning inside the motion) — and with
+	 * orient to path turns it with the curve. The poster's position stays in its transform
+	 * attribute for renderers without animation; while the motion runs an animation replaces that
+	 * attribute (SMIL `animateMotion` adds to it) or `transform:scale(1)` does (CSS).
+	 */
+	private motionElement(inner: XmlNode, mo: NonNullable<BakedInstance["motion"]>, tf: Record<TransformProp, GTrack>, dx: number): XmlNode {
+		const orient = !!mo.rot;
+		const at = this.posterTick;
+		// the curve's direction at the poster: the part of the rotation the inner element leaves out
+		const tan = orient ? trackValueAt(tf.rot, at) - trackValueAt(mo.rot!, at) : 0;
+		const turn = orient ? fmt(tan, 3) : "";
+		const g = el(
+			"g",
+			{ transform: `translate(${fmt(trackValueAt(tf.x, at), dx) || "0"} ${fmt(trackValueAt(tf.y, at), dx) || "0"})${turn ? ` rotate(${turn})` : ""}` },
+			[inner],
+		);
+		// decimals of the distance: a step of one is a share of the length that moves dx decimals
+		const dk = Math.max(0, dx + Math.ceil(Math.log10(Math.max(1, mo.curve.length))));
+		if (!this.css) {
+			const anims = this.smil(
+				[mo.at],
+				(v) => fmt(v[0]!, dk) || "0",
+				(a) => {
+					const { values, calcMode, ...rest } = a;
+					// (animateMotion's own default is "paced", which ignores keyPoints)
+					return el("animateMotion", { path: mo.curve.d, keyPoints: values, ...rest, calcMode: calcMode ?? "linear", rotate: orient ? "auto" : undefined });
+				},
+			);
+			g.children.push(...anims);
+			for (const m of anims) {
+				// the same timing (begin, dur, repeat, fill) as the motion it makes room for
+				const timing: Record<string, string> = { ...m.attrs };
+				for (const k of ["path", "keyPoints", "keyTimes", "keySplines", "calcMode", "rotate"]) delete timing[k];
+				g.children.push(el("animateTransform", { attributeName: "transform", type: "translate", values: "0 0", ...timing }));
+			}
+			return g;
+		}
+		const extra = `offset-path:path("${mo.curve.d}");offset-rotate:${orient ? "auto" : "0deg"};transform:scale(1)`;
+		this.cssAnimation(g, "offset-distance", [mo.at], (v) => `${fmt(v[0]! * 100, Math.max(0, dk - 2)) || "0"}%`, [Math.max(0, dk - 2)], extra);
+		return g;
+	}
+
 	/** Components as nested elements, from the inside out: still ones folded into matrices, each animated one on its own. */
 	private chainNodes(comps: Comp[], inner: XmlNode, md: [number, number]): XmlNode {
 		const statics = comps.map((c) => this.still(c));
@@ -1007,8 +1058,8 @@ class Writer {
 
 	// ------------------------------------------------------------------ CSS
 
-	/** `digits`: decimals of each track's values as `fmtV` prints them. */
-	private cssAnimation(node: XmlNode, prop: string, tracks: GTrack[], fmtV: (v: number[]) => string, digits: number[]) {
+	/** `digits`: decimals of each track's values as `fmtV` prints them; `extra`: constant declarations in the first and last keyframes. */
+	private cssAnimation(node: XmlNode, prop: string, tracks: GTrack[], fmtV: (v: number[]) => string, digits: number[], extra?: string) {
 		// an animation that holds what the element shows anyway (the poster) is left out
 		const poster = `${prop}:${fmtV(tracks.map((tr) => trackValueAt(tr, this.posterTick)))}`;
 		// repeating all through the looping horizon: once, repeating on its own (see smil)
@@ -1016,7 +1067,7 @@ class Writer {
 		if (P) {
 			const wt = tracks.map((tr) => sliceTrack(tr, 0, P));
 			const keys = alignTracks(wt) ?? mergeTracks(wt, P);
-			const enc = keys && encodeKeyframes(keys, P, { digits, body: (v) => `${prop}:${fmtV(v)}` });
+			const enc = keys && encodeKeyframes(keys, P, { digits, body: (v) => `${prop}:${fmtV(v)}`, extra });
 			if (enc && !enc.constant) this.cssRule(node, this.cssName(node), enc.frames, enc.timing, false, P);
 			return;
 		}
@@ -1025,7 +1076,7 @@ class Writer {
 			if (wt.every(isConstantTrack)) return;
 			const keys = alignTracks(wt) ?? mergeTracks(wt, len);
 			if (!keys) return;
-			const enc = encodeKeyframes(keys, len, { digits, body: (v) => `${prop}:${fmtV(v)}` });
+			const enc = encodeKeyframes(keys, len, { digits, body: (v) => `${prop}:${fmtV(v)}`, extra });
 			if (!enc || (enc.constant && (tail || enc.frames === `0%,to{${poster}}`))) return;
 			this.cssRule(node, this.cssName(node), enc.frames, enc.timing, tail);
 		});

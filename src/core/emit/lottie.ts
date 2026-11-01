@@ -23,6 +23,7 @@ import { imageMime } from "../mime.ts";
 import type { FilterData, Mat, TextElement } from "../model.ts";
 import { hasFieldExtras } from "./text.ts";
 import { channelNumbers, channelText, templateNodes, type MorphChannel } from "../morph.ts";
+import { spatialKeys } from "../motionpath.ts";
 import { fromProps, toProps, type ColorProp, type TransformProp } from "../program.ts";
 import { valueAt, type Ease, type Track } from "../tracks.ts";
 import { copyArtwork, type Artwork } from "../artwork.ts";
@@ -1337,9 +1338,13 @@ class LottieWriter {
 			const cw = loop ? period : W;
 			const ref = this.precomp(`${child.key}#${modeKey(sub)}#${cw}`, child.program.name, () => this.timeline(child, sub, cw));
 			const tr = (p: TransformProp) => cut(t[p], a, b);
+			// along a motion guide: position keys on the curve itself (spatial tangents). Orient to
+			// path keeps its rotation keys: Skottie doesn't auto-orient a layer at the first key
+			// (lottie-web and dotLottie do), measured on f09.
+			const mo = n.motion;
 			const ks: Json = {
 				a: trackProp([tr("tpx"), tr("tpy")], [1, 1], [ref.ox, ref.oy], this.digits),
-				p: position(tr("x"), tr("y"), this.digits),
+				p: mo ? motionPosition(mo, a, b, this.digits) : position(tr("x"), tr("y"), this.digits),
 				s: trackProp([tr("sx"), tr("sy")], [100, 100], [0, 0], 4),
 				r: trackProp([tr("rot")], [1], [0], 3, true),
 			};
@@ -2462,6 +2467,31 @@ function mergeKeyframes(frames: Json[][], times: number[], eases: Ease[], dense:
 		return r;
 	};
 	return walk(frames, "") as Json[];
+}
+
+/**
+ * A motion along a guide's curve as Lottie position keys with spatial tangents: a key where the
+ * motion starts, holds or passes from one piece of the curve to the next, the piece's part
+ * between them as the cubic; moving linearly in time along it (players move along a spatial
+ * curve by its arc length).
+ */
+function motionPosition(mo: NonNullable<BakedInstance["motion"]>, a: number, b: number, digits: number): Json {
+	const keys = spatialKeys(mo.curve, cut(mo.at, a, b));
+	const pt = (p: [number, number]) => [round(p[0], digits), round(p[1], digits)];
+	if (keys.length < 2 || keys.every((k) => k.ease === "hold" && pt(k.s).join() === pt(keys[0]!.s).join())) return st(pt(keys[0]!.s));
+	const k = keys.map((key, i) => {
+		const kf: Json = { t: round(key.t, 4), s: pt(key.s) };
+		if (i + 1 < keys.length) {
+			if (key.ease === "hold") kf.h = 1;
+			else {
+				setEase(kf, [key.ease], null);
+				kf.to = pt(key.to!);
+				kf.ti = pt(key.ti!);
+			}
+		}
+		return kf;
+	});
+	return { a: 1, k };
 }
 
 function position(x: GTrack, y: GTrack, digits: number): Json {

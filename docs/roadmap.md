@@ -196,7 +196,7 @@ the AS3 that Animate users actually write is.
 ### Packages, in the suggested order
 | # | Package | Benefit | Effort | Status |
 |---|---|---|---|---|
-| 8 | Motion along paths: motion guides and motion-tween paths as real paths (SMIL `animateMotion` with `keyPoints` and `rotate="auto"`, CSS `offset-path`, the player, Lottie position keys with spatial tangents) | smoother (any frame rate), smaller; the user's request | medium | ⬜ |
+| 8 | Motion along paths: motion guides and motion-tween paths as real paths (SMIL `animateMotion` with `keyPoints` and `rotate="auto"`, CSS `offset-path`, the player, Lottie position keys with spatial tangents) | smoother (any frame rate), smaller; the user's request | medium | ✅ motion guides (SMIL, CSS, Lottie); ⬜ motion tweens (see below) |
 | 9 | Animated filters as animated filter primitives (SMIL and player animate `stdDeviation`, `dx`, `slope`, colours; CSS keeps a filter per frame where nothing else is exact) | filter animations ~10× smaller | medium | ⬜ |
 | 10 | Measure-first sweep: a test document each for IK (symbols, shapes), Asset Warp (bitmap and vector, Flexi bones, envelope), layer depth with the camera, modern rigging, variable-width strokes and brushes, input text, button hit areas, 3D — extracted and compared with Animate's frames; fix what breaks | turns every ❓ into ✅ or a known gap | medium | ⬜ |
 | 11 | Bones and warps: whatever 10 finds missing (poses baked to transforms like guided tweens; deformed shapes as morphs or frames) | rigged characters export | medium–high | ⬜ |
@@ -205,6 +205,23 @@ the AS3 that Animate users actually write is.
 | 14 | Sounds outside the player: SMIL/CSS with a few lines of script (inline, `<object>`), Lottie audio layers where players support them | sound everywhere a script runs | medium | ⬜ |
 | 15 | Input text and UI components as real HTML controls (`<foreignObject>`), working in the player | forms, quizzes | medium | ⬜ |
 | 16 | Video: MP4/WebM export through WebCodecs in the panel, APNG; video embedded in the timeline if Animate can hand over its frames | social media, lossless with alpha | medium | ⬜ |
+
+**8. Motion along paths** (2026-11-01): classic tweens on motion guides follow the guide's curve
+in SMIL (`animateMotion`), CSS (`offset-path`) and Lottie (spatial tangents); 42–59 % smaller,
+exact at every frame (`src/core/motionpath.ts`, test document f60). Open: *motion tweens* —
+their XML (`getMotionObjectXML`) holds only X and Y as separate curves over time (anchor and
+handles per key), no path geometry: fit those curves exactly instead of sampling the frames
+(fewer keys for every motion tween), and bent motion-tween paths (no way found to make one from
+JSFL to measure it: a curve fitted through the frames). The JS player could move along the curve
+with `offset-path` in its Web Animations too. Firefox's SMIL draws f09 wrong far into the loop
+(~8 minutes, before this package too).
+
+Found by covering the guide's demos in the browser and Lottie checks (2026-11-01): the JS player
+with *Play once* and a one-frame root moved its movie clips one frame on before holding, and its
+held clips' Web Animations ran on (fixed: the root ends before they move, held means paused);
+lottie-web draws the filters demo's inner gradient bevel only faintly (Skottie exact, gradient
+glows and plain bevels right in lottie-web) — open: render the construction's layers one by one in
+lottie-web to find the part it drops.
 
 Found while answering the guide feedback of 2026-11-01 (fixed, unreleased): Chromium 156 drew
 CSS exports wrong while running (a moving `transform` animation next to separate

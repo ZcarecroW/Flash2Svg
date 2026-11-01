@@ -494,10 +494,17 @@
 			for (var q = 0; q < pts.length; q++) pa.addPoint(pts[q][0], pts[q][1]);
 			pa.makeShape(false, true);
 		});
+		// the end keyframe with its transformation point on the curve's end, as Animate snaps it
+		// (x/y place the registration point; the dart's transformation point is its middle)
+		function atEnd(e) {
+			var tp = e.getTransformationPoint();
+			e.x = P[P.length - 1][0] - tp.x;
+			e.y = P[P.length - 1][1] - tp.y;
+		}
 		layer("arrow");
-		tween("arrow", P[0][0], P[0][1], 10, 99, function (e) { e.x = P[P.length - 1][0]; e.y = P[P.length - 1][1]; }, function (f) { f.tweenEasing = 0; f.motionTweenOrientToPath = true; f.motionTweenSnap = true; });
+		tween("arrow", P[0][0], P[0][1], 10, 99, atEnd, function (f) { f.tweenEasing = 0; f.motionTweenOrientToPath = true; f.motionTweenSnap = true; });
 		layer("ball");
-		tween("ball", P[0][0], P[0][1], 0, 89, function (e) { e.x = P[P.length - 1][0]; e.y = P[P.length - 1][1]; }, function (f) { f.tweenEasing = 0; f.motionTweenSnap = true; });
+		tween("ball", P[0][0], P[0][1], 0, 89, atEnd, function (f) { f.tweenEasing = 0; f.motionTweenSnap = true; });
 		// the guide (not exported: the track layer shows the same curve); a new layer moves the
 		// indices of those below it, so layers are found by name
 		var t = tl();
