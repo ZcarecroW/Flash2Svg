@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lottie and dotLottie — Flash2SVG</title>
+<meta name="description" content="Export Animate timelines as Lottie JSON or .lottie archives for lottie-web, the dotLottie players, Skottie and the iOS, Android, Flutter and React Native players — with effects, state machines and markers.">
+<link rel="canonical" href="https://zcarecrow.github.io/Flash2Svg/lottie.html">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<meta name="color-scheme" content="light dark">
+<script>try{var t=localStorage.getItem("f2s-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+<link rel="stylesheet" href="assets/site.ce32ae65.css">
+<script src="assets/site.50d4eda3.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#content">Skip to the content</a>
+<header class="top">
+<button type="button" class="top__menu" aria-label="Menu" aria-expanded="false" aria-controls="nav"><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><line x1="2" y1="12" x2="22" y2="12" fill="none" stroke="currentColor" stroke-linecap="square" stroke-miterlimit="10" stroke-width="2" data-color="color-2"/><line x1="2" y1="5" x2="22" y2="5" fill="none" stroke="currentColor" stroke-linecap="square" stroke-miterlimit="10" stroke-width="2"/><line x1="2" y1="19" x2="22" y2="19" fill="none" stroke="currentColor" stroke-linecap="square" stroke-miterlimit="10" stroke-width="2"/></svg></button>
+<a class="brand" href="index.html"><img src="favicon.svg" alt="" width="26" height="26">Flash2SVG <span class="brand__v">4.3</span></a>
+<div class="search"><label class="sr" for="q">Search the guide</label><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><line x1="20.5" y1="20.5" x2="15" y2="15" fill="none" stroke="currentColor" stroke-linecap="square" stroke-miterlimit="10" stroke-width="2" data-color="color-2"/><circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" stroke-linecap="square" stroke-miterlimit="10" stroke-width="2"/></svg><input id="q" type="search" placeholder="Search" autocomplete="off"><ul class="search__hits" role="listbox" hidden></ul></div>
+<button type="button" class="top__theme" aria-label="Switch between light and dark"><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path d="M12 18C15.3137 18 18 15.3137 18 12C18 8.68629 15.3137 6 12 6C8.68629 6 6 8.68629 6 12C6 15.3137 8.68629 18 12 18Z" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" fill="none"/><path d="M12 1V2" stroke="currentColor" stroke-width="2" stroke-linecap="square" data-color="color-2" fill="none"/><path d="M12 22V23" stroke="currentColor" stroke-width="2" stroke-linecap="square" data-color="color-2" fill="none"/><path d="M23 12L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="square" data-color="color-2" fill="none"/><path d="M2 12L1 12" stroke="currentColor" stroke-width="2" stroke-linecap="square" data-color="color-2" fill="none"/><path d="M19.7782 4.2218L19.0711 4.92891" stroke="currentColor" stroke-width="2" stroke-linecap="square" data-color="color-2" fill="none"/><path d="M4.92893 19.071L4.22183 19.7782" stroke="currentColor" stroke-width="2" stroke-linecap="square" data-color="color-2" fill="none"/><path d="M19.7782 19.7782L19.0711 19.0711" stroke="currentColor" stroke-width="2" stroke-linecap="square" data-color="color-2" fill="none"/><path d="M4.92893 4.92896L4.22183 4.22185" stroke="currentColor" stroke-width="2" stroke-linecap="square" data-color="color-2" fill="none"/></svg><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path d="M4 11.9309C4 16.9396 8.0596 21 13.0674 21C16.4803 21 19.4528 19.1141 21 16.3273C20.4852 16.4181 19.9554 16.4655 19.4145 16.4655C14.4068 16.4655 10.3472 12.4051 10.3472 7.39637C10.3472 5.80122 10.7589 4.30225 11.4819 3C7.23006 3.74996 4 7.46316 4 11.9309Z" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" stroke-linejoin="miter" fill="none"/></svg></button>
+<a class="top__gh" href="https://github.com/ZcarecroW/Flash2Svg" aria-label="Flash2SVG on GitHub" rel="noopener"><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill-rule="evenodd" clip-rule="evenodd" fill="currentColor" d="M12,0.3c-6.6,0-12,5.4-12,12c0,5.3,3.4,9.8,8.2,11.4 C8.8,23.8,9,23.4,9,23.1c0-0.3,0-1,0-2c-3.3,0.7-4-1.6-4-1.6c-0.5-1.4-1.3-1.8-1.3-1.8C2.5,17,3.7,17,3.7,17 c1.2,0.1,1.8,1.2,1.8,1.2c1.1,1.8,2.8,1.3,3.5,1c0.1-0.8,0.4-1.3,0.8-1.6c-2.7-0.3-5.5-1.3-5.5-5.9c0-1.3,0.5-2.4,1.2-3.2 C5.5,8.1,5,6.9,5.7,5.3c0,0,1-0.3,3.3,1.2c1-0.3,2-0.4,3-0.4c1,0,2,0.1,3,0.4c2.3-1.6,3.3-1.2,3.3-1.2c0.7,1.7,0.2,2.9,0.1,3.2 c0.8,0.8,1.2,1.9,1.2,3.2c0,4.6-2.8,5.6-5.5,5.9c0.4,0.4,0.8,1.1,0.8,2.2c0,1.6,0,2.9,0,3.3c0,0.3,0.2,0.7,0.8,0.6 c4.8-1.6,8.2-6.1,8.2-11.4C24,5.7,18.6,0.3,12,0.3z"/></svg></a>
+</header>
+<div class="layout">
+<nav id="nav" class="nav" aria-label="Guide"><p class="nav__title">Get started</p><ul><li><a href="index.html">Overview</a></li><li><a href="installation.html">Installation</a></li><li><a href="quick-start.html">Your first export</a></li><li><a href="panel.html">The panel</a></li></ul><p class="nav__title">Formats</p><ul><li><a href="formats.html">Choosing a format</a></li><li><a href="lottie.html" aria-current="page">Lottie and dotLottie</a></li></ul><p class="nav__title">What is exported</p><ul><li><a href="animation.html">Animation</a></li><li><a href="appearance.html">Filters, blends and colour</a></li><li><a href="text.html">Text and fonts</a></li><li><a href="images-sounds.html">Images and sounds</a></li></ul><p class="nav__title">Interactive</p><ul><li><a href="interactivity.html">Interactivity</a></li><li><a href="player-api.html">Player API</a></li></ul><p class="nav__title">On the web</p><ul><li><a href="embedding.html">Embedding on a web page</a></li><li><a href="accessibility.html">Accessibility</a></li><li><a href="performance.html">Small and fast</a></li></ul><p class="nav__title">Reference</p><ul><li><a href="command-line.html">Command line</a></li><li><a href="settings.html">Settings reference</a></li><li><a href="limits.html">Limits and troubleshooting</a></li><li><a href="changelog.html">What's new</a></li></ul></nav>
+<main id="content" class="content">
+<article><h1>Lottie and dotLottie</h1>
+<p>Animate has no Lottie export of its own. Flash2SVG writes the same timeline as <strong>Lottie</strong> (a <code>.json</code> file) or <strong>.lottie</strong> (a dotLottie archive: the animation, its bitmaps and a state machine in one compressed file). Every test document is checked frame by frame in three players — lottie-web, dotLottie (ThorVG) and Skottie — against the SVG output, and validated with the official Lottie schema.</p>
+<figure class="demo" data-demo="hero">
+<div class="demo__stage" style="aspect-ratio:640/360"><div class="demo__lottie" data-src="demos/hero.lottie.json" role="img" aria-label="The hero demo as Lottie, played here by lottie-web. The .lottie tab shows the size of the archive; download it to try it in a dotLottie player."></div></div>
+<div class="demo__bar" role="tablist" aria-label="Format"><button type="button" role="tab" aria-selected="true" data-format="lottie" data-src="demos/hero.lottie.json" title="36 KB, 6.5 KB gzipped">Lottie <small>6.5 KB</small></button><button type="button" role="tab" aria-selected="false" data-format="dotlottie" data-src="demos/hero.dotlottie.lottie" title="7.7 KB">.lottie <small>7.7 KB</small></button><button type="button" role="tab" aria-selected="false" data-format="smil" data-src="demos/hero.smil.svg" title="25 KB, 6.1 KB gzipped">SMIL <small>6.1 KB</small></button><a class="demo__get" href="demos/hero.lottie.json" download title="Download this file"><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path d="M12 3V16.5V16" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" data-color="color-2" fill="none"/><path d="M8.5 13L12 16.5L15.5 13" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" data-color="color-2" fill="none"/><path d="M7 10H4L2 20H22L20 10H17" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" fill="none"/></svg><span class="sr">Download</span></a></div>
+<figcaption>The hero demo as Lottie, played here by lottie-web. The .lottie tab shows the size of the archive; download it to try it in a dotLottie player.</figcaption>
+</figure><h2 id="which-players"><a class="anchor" href="#which-players" aria-hidden="true">#</a>Which players</h2>
+<table>
+<thead>
+<tr>
+<th>Player</th>
+<th>Plays</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><a href="https://github.com/airbnb/lottie-web" rel="noopener">lottie-web<svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path d="M4 20L20 4L19.801 4.19902" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" data-color="color-2" fill="none"/><path d="M13 4H20V11" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" fill="none"/></svg></a></td>
+<td><code>.json</code></td>
+<td>The web player; SVG or canvas renderer.</td>
+</tr>
+<tr>
+<td><a href="https://developers.lottiefiles.com/docs/dotlottie-player/" rel="noopener">dotLottie<svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path d="M4 20L20 4L19.801 4.19902" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" data-color="color-2" fill="none"/><path d="M13 4H20V11" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" fill="none"/></svg></a> (web, iOS, Android, React, Flutter)</td>
+<td><code>.json</code> and <code>.lottie</code></td>
+<td>All drawn by ThorVG; run the state machine.</td>
+</tr>
+<tr>
+<td>Skottie (Skia / CanvasKit)</td>
+<td><code>.json</code></td>
+<td>Chrome&#39;s and Flutter&#39;s Lottie engine.</td>
+</tr>
+<tr>
+<td>lottie-ios, lottie-android</td>
+<td><code>.json</code> (and <code>.lottie</code>)</td>
+<td>Airbnb&#39;s native players.</td>
+</tr>
+</tbody></table>
+<h2 id="what-carries-over"><a class="anchor" href="#what-carries-over" aria-hidden="true">#</a>What carries over</h2>
+<ul>
+<li><strong>Symbols</strong> become precompositions and keep their eases as Lottie keyframe curves. Movie clips that loop are drawn once and played again by a <em>time remap</em>.</li>
+<li><strong>Frame scripts</strong> (<code>stop()</code>, <code>gotoAndPlay()</code>) are followed as in SMIL, and <strong>frame labels</strong> become markers: play a part with the player&#39;s marker or segment API.</li>
+<li><strong>Masks</strong> become track mattes; <strong>shape tweens</strong> animated paths and gradients; <strong>colour effects</strong> (tint, brightness, advanced, alpha) go into the colours of the shapes inside, as Flash applies them.</li>
+<li><strong>Bitmaps</strong> become image assets: embedded, written next to the JSON (<em>Embed images</em> off), or inside the .lottie.</li>
+<li><strong>Filters</strong> become layer effects: blur a Gaussian blur, drop shadow and glow a drop shadow (animated too), <em>adjust colour</em> goes into the colours. The filters Lottie has no effect for — inner, knockout and <em>hide object</em> shadows and glows, bevels, gradient glows and bevels, strong or uneven blurs — are built from track mattes, blend modes and blur or Tritone effects. In lottie-web and Skottie they match the SVG output exactly.</li>
+</ul>
+<aside class="callout callout--note"><p class="callout__title"><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-linecap="square" stroke-miterlimit="10" stroke-width="2"/><path d="m12,17v-5.5c0-.276-.224-.5-.5-.5h-1.5" fill="none" stroke="currentColor" stroke-linecap="square" stroke-miterlimit="10" stroke-width="2" data-color="color-2"/><circle cx="12" cy="7.25" r="1.25" fill="currentColor" stroke-width="0" data-color="color-2"/></svg>Note</p><p>Effects are not part of the Lottie specification 1.0, but lottie-web, dotLottie, Skottie and the iOS and Android players draw them. Other players may not.</p>
+</aside>
+<h2 id="playing-it"><a class="anchor" href="#playing-it" aria-hidden="true">#</a>Playing it</h2>
+<div class="code"><button type="button" class="code__copy" aria-label="Copy"><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path d="M5 1H19" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" data-color="color-2" fill="none"/><path d="M21 5H3V22H21V5Z" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" fill="none"/></svg></button><pre class="shiki shiki-themes github-light-default github-dark-default" style="--shiki-light:#1f2328;--shiki-dark:#e6edf3;--shiki-light-bg:#ffffff;--shiki-dark-bg:#0d1117" tabindex="0"><code><span class="line"><span style="--shiki-light:#6E7781;--shiki-dark:#8B949E">// lottie-web: frame labels are markers</span></span>
+<span class="line"><span style="--shiki-light:#CF222E;--shiki-dark:#FF7B72">const</span><span style="--shiki-light:#0550AE;--shiki-dark:#79C0FF"> anim</span><span style="--shiki-light:#CF222E;--shiki-dark:#FF7B72"> =</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3"> lottie.</span><span style="--shiki-light:#8250DF;--shiki-dark:#D2A8FF">loadAnimation</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">({</span></span>
+<span class="line"><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">  container: document.</span><span style="--shiki-light:#8250DF;--shiki-dark:#D2A8FF">getElementById</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">(</span><span style="--shiki-light:#0A3069;--shiki-dark:#A5D6FF">"hero"</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">),</span></span>
+<span class="line"><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">  renderer: </span><span style="--shiki-light:#0A3069;--shiki-dark:#A5D6FF">"svg"</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">, loop: </span><span style="--shiki-light:#0550AE;--shiki-dark:#79C0FF">true</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">, autoplay: </span><span style="--shiki-light:#0550AE;--shiki-dark:#79C0FF">true</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">,</span></span>
+<span class="line"><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">  path: </span><span style="--shiki-light:#0A3069;--shiki-dark:#A5D6FF">"hero.json"</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">,</span></span>
+<span class="line"><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">});</span></span>
+<span class="line"><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">anim.</span><span style="--shiki-light:#8250DF;--shiki-dark:#D2A8FF">goToAndPlay</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">(</span><span style="--shiki-light:#0A3069;--shiki-dark:#A5D6FF">"intro"</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">, </span><span style="--shiki-light:#0550AE;--shiki-dark:#79C0FF">true</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">);</span></span></code></pre></div>
+<div class="code"><button type="button" class="code__copy" aria-label="Copy"><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path d="M5 1H19" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" data-color="color-2" fill="none"/><path d="M21 5H3V22H21V5Z" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" fill="none"/></svg></button><pre class="shiki shiki-themes github-light-default github-dark-default" style="--shiki-light:#1f2328;--shiki-dark:#e6edf3;--shiki-light-bg:#ffffff;--shiki-dark-bg:#0d1117" tabindex="0"><code><span class="line"><span style="--shiki-light:#6E7781;--shiki-dark:#8B949E">// dotLottie (npm @lottiefiles/dotlottie-web): the export's state machine plays it</span></span>
+<span class="line"><span style="--shiki-light:#CF222E;--shiki-dark:#FF7B72">import</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3"> { DotLottie } </span><span style="--shiki-light:#CF222E;--shiki-dark:#FF7B72">from</span><span style="--shiki-light:#0A3069;--shiki-dark:#A5D6FF"> "@lottiefiles/dotlottie-web"</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">;</span></span>
+<span class="line"><span style="--shiki-light:#CF222E;--shiki-dark:#FF7B72">const</span><span style="--shiki-light:#0550AE;--shiki-dark:#79C0FF"> player</span><span style="--shiki-light:#CF222E;--shiki-dark:#FF7B72"> =</span><span style="--shiki-light:#CF222E;--shiki-dark:#FF7B72"> new</span><span style="--shiki-light:#8250DF;--shiki-dark:#D2A8FF"> DotLottie</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">({</span></span>
+<span class="line"><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">  canvas: document.</span><span style="--shiki-light:#8250DF;--shiki-dark:#D2A8FF">querySelector</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">(</span><span style="--shiki-light:#0A3069;--shiki-dark:#A5D6FF">"canvas"</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">),</span></span>
+<span class="line"><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">  src: </span><span style="--shiki-light:#0A3069;--shiki-dark:#A5D6FF">"hero.lottie"</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">,</span></span>
+<span class="line"><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">  stateMachineId: </span><span style="--shiki-light:#0A3069;--shiki-dark:#A5D6FF">"playback"</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">,</span></span>
+<span class="line"><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">});</span></span>
+<span class="line"><span style="--shiki-light:#6E7781;--shiki-dark:#8B949E">// with Start "From script": start it (again)</span></span>
+<span class="line"><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">player.</span><span style="--shiki-light:#8250DF;--shiki-dark:#D2A8FF">stateMachineFireEvent</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">(</span><span style="--shiki-light:#0A3069;--shiki-dark:#A5D6FF">"play"</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">);</span></span></code></pre></div>
+<h2 id="loops-intros-and-starting"><a class="anchor" href="#loops-intros-and-starting" aria-hidden="true">#</a>Loops, intros and starting</h2>
+<p>A Lottie JSON loops and autoplays as the player is told. When the timeline has an intro — it stops while movie clips keep running, or loops back to a label — the export has two markers, <strong>intro</strong> (play once) and <strong>loop</strong> (then loop it); the warnings say so.</p>
+<p>A <strong>.lottie</strong> carries a state machine called <code>playback</code> that plays it as your settings say: follow the timeline, loop or play once; start automatically, on a click, on hover or from script; show the <em>Poster</em> frame before a click or hover. dotLottie players run it when asked with <code>stateMachineId: &quot;playback&quot;</code>.</p>
+<h3 id="buttons-in-a-lottie"><a class="anchor" href="#buttons-in-a-lottie" aria-hidden="true">#</a>Buttons in a .lottie</h3>
+<p>Mouse handlers from the Code Snippets panel become the state machine: every place playback can start (frame 1, jump targets, labels the buttons go to) is a state, clicks on the buttons&#39; layers are the transitions, and <em>Go to Web Page</em> becomes an <em>OpenUrl</em> action. Mouse over and out, and handlers in nested timelines, aren&#39;t followed (warned).</p>
+<h2 id="what-is-not-in-lottie"><a class="anchor" href="#what-is-not-in-lottie" aria-hidden="true">#</a>What is not in Lottie</h2>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>In Lottie</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Sounds</td>
+<td>left out (warned)</td>
+</tr>
+<tr>
+<td>Button states (<em>Over</em>, <em>Down</em>)</td>
+<td>left out; use a .lottie state machine for clicks</td>
+</tr>
+<tr>
+<td>Editable text</td>
+<td>drawn as outlines; text field borders, filters and links are left out (warned)</td>
+</tr>
+<tr>
+<td><em>Subtract</em> and <em>add</em> blends</td>
+<td>approximated (multiply by the inverted colours, screen)</td>
+</tr>
+<tr>
+<td>Hairlines</td>
+<td>keep the width they have at the scale their symbol starts with</td>
+</tr>
+<tr>
+<td>Bitmaps without smoothing</td>
+<td>drawn smoothed</td>
+</tr>
+<tr>
+<td>Colour effects on bitmaps</td>
+<td>tint and brightness exact; other colour effects keep only their alpha</td>
+</tr>
+</tbody></table>
+<h2 id="size-and-speed"><a class="anchor" href="#size-and-speed" aria-hidden="true">#</a>Size and speed</h2>
+<p>Lottie JSON is wordier than SVG: the test documents take 2303 KB as Lottie and 1310 KB as SMIL — gzipped 509 KB and 391 KB, and 564 KB as .lottie archives. Players draw a precomposition again for each use, so built filters cost render time: about 0.5–2 ms per shadow and 6–9 ms per bevel and frame in Skottie at 500×400.</p>
+<p>The players differ a little (measured): lottie-web blurs drop shadows slightly less than the others; dotLottie (ThorVG) blurs narrower, draws thin seams between the tiles of a repeating bitmap fill and fades the edges of a clipped bitmap fill.</p>
+</article>
+<nav class="pager" aria-label="Pages"><a class="pager__prev" href="formats.html"><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path d="M16 21L7 12L16 3" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" fill="none"/></svg><span><small>Back</small>Choosing a format</span></a><a class="pager__next" href="animation.html"><span><small>Next</small>Animation</span><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path d="M8 21L17 12L8 3" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" fill="none"/></svg></a></nav>
+<footer class="foot">Flash2SVG 4.3.0 · MIT licence · <a href="https://github.com/ZcarecroW/Flash2Svg">GitHub</a> · <a href="https://github.com/ZcarecroW/Flash2Svg/issues">Report a problem</a> · Icons by <a href="https://nucleoapp.com/">Nucleo</a></footer>
+</main>
+<nav class="toc" aria-label="On this page"><p class="toc__title">On this page</p><ul><li class="d2"><a href="#which-players">Which players</a></li><li class="d2"><a href="#what-carries-over">What carries over</a></li><li class="d2"><a href="#playing-it">Playing it</a></li><li class="d2"><a href="#loops-intros-and-starting">Loops, intros and starting</a></li><li class="d3"><a href="#buttons-in-a-lottie">Buttons in a .lottie</a></li><li class="d2"><a href="#what-is-not-in-lottie">What is not in Lottie</a></li><li class="d2"><a href="#size-and-speed">Size and speed</a></li></ul></nav>
+</div>
+</body>
+</html>

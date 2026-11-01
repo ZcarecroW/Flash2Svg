@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Embedding on a web page — Flash2SVG</title>
+<meta name="description" content="Put an exported SVG on a page as img, object, inline markup or with the flash2svg-player element; sizes that follow the page; reduced motion; several exports on one page; fallbacks and server compression.">
+<link rel="canonical" href="https://zcarecrow.github.io/Flash2Svg/embedding.html">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<meta name="color-scheme" content="light dark">
+<script>try{var t=localStorage.getItem("f2s-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+<link rel="stylesheet" href="assets/site.ce32ae65.css">
+<script src="assets/site.50d4eda3.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#content">Skip to the content</a>
+<header class="top">
+<button type="button" class="top__menu" aria-label="Menu" aria-expanded="false" aria-controls="nav"><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><line x1="2" y1="12" x2="22" y2="12" fill="none" stroke="currentColor" stroke-linecap="square" stroke-miterlimit="10" stroke-width="2" data-color="color-2"/><line x1="2" y1="5" x2="22" y2="5" fill="none" stroke="currentColor" stroke-linecap="square" stroke-miterlimit="10" stroke-width="2"/><line x1="2" y1="19" x2="22" y2="19" fill="none" stroke="currentColor" stroke-linecap="square" stroke-miterlimit="10" stroke-width="2"/></svg></button>
+<a class="brand" href="index.html"><img src="favicon.svg" alt="" width="26" height="26">Flash2SVG <span class="brand__v">4.3</span></a>
+<div class="search"><label class="sr" for="q">Search the guide</label><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><line x1="20.5" y1="20.5" x2="15" y2="15" fill="none" stroke="currentColor" stroke-linecap="square" stroke-miterlimit="10" stroke-width="2" data-color="color-2"/><circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" stroke-linecap="square" stroke-miterlimit="10" stroke-width="2"/></svg><input id="q" type="search" placeholder="Search" autocomplete="off"><ul class="search__hits" role="listbox" hidden></ul></div>
+<button type="button" class="top__theme" aria-label="Switch between light and dark"><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path d="M12 18C15.3137 18 18 15.3137 18 12C18 8.68629 15.3137 6 12 6C8.68629 6 6 8.68629 6 12C6 15.3137 8.68629 18 12 18Z" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" fill="none"/><path d="M12 1V2" stroke="currentColor" stroke-width="2" stroke-linecap="square" data-color="color-2" fill="none"/><path d="M12 22V23" stroke="currentColor" stroke-width="2" stroke-linecap="square" data-color="color-2" fill="none"/><path d="M23 12L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="square" data-color="color-2" fill="none"/><path d="M2 12L1 12" stroke="currentColor" stroke-width="2" stroke-linecap="square" data-color="color-2" fill="none"/><path d="M19.7782 4.2218L19.0711 4.92891" stroke="currentColor" stroke-width="2" stroke-linecap="square" data-color="color-2" fill="none"/><path d="M4.92893 19.071L4.22183 19.7782" stroke="currentColor" stroke-width="2" stroke-linecap="square" data-color="color-2" fill="none"/><path d="M19.7782 19.7782L19.0711 19.0711" stroke="currentColor" stroke-width="2" stroke-linecap="square" data-color="color-2" fill="none"/><path d="M4.92893 4.92896L4.22183 4.22185" stroke="currentColor" stroke-width="2" stroke-linecap="square" data-color="color-2" fill="none"/></svg><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path d="M4 11.9309C4 16.9396 8.0596 21 13.0674 21C16.4803 21 19.4528 19.1141 21 16.3273C20.4852 16.4181 19.9554 16.4655 19.4145 16.4655C14.4068 16.4655 10.3472 12.4051 10.3472 7.39637C10.3472 5.80122 10.7589 4.30225 11.4819 3C7.23006 3.74996 4 7.46316 4 11.9309Z" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" stroke-linejoin="miter" fill="none"/></svg></button>
+<a class="top__gh" href="https://github.com/ZcarecroW/Flash2Svg" aria-label="Flash2SVG on GitHub" rel="noopener"><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill-rule="evenodd" clip-rule="evenodd" fill="currentColor" d="M12,0.3c-6.6,0-12,5.4-12,12c0,5.3,3.4,9.8,8.2,11.4 C8.8,23.8,9,23.4,9,23.1c0-0.3,0-1,0-2c-3.3,0.7-4-1.6-4-1.6c-0.5-1.4-1.3-1.8-1.3-1.8C2.5,17,3.7,17,3.7,17 c1.2,0.1,1.8,1.2,1.8,1.2c1.1,1.8,2.8,1.3,3.5,1c0.1-0.8,0.4-1.3,0.8-1.6c-2.7-0.3-5.5-1.3-5.5-5.9c0-1.3,0.5-2.4,1.2-3.2 C5.5,8.1,5,6.9,5.7,5.3c0,0,1-0.3,3.3,1.2c1-0.3,2-0.4,3-0.4c1,0,2,0.1,3,0.4c2.3-1.6,3.3-1.2,3.3-1.2c0.7,1.7,0.2,2.9,0.1,3.2 c0.8,0.8,1.2,1.9,1.2,3.2c0,4.6-2.8,5.6-5.5,5.9c0.4,0.4,0.8,1.1,0.8,2.2c0,1.6,0,2.9,0,3.3c0,0.3,0.2,0.7,0.8,0.6 c4.8-1.6,8.2-6.1,8.2-11.4C24,5.7,18.6,0.3,12,0.3z"/></svg></a>
+</header>
+<div class="layout">
+<nav id="nav" class="nav" aria-label="Guide"><p class="nav__title">Get started</p><ul><li><a href="index.html">Overview</a></li><li><a href="installation.html">Installation</a></li><li><a href="quick-start.html">Your first export</a></li><li><a href="panel.html">The panel</a></li></ul><p class="nav__title">Formats</p><ul><li><a href="formats.html">Choosing a format</a></li><li><a href="lottie.html">Lottie and dotLottie</a></li></ul><p class="nav__title">What is exported</p><ul><li><a href="animation.html">Animation</a></li><li><a href="appearance.html">Filters, blends and colour</a></li><li><a href="text.html">Text and fonts</a></li><li><a href="images-sounds.html">Images and sounds</a></li></ul><p class="nav__title">Interactive</p><ul><li><a href="interactivity.html">Interactivity</a></li><li><a href="player-api.html">Player API</a></li></ul><p class="nav__title">On the web</p><ul><li><a href="embedding.html" aria-current="page">Embedding on a web page</a></li><li><a href="accessibility.html">Accessibility</a></li><li><a href="performance.html">Small and fast</a></li></ul><p class="nav__title">Reference</p><ul><li><a href="command-line.html">Command line</a></li><li><a href="settings.html">Settings reference</a></li><li><a href="limits.html">Limits and troubleshooting</a></li><li><a href="changelog.html">What's new</a></li></ul></nav>
+<main id="content" class="content">
+<article><h1>Embedding on a web page</h1>
+<h2 id="four-ways"><a class="anchor" href="#four-ways" aria-hidden="true">#</a>Four ways</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>SMIL / CSS</th>
+<th>JS player</th>
+<th>Scripts run</th>
+<th>Scroll-driven CSS</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>&lt;img src=&quot;hero.svg&quot;&gt;</code></td>
+<td>✓</td>
+<td>first frame only</td>
+<td>–</td>
+<td>–</td>
+</tr>
+<tr>
+<td><code>&lt;object data=&quot;hero.svg&quot;&gt;</code></td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>–</td>
+</tr>
+<tr>
+<td>inline <code>&lt;svg&gt;…&lt;/svg&gt;</code> in the page</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+</tr>
+<tr>
+<td><code>&lt;flash2svg-player src=&quot;hero.svg&quot;&gt;</code></td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+</tr>
+</tbody></table>
+<p><strong>As an image</strong> — the simplest, and enough for SMIL and CSS exports that just play:</p>
+<div class="code"><button type="button" class="code__copy" aria-label="Copy"><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path d="M5 1H19" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" data-color="color-2" fill="none"/><path d="M21 5H3V22H21V5Z" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" fill="none"/></svg></button><pre class="shiki shiki-themes github-light-default github-dark-default" style="--shiki-light:#1f2328;--shiki-dark:#e6edf3;--shiki-light-bg:#ffffff;--shiki-dark-bg:#0d1117" tabindex="0"><code><span class="line"><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">&#x3C;</span><span style="--shiki-light:#116329;--shiki-dark:#7EE787">img</span><span style="--shiki-light:#0550AE;--shiki-dark:#79C0FF"> src</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">=</span><span style="--shiki-light:#0A3069;--shiki-dark:#A5D6FF">"hero.svg"</span><span style="--shiki-light:#0550AE;--shiki-dark:#79C0FF"> alt</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">=</span><span style="--shiki-light:#0A3069;--shiki-dark:#A5D6FF">"Our product in motion"</span><span style="--shiki-light:#0550AE;--shiki-dark:#79C0FF"> width</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">=</span><span style="--shiki-light:#0A3069;--shiki-dark:#A5D6FF">"640"</span><span style="--shiki-light:#0550AE;--shiki-dark:#79C0FF"> height</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">=</span><span style="--shiki-light:#0A3069;--shiki-dark:#A5D6FF">"360"</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">></span></span></code></pre></div>
+<p>An image is sandboxed: no scripts, no links, no loading of linked files, no clicks. <em>When visible</em> and <em>On scroll</em> simply play there.</p>
+<p><strong>As an object</strong> — for the JS player, links and buttons:</p>
+<div class="code"><button type="button" class="code__copy" aria-label="Copy"><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path d="M5 1H19" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" data-color="color-2" fill="none"/><path d="M21 5H3V22H21V5Z" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" fill="none"/></svg></button><pre class="shiki shiki-themes github-light-default github-dark-default" style="--shiki-light:#1f2328;--shiki-dark:#e6edf3;--shiki-light-bg:#ffffff;--shiki-dark-bg:#0d1117" tabindex="0"><code><span class="line"><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">&#x3C;</span><span style="--shiki-light:#116329;--shiki-dark:#7EE787">object</span><span style="--shiki-light:#0550AE;--shiki-dark:#79C0FF"> data</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">=</span><span style="--shiki-light:#0A3069;--shiki-dark:#A5D6FF">"hero.svg"</span><span style="--shiki-light:#0550AE;--shiki-dark:#79C0FF"> type</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">=</span><span style="--shiki-light:#0A3069;--shiki-dark:#A5D6FF">"image/svg+xml"</span><span style="--shiki-light:#0550AE;--shiki-dark:#79C0FF"> width</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">=</span><span style="--shiki-light:#0A3069;--shiki-dark:#A5D6FF">"640"</span><span style="--shiki-light:#0550AE;--shiki-dark:#79C0FF"> height</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">=</span><span style="--shiki-light:#0A3069;--shiki-dark:#A5D6FF">"360"</span><span style="--shiki-light:#0550AE;--shiki-dark:#79C0FF"> aria-label</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">=</span><span style="--shiki-light:#0A3069;--shiki-dark:#A5D6FF">"Our product in motion"</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">>&#x3C;/</span><span style="--shiki-light:#116329;--shiki-dark:#7EE787">object</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">></span></span></code></pre></div>
+<p><strong>Inline</strong> — paste the file&#39;s markup into your HTML, or insert it with a script. Every export has its own id prefix, so several exports can sit in one page without their ids clashing. Scroll-driven CSS needs this (or the web component).</p>
+<p><strong>The web component</strong> does the inlining for you, lazily — see <a href="player-api.html#the-web-component">Player API</a>.</p>
+<h2 id="size-on-the-page"><a class="anchor" href="#size-on-the-page" aria-hidden="true">#</a>Size on the page</h2>
+<p>By default (<em>Size: Stage size</em>) the SVG has the stage&#39;s width and height, and scales like any image when you give it another size in CSS — it&#39;s vector art.</p>
+<p>To make the animation <strong>fill whatever space the page gives it</strong>, choose one of Flash&#39;s scale modes in <em>Advanced › Size</em>:</p>
+<table>
+<thead>
+<tr>
+<th>Size</th>
+<th>Like Flash&#39;s</th>
+<th></th>
+</tr>
+</thead>
+<tbody><tr>
+<td><em>Fill the space, show all</em></td>
+<td><code>showAll</code></td>
+<td>the whole stage, letterboxed (in the stage colour when <em>Include stage colour</em> is on)</td>
+</tr>
+<tr>
+<td><em>Fill the space, no border</em></td>
+<td><code>noBorder</code></td>
+<td>covers the space, cropping what sticks out</td>
+</tr>
+<tr>
+<td><em>Stretch to the space</em></td>
+<td><code>exactFit</code></td>
+<td>distorted to fit exactly</td>
+</tr>
+</tbody></table>
+<div class="code"><button type="button" class="code__copy" aria-label="Copy"><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path d="M5 1H19" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" data-color="color-2" fill="none"/><path d="M21 5H3V22H21V5Z" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" fill="none"/></svg></button><pre class="shiki shiki-themes github-light-default github-dark-default" style="--shiki-light:#1f2328;--shiki-dark:#e6edf3;--shiki-light-bg:#ffffff;--shiki-dark-bg:#0d1117" tabindex="0"><code><span class="line"><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">&#x3C;</span><span style="--shiki-light:#116329;--shiki-dark:#7EE787">object</span><span style="--shiki-light:#0550AE;--shiki-dark:#79C0FF"> data</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">=</span><span style="--shiki-light:#0A3069;--shiki-dark:#A5D6FF">"banner.svg"</span><span style="--shiki-light:#0550AE;--shiki-dark:#79C0FF"> type</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">=</span><span style="--shiki-light:#0A3069;--shiki-dark:#A5D6FF">"image/svg+xml"</span><span style="--shiki-light:#0550AE;--shiki-dark:#79C0FF"> style</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">=</span><span style="--shiki-light:#0A3069;--shiki-dark:#A5D6FF">"width:100%;height:60vh"</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">>&#x3C;/</span><span style="--shiki-light:#116329;--shiki-dark:#7EE787">object</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">></span></span></code></pre></div>
+<h2 id="reduced-motion"><a class="anchor" href="#reduced-motion" aria-hidden="true">#</a>Reduced motion</h2>
+<p>Visitors who turned animations off in their system settings (<code>prefers-reduced-motion</code>) see the <strong>poster frame, still</strong> — in SMIL and CSS output, and in the JS player until they click it. This is on by default (<em>Still poster for &quot;reduce motion&quot;</em>; <code>--ignore-reduced-motion</code> on the command line). For SMIL it adds a still copy of the poster frame that shares the drawings: a few percent of the file.</p>
+<p>Browsers apply the setting to images too. To be sure, offer a still picture:</p>
+<div class="code"><button type="button" class="code__copy" aria-label="Copy"><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path d="M5 1H19" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" data-color="color-2" fill="none"/><path d="M21 5H3V22H21V5Z" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" fill="none"/></svg></button><pre class="shiki shiki-themes github-light-default github-dark-default" style="--shiki-light:#1f2328;--shiki-dark:#e6edf3;--shiki-light-bg:#ffffff;--shiki-dark-bg:#0d1117" tabindex="0"><code><span class="line"><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">&#x3C;</span><span style="--shiki-light:#116329;--shiki-dark:#7EE787">picture</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">></span></span>
+<span class="line"><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">  &#x3C;</span><span style="--shiki-light:#116329;--shiki-dark:#7EE787">source</span><span style="--shiki-light:#0550AE;--shiki-dark:#79C0FF"> media</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">=</span><span style="--shiki-light:#0A3069;--shiki-dark:#A5D6FF">"(prefers-reduced-motion: no-preference)"</span><span style="--shiki-light:#0550AE;--shiki-dark:#79C0FF"> srcset</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">=</span><span style="--shiki-light:#0A3069;--shiki-dark:#A5D6FF">"hero.svg"</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">></span></span>
+<span class="line"><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">  &#x3C;</span><span style="--shiki-light:#116329;--shiki-dark:#7EE787">img</span><span style="--shiki-light:#0550AE;--shiki-dark:#79C0FF"> src</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">=</span><span style="--shiki-light:#0A3069;--shiki-dark:#A5D6FF">"hero-still.svg"</span><span style="--shiki-light:#0550AE;--shiki-dark:#79C0FF"> alt</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">=</span><span style="--shiki-light:#0A3069;--shiki-dark:#A5D6FF">"Our product"</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">></span></span>
+<span class="line"><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">&#x3C;/</span><span style="--shiki-light:#116329;--shiki-dark:#7EE787">picture</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">></span></span></code></pre></div>
+<h2 id="fallbacks"><a class="anchor" href="#fallbacks" aria-hidden="true">#</a>Fallbacks</h2>
+<p>For places where SVG animation doesn&#39;t run — e-mail clients above all — export <strong>GIF</strong> or <strong>WebP</strong> as well and serve those there. Renderers without CSS (design tools, image viewers) show the poster frame of CSS exports from their <code>transform</code> attributes.</p>
+<h2 id="pausing-and-styling-css-exports"><a class="anchor" href="#pausing-and-styling-css-exports" aria-hidden="true">#</a>Pausing and styling CSS exports</h2>
+<p>A CSS export&#39;s animations are ordinary CSS animations, so your page can control them:</p>
+<div class="code"><button type="button" class="code__copy" aria-label="Copy"><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path d="M5 1H19" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" data-color="color-2" fill="none"/><path d="M21 5H3V22H21V5Z" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" fill="none"/></svg></button><pre class="shiki shiki-themes github-light-default github-dark-default" style="--shiki-light:#1f2328;--shiki-dark:#e6edf3;--shiki-light-bg:#ffffff;--shiki-dark-bg:#0d1117" tabindex="0"><code><span class="line"><span style="--shiki-light:#6E7781;--shiki-dark:#8B949E">/* pause every animation in the export until the user hovers */</span></span>
+<span class="line"><span style="--shiki-light:#0550AE;--shiki-dark:#79C0FF">.hero</span><span style="--shiki-light:#116329;--shiki-dark:#7EE787"> svg</span><span style="--shiki-light:#116329;--shiki-dark:#7EE787"> *</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">, </span><span style="--shiki-light:#0550AE;--shiki-dark:#79C0FF">.hero</span><span style="--shiki-light:#116329;--shiki-dark:#7EE787"> svg</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3"> { </span><span style="--shiki-light:#0550AE;--shiki-dark:#79C0FF">animation-play-state</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">: </span><span style="--shiki-light:#0550AE;--shiki-dark:#79C0FF">paused</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">; }</span></span>
+<span class="line"><span style="--shiki-light:#0550AE;--shiki-dark:#79C0FF">.hero:hover</span><span style="--shiki-light:#116329;--shiki-dark:#7EE787"> svg</span><span style="--shiki-light:#116329;--shiki-dark:#7EE787"> *</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">, </span><span style="--shiki-light:#0550AE;--shiki-dark:#79C0FF">.hero:hover</span><span style="--shiki-light:#116329;--shiki-dark:#7EE787"> svg</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3"> { </span><span style="--shiki-light:#0550AE;--shiki-dark:#79C0FF">animation-play-state</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">: </span><span style="--shiki-light:#0550AE;--shiki-dark:#79C0FF">running</span><span style="--shiki-light:#1F2328;--shiki-dark:#E6EDF3">; }</span></span></code></pre></div>
+<h2 id="serving-it"><a class="anchor" href="#serving-it" aria-hidden="true">#</a>Serving it</h2>
+<p>Let the server <strong>compress</strong> SVG, JSON and the player&#39;s script — preferably with Brotli — and cache it:</p>
+<table>
+<thead>
+<tr>
+<th>Server</th>
+<th></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>nginx</td>
+<td><code>brotli on; brotli_types image/svg+xml application/json;</code> or <code>gzip_types image/svg+xml application/json;</code></td>
+</tr>
+<tr>
+<td>Apache</td>
+<td><code>AddOutputFilterByType BROTLI_COMPRESS image/svg+xml application/json</code> (mod_brotli) or <code>DEFLATE</code> (mod_deflate)</td>
+</tr>
+<tr>
+<td>GitHub Pages, Netlify, Cloudflare</td>
+<td>compress SVG automatically</td>
+</tr>
+</tbody></table>
+<p>The 59 test documents as SMIL: 1310 KB, 391 KB gzipped, 357 KB with Brotli. See <a href="performance.html#compression">Performance</a> for <code>.svgz</code>.</p>
+</article>
+<nav class="pager" aria-label="Pages"><a class="pager__prev" href="player-api.html"><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path d="M16 21L7 12L16 3" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" fill="none"/></svg><span><small>Back</small>Player API</span></a><a class="pager__next" href="accessibility.html"><span><small>Next</small>Accessibility</span><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path d="M8 21L17 12L8 3" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" fill="none"/></svg></a></nav>
+<footer class="foot">Flash2SVG 4.3.0 · MIT licence · <a href="https://github.com/ZcarecroW/Flash2Svg">GitHub</a> · <a href="https://github.com/ZcarecroW/Flash2Svg/issues">Report a problem</a> · Icons by <a href="https://nucleoapp.com/">Nucleo</a></footer>
+</main>
+<nav class="toc" aria-label="On this page"><p class="toc__title">On this page</p><ul><li class="d2"><a href="#four-ways">Four ways</a></li><li class="d2"><a href="#size-on-the-page">Size on the page</a></li><li class="d2"><a href="#reduced-motion">Reduced motion</a></li><li class="d2"><a href="#fallbacks">Fallbacks</a></li><li class="d2"><a href="#pausing-and-styling-css-exports">Pausing and styling CSS exports</a></li><li class="d2"><a href="#serving-it">Serving it</a></li></ul></nav>
+</div>
+</body>
+</html>

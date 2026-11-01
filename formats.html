@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Choosing a format — Flash2SVG</title>
+<meta name="description" content="SMIL, CSS, the JS player, Automatic, still frames, GIF and WebP, Lottie and .lottie — what each format can do, where it plays and how big it gets.">
+<link rel="canonical" href="https://zcarecrow.github.io/Flash2Svg/formats.html">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<meta name="color-scheme" content="light dark">
+<script>try{var t=localStorage.getItem("f2s-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+<link rel="stylesheet" href="assets/site.ce32ae65.css">
+<script src="assets/site.50d4eda3.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#content">Skip to the content</a>
+<header class="top">
+<button type="button" class="top__menu" aria-label="Menu" aria-expanded="false" aria-controls="nav"><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><line x1="2" y1="12" x2="22" y2="12" fill="none" stroke="currentColor" stroke-linecap="square" stroke-miterlimit="10" stroke-width="2" data-color="color-2"/><line x1="2" y1="5" x2="22" y2="5" fill="none" stroke="currentColor" stroke-linecap="square" stroke-miterlimit="10" stroke-width="2"/><line x1="2" y1="19" x2="22" y2="19" fill="none" stroke="currentColor" stroke-linecap="square" stroke-miterlimit="10" stroke-width="2"/></svg></button>
+<a class="brand" href="index.html"><img src="favicon.svg" alt="" width="26" height="26">Flash2SVG <span class="brand__v">4.3</span></a>
+<div class="search"><label class="sr" for="q">Search the guide</label><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><line x1="20.5" y1="20.5" x2="15" y2="15" fill="none" stroke="currentColor" stroke-linecap="square" stroke-miterlimit="10" stroke-width="2" data-color="color-2"/><circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" stroke-linecap="square" stroke-miterlimit="10" stroke-width="2"/></svg><input id="q" type="search" placeholder="Search" autocomplete="off"><ul class="search__hits" role="listbox" hidden></ul></div>
+<button type="button" class="top__theme" aria-label="Switch between light and dark"><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path d="M12 18C15.3137 18 18 15.3137 18 12C18 8.68629 15.3137 6 12 6C8.68629 6 6 8.68629 6 12C6 15.3137 8.68629 18 12 18Z" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" fill="none"/><path d="M12 1V2" stroke="currentColor" stroke-width="2" stroke-linecap="square" data-color="color-2" fill="none"/><path d="M12 22V23" stroke="currentColor" stroke-width="2" stroke-linecap="square" data-color="color-2" fill="none"/><path d="M23 12L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="square" data-color="color-2" fill="none"/><path d="M2 12L1 12" stroke="currentColor" stroke-width="2" stroke-linecap="square" data-color="color-2" fill="none"/><path d="M19.7782 4.2218L19.0711 4.92891" stroke="currentColor" stroke-width="2" stroke-linecap="square" data-color="color-2" fill="none"/><path d="M4.92893 19.071L4.22183 19.7782" stroke="currentColor" stroke-width="2" stroke-linecap="square" data-color="color-2" fill="none"/><path d="M19.7782 19.7782L19.0711 19.0711" stroke="currentColor" stroke-width="2" stroke-linecap="square" data-color="color-2" fill="none"/><path d="M4.92893 4.92896L4.22183 4.22185" stroke="currentColor" stroke-width="2" stroke-linecap="square" data-color="color-2" fill="none"/></svg><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path d="M4 11.9309C4 16.9396 8.0596 21 13.0674 21C16.4803 21 19.4528 19.1141 21 16.3273C20.4852 16.4181 19.9554 16.4655 19.4145 16.4655C14.4068 16.4655 10.3472 12.4051 10.3472 7.39637C10.3472 5.80122 10.7589 4.30225 11.4819 3C7.23006 3.74996 4 7.46316 4 11.9309Z" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" stroke-linejoin="miter" fill="none"/></svg></button>
+<a class="top__gh" href="https://github.com/ZcarecroW/Flash2Svg" aria-label="Flash2SVG on GitHub" rel="noopener"><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill-rule="evenodd" clip-rule="evenodd" fill="currentColor" d="M12,0.3c-6.6,0-12,5.4-12,12c0,5.3,3.4,9.8,8.2,11.4 C8.8,23.8,9,23.4,9,23.1c0-0.3,0-1,0-2c-3.3,0.7-4-1.6-4-1.6c-0.5-1.4-1.3-1.8-1.3-1.8C2.5,17,3.7,17,3.7,17 c1.2,0.1,1.8,1.2,1.8,1.2c1.1,1.8,2.8,1.3,3.5,1c0.1-0.8,0.4-1.3,0.8-1.6c-2.7-0.3-5.5-1.3-5.5-5.9c0-1.3,0.5-2.4,1.2-3.2 C5.5,8.1,5,6.9,5.7,5.3c0,0,1-0.3,3.3,1.2c1-0.3,2-0.4,3-0.4c1,0,2,0.1,3,0.4c2.3-1.6,3.3-1.2,3.3-1.2c0.7,1.7,0.2,2.9,0.1,3.2 c0.8,0.8,1.2,1.9,1.2,3.2c0,4.6-2.8,5.6-5.5,5.9c0.4,0.4,0.8,1.1,0.8,2.2c0,1.6,0,2.9,0,3.3c0,0.3,0.2,0.7,0.8,0.6 c4.8-1.6,8.2-6.1,8.2-11.4C24,5.7,18.6,0.3,12,0.3z"/></svg></a>
+</header>
+<div class="layout">
+<nav id="nav" class="nav" aria-label="Guide"><p class="nav__title">Get started</p><ul><li><a href="index.html">Overview</a></li><li><a href="installation.html">Installation</a></li><li><a href="quick-start.html">Your first export</a></li><li><a href="panel.html">The panel</a></li></ul><p class="nav__title">Formats</p><ul><li><a href="formats.html" aria-current="page">Choosing a format</a></li><li><a href="lottie.html">Lottie and dotLottie</a></li></ul><p class="nav__title">What is exported</p><ul><li><a href="animation.html">Animation</a></li><li><a href="appearance.html">Filters, blends and colour</a></li><li><a href="text.html">Text and fonts</a></li><li><a href="images-sounds.html">Images and sounds</a></li></ul><p class="nav__title">Interactive</p><ul><li><a href="interactivity.html">Interactivity</a></li><li><a href="player-api.html">Player API</a></li></ul><p class="nav__title">On the web</p><ul><li><a href="embedding.html">Embedding on a web page</a></li><li><a href="accessibility.html">Accessibility</a></li><li><a href="performance.html">Small and fast</a></li></ul><p class="nav__title">Reference</p><ul><li><a href="command-line.html">Command line</a></li><li><a href="settings.html">Settings reference</a></li><li><a href="limits.html">Limits and troubleshooting</a></li><li><a href="changelog.html">What's new</a></li></ul></nav>
+<main id="content" class="content">
+<article><h1>Choosing a format</h1>
+<p>The same timeline can be written in nine ways. They differ in where they play, what they can do and how big they get. The demo below is one export; switch the tabs to compare.</p>
+<figure class="demo" data-demo="gears">
+<div class="demo__stage" style="aspect-ratio:480/270"><img src="demos/gears.smil.svg" alt="Nested movie clips: a gear with its own 4 s turn, two smaller ones turning back twice as fast, and two blinking lights. Sizes after gzip." width="480" height="270" loading="lazy" decoding="async"></div>
+<div class="demo__bar" role="tablist" aria-label="Format"><button type="button" role="tab" aria-selected="true" data-format="smil" data-src="demos/gears.smil.svg" title="8.7 KB, 1.8 KB gzipped">SMIL <small>1.8 KB</small></button><button type="button" role="tab" aria-selected="false" data-format="css" data-src="demos/gears.css.svg" title="6.4 KB, 1.8 KB gzipped">CSS <small>1.8 KB</small></button><button type="button" role="tab" aria-selected="false" data-format="player" data-src="demos/gears.player.svg" data-embed="object" title="21 KB, 8.2 KB gzipped">JS player <small>8.2 KB</small></button><button type="button" role="tab" aria-selected="false" data-format="lottie" data-src="demos/gears.lottie.json" title="19 KB, 2.8 KB gzipped">Lottie <small>2.8 KB</small></button><button type="button" role="tab" aria-selected="false" data-format="gif" data-src="demos/gears.gif.gif" title="429 KB">GIF <small>429 KB</small></button><button type="button" role="tab" aria-selected="false" data-format="webp" data-src="demos/gears.webp.webp" title="297 KB">WebP <small>297 KB</small></button><a class="demo__get" href="demos/gears.smil.svg" download title="Download this file"><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path d="M12 3V16.5V16" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" data-color="color-2" fill="none"/><path d="M8.5 13L12 16.5L15.5 13" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" data-color="color-2" fill="none"/><path d="M7 10H4L2 20H22L20 10H17" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" fill="none"/></svg><span class="sr">Download</span></a></div>
+<figcaption>Nested movie clips: a gear with its own 4 s turn, two smaller ones turning back twice as fast, and two blinking lights. Sizes after gzip.</figcaption>
+</figure><h2 id="at-a-glance"><a class="anchor" href="#at-a-glance" aria-hidden="true">#</a>At a glance</h2>
+<table>
+<thead>
+<tr>
+<th>Format</th>
+<th>Plays in <code>&lt;img&gt;</code></th>
+<th>Interactive</th>
+<th>Best for</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>SMIL</strong></td>
+<td>yes</td>
+<td>links, button states, start on click / hover / visible / scroll</td>
+<td>anything that just plays; the smallest file for tweens and shape tweens</td>
+</tr>
+<tr>
+<td><strong>CSS</strong></td>
+<td>yes</td>
+<td>links, button states, pause or restyle from your page, scroll-driven (inline)</td>
+<td>pages you control with CSS; smooth on weak devices</td>
+</tr>
+<tr>
+<td><strong>JS player</strong></td>
+<td>first frame only</td>
+<td>everything: buttons, code snippets, sounds, <code>play()</code> / <code>gotoAndPlay()</code></td>
+<td>interactive pieces, sound, banners with logic</td>
+</tr>
+<tr>
+<td><strong>Automatic</strong></td>
+<td>as chosen</td>
+<td>as chosen</td>
+<td>when you don&#39;t want to decide</td>
+</tr>
+<tr>
+<td><strong>Frames</strong></td>
+<td>yes (still)</td>
+<td>–</td>
+<td>design tools, sprite sheets, print</td>
+</tr>
+<tr>
+<td><strong>GIF</strong> / <strong>WebP</strong></td>
+<td>yes</td>
+<td>–</td>
+<td>e-mail and places without SVG animation</td>
+</tr>
+<tr>
+<td><strong>Lottie</strong> / <strong>.lottie</strong></td>
+<td>–</td>
+<td>through the player&#39;s API</td>
+<td>iOS, Android, Flutter, React Native, lottie-web</td>
+</tr>
+</tbody></table>
+<h2 id="smil"><a class="anchor" href="#smil" aria-hidden="true">#</a>SMIL</h2>
+<p>SVG&#39;s own animation elements (<code>&lt;animate&gt;</code>, <code>&lt;animateTransform&gt;</code>, <code>&lt;set&gt;</code>). Eases become exact <code>keySplines</code> curves, so a tween with one ease is one short animation — no frames. Shape tweens become one drawing whose path changes. It plays in every current browser, inside <code>&lt;img&gt;</code>, <code>&lt;object&gt;</code> or inline, and in many apps that show SVG.</p>
+<p>Use SMIL by default. It is usually the smallest file and needs no script. Buttons get their <em>Over</em> and <em>Down</em> states from CSS, <em>Go to Web Page</em> snippets become links, and the start modes work (<em>click</em> and <em>hover</em> everywhere, <em>when visible</em> and <em>on scroll</em> where scripts run).</p>
+<h2 id="css"><a class="anchor" href="#css" aria-hidden="true">#</a>CSS</h2>
+<p>CSS <code>@keyframes</code> on each animated element, using the individual <code>translate</code>, <code>rotate</code> and <code>scale</code> properties, <code>cubic-bezier()</code> eases and <code>linear()</code> for curves that one bezier can&#39;t follow. Browsers run transform and opacity animations on the compositor, so CSS output stays smooth when the page is busy. It is made for browsers from 2023 on (<code>linear()</code>: Chrome and Edge 113, Firefox 112, Safari 17.2); older ones use the closest classic timing for those curves, so nothing stands still.</p>
+<p>Pick CSS when your page wants to control the animation: <code>animation-play-state: paused</code> pauses it, your stylesheet can recolour it, and scroll-driven animations (<code>animation-timeline</code>) work when the SVG is inline. CSS can&#39;t change path data in Safari, so shape tweens are drawn frame by frame here (SMIL morphs them).</p>
+<h2 id="js-player"><a class="anchor" href="#js-player" aria-hidden="true">#</a>JS player</h2>
+<p>The artwork plus a compact timeline and a small runtime (15.2 KB; with sound 18.7 KB) that plays it with Flash&#39;s own rules: frame scripts, movie clips that keep running after the main timeline stops, buttons with <em>Up</em>, <em>Over</em> and <em>Down</em> states, the mouse handlers that Animate&#39;s Code Snippets panel writes, and frame sounds with their sync, loops and envelopes. Your page can control it: <code>play()</code>, <code>stop()</code>, <code>gotoAndPlay(&quot;label&quot;)</code>, <code>seek(seconds)</code> — see <a href="player-api.html">Player API</a>.</p>
+<p>Scripts don&#39;t run in <code>&lt;img&gt;</code>, so put the file in an <code>&lt;object&gt;</code>, inline it, or use the <a href="player-api.html#the-web-component"><code>&lt;flash2svg-player&gt;</code></a> element.</p>
+<h2 id="automatic"><a class="anchor" href="#automatic" aria-hidden="true">#</a>Automatic</h2>
+<p>Picks for you: the <strong>JS player</strong> when the animation needs it (sounds, mouse handlers from code snippets), otherwise <strong>CSS</strong> — or <strong>SMIL</strong> when SMIL is clearly smaller (more than 15 % smaller, typical for shape tweens). The result&#39;s warnings say which one it chose and why.</p>
+<h2 id="frames"><a class="anchor" href="#frames" aria-hidden="true">#</a>Frames</h2>
+<p>One still SVG per frame (<code>hero_1.svg</code>, <code>hero_2.svg</code>, …), or one for <em>Current frame</em>. Good for design tools — the <em>Inkscape / Illustrator (static)</em> preset draws text as outlines too — and for sprite sheets.</p>
+<h2 id="gif-and-webp"><a class="anchor" href="#gif-and-webp" aria-hidden="true">#</a>GIF and WebP</h2>
+<p>Animated pictures for places where SVG doesn&#39;t animate: e-mail clients, chat apps, old CMSes. <strong>GIF</strong> has 256 colours per frame and plays everywhere. <strong>WebP</strong> keeps full colour and transparency and is usually much smaller; current mail clients and browsers show it — lossless for flat drawings (exact, and smaller than lossy there), lossy at the image quality for gradients and photos, chosen by the export. Both hold the first pass of the animation as the SVG formats play it — movie clips that keep running on a one-frame timeline or after a <code>stop()</code> included — at most 1500 frames, and repeat it from the start (a part that plays once before a loop comes again; warned). Above 50 frames a second a GIF leaves out a picture now and then (browsers would show very short frames for a tenth of a second), keeping its length.</p>
+<h2 id="lottie-and-lottie"><a class="anchor" href="#lottie-and-lottie" aria-hidden="true">#</a>Lottie and .lottie</h2>
+<p>Lottie JSON for <a href="https://github.com/airbnb/lottie-web" rel="noopener">lottie-web<svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path d="M4 20L20 4L19.801 4.19902" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" data-color="color-2" fill="none"/><path d="M13 4H20V11" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" fill="none"/></svg></a> and the native players on iOS, Android, Flutter and React Native, and <strong>.lottie</strong> — a dotLottie archive with the animation, its images and a state machine that plays it as your <em>Loop</em> and <em>Start</em> settings say. See <a href="lottie.html">Lottie and dotLottie</a>.</p>
+<h2 id="sizes-compared"><a class="anchor" href="#sizes-compared" aria-hidden="true">#</a>Sizes compared</h2>
+<p>Measured on this guide&#39;s demos (gzipped, the way a server sends them):</p>
+<table>
+<thead>
+<tr>
+<th>Demo</th>
+<th>SMIL</th>
+<th>CSS</th>
+<th>JS player</th>
+<th>Lottie</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Nested gears</td>
+<td>1.8 KB</td>
+<td>1.8 KB</td>
+<td>8.2 KB</td>
+<td>2.8 KB</td>
+</tr>
+<tr>
+<td>Shape morph</td>
+<td>25 KB</td>
+<td>30 KB</td>
+<td>31 KB</td>
+<td>36 KB</td>
+</tr>
+<tr>
+<td>Easing</td>
+<td>3.6 KB</td>
+<td>3.6 KB</td>
+<td>10 KB</td>
+<td>8.0 KB</td>
+</tr>
+<tr>
+<td>Hero</td>
+<td>6.1 KB</td>
+<td>13 KB</td>
+<td>13 KB</td>
+<td>6.5 KB</td>
+</tr>
+</tbody></table>
+<p>The JS player&#39;s numbers include its runtime: 6.2 KB of the gzipped size (more with sounds, shape tween morphs or mouse handlers).</p>
+</article>
+<nav class="pager" aria-label="Pages"><a class="pager__prev" href="panel.html"><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path d="M16 21L7 12L16 3" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" fill="none"/></svg><span><small>Back</small>The panel</span></a><a class="pager__next" href="lottie.html"><span><small>Next</small>Lottie and dotLottie</span><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path d="M8 21L17 12L8 3" stroke="currentColor" stroke-width="2" stroke-miterlimit="10" stroke-linecap="square" fill="none"/></svg></a></nav>
+<footer class="foot">Flash2SVG 4.3.0 · MIT licence · <a href="https://github.com/ZcarecroW/Flash2Svg">GitHub</a> · <a href="https://github.com/ZcarecroW/Flash2Svg/issues">Report a problem</a> · Icons by <a href="https://nucleoapp.com/">Nucleo</a></footer>
+</main>
+<nav class="toc" aria-label="On this page"><p class="toc__title">On this page</p><ul><li class="d2"><a href="#at-a-glance">At a glance</a></li><li class="d2"><a href="#smil">SMIL</a></li><li class="d2"><a href="#css">CSS</a></li><li class="d2"><a href="#js-player">JS player</a></li><li class="d2"><a href="#automatic">Automatic</a></li><li class="d2"><a href="#frames">Frames</a></li><li class="d2"><a href="#gif-and-webp">GIF and WebP</a></li><li class="d2"><a href="#lottie-and-lottie">Lottie and .lottie</a></li><li class="d2"><a href="#sizes-compared">Sizes compared</a></li></ul></nav>
+</div>
+</body>
+</html>
