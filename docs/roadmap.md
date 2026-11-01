@@ -230,7 +230,7 @@ early). Found on the way: the player added a colour filter to `<defs>` each time
 appeared (f24-deep: 1278 after 12 s) — fixed, checked in `e2e-player`. Measured and kept: SMIL colour
 tweens animate an `feColorMatrix` the same way, but switching a colour filter per frame (as CSS
 does) made no difference in the five test documents with colour tweens (rendering work within
-1–5 %, their other animations redraw every frame anyway; gzip 3 % smaller to 21 % larger) and
+1–5 %, their other animations redraw every frame anyway; gzip 3 % larger to 21 % smaller) and
 would make the fades step. Open: CSS filter functions
 (`blur()`, `drop-shadow()`) interpolate cheaply but are isotropic and without strength — exact
 for some filters? Firefox keeps SMIL times in whole milliseconds (seeks round to 1 ms): loops
