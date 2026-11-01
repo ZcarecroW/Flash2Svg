@@ -1,6 +1,8 @@
 // E2E step 2: renders frames of each extracted fixture with the static renderer, rasterises them
 // in Edge (the real target; resvg alongside for information) and compares against Animate's own
 // PNG export.
+// The user guide's demos too, as guide:<name> (scene data in docs/guide/demos/models, Animate's frames
+// in docs/guide/demos/ref, both written by docs/guide/tools/demos.mjs).
 // Usage: node scripts/e2e-compare.ts [name,name,...] [--every=N] [--threshold=0.003] [--browser=msedge]
 //   [--images=jpeg|webp|avif|lossless]: re-encode the bitmaps first (lossy format, or all lossless)
 import { fork, type ChildProcess } from "node:child_process";
@@ -47,6 +49,14 @@ const TOLERANCE: Record<string, number> = {
 	"f49-fonts": 0.02,
 	"f55-strokes2": 0.008,
 	"f56-text3": 0.016,
+	// the guide's demos: labels and headlines are static text Animate hints (banner, easing, filters;
+	// the filters' gradient bevel at its light setting also draws a 1 px softer rim, ~0.1 %); text is
+	// dynamic text as f49; the morph's star splits into pieces Animate's preview draws apart (f45)
+	"guide:banner": 0.008,
+	"guide:easing": 0.005,
+	"guide:filters": 0.008,
+	"guide:text": 0.02,
+	"guide:morph": 0.03,
 };
 const imagesOpt = opt("images", "");
 const images: Partial<ImageSettings> | null = !imagesOpt ? null : imagesOpt === "lossless" ? {} : { imageLossy: imagesOpt as ImageSettings["imageLossy"] };
@@ -54,7 +64,25 @@ const codecs = createCodecs(nodeWasmLoader());
 // video components play only in a browser (scripts/e2e-video.ts checks them); Animate draws the
 // component's placeholder, Lottie has no video
 const VIDEO = new Set(["f51-video", "f52-video-canvas"]);
-const names = list ? list.split(",") : readdirSync(out).filter((d) => existsSync(join(out, d, "model", "scene.json")) && !VIDEO.has(d));
+const guideDemos = join(repo, "docs", "guide", "demos");
+const names = list
+	? list.split(",")
+	: [
+			...readdirSync(out).filter((d) => existsSync(join(out, d, "model", "scene.json")) && !VIDEO.has(d)),
+			...(existsSync(join(guideDemos, "ref"))
+				? readdirSync(join(guideDemos, "ref"))
+						.filter((d) => existsSync(join(guideDemos, "models", d, "scene.json")))
+						.map((d) => `guide:${d}`)
+				: []),
+		];
+/** Where a document's scene data, Animate's frames and this step's renders are. */
+function paths(name: string) {
+	if (name.startsWith("guide:")) {
+		const d = name.slice(6);
+		return { modelDir: join(guideDemos, "models", d), refDir: join(guideDemos, "ref", d), cmp: join(out, "guide-demos", d, "compare") };
+	}
+	return { modelDir: join(out, name, "model"), refDir: join(out, name, "ref"), cmp: join(out, name, "compare") };
+}
 
 interface Row {
 	name: string;
@@ -98,8 +126,7 @@ let failed = 0;
 // --text: dynamic and input text as <text> with the embedded fonts (default: Animate's outlines)
 const realText = process.argv.includes("--text");
 for (const name of names) {
-	const dir = join(out, name);
-	const modelDir = join(dir, "model");
+	const { modelDir, refDir, cmp } = paths(name);
 	let model: SceneModel = await withFonts(JSON.parse(readFileSync(join(modelDir, "scene.json"), "utf8")));
 	let files: FileSource = {
 		readText: (rel) => readFileSync(join(modelDir, rel), "utf8"),
@@ -118,14 +145,13 @@ for (const name of names) {
 	const ctx = createContext(model, files, { smooth: true, includeHiddenLayers: false, includeGuides: false, digits: 2 });
 	const root = model.roots[0]!;
 	const count = ctx.programs[root]!.frameCount;
-	const cmp = join(dir, "compare");
 	mkdirSync(cmp, { recursive: true });
 	const frames = new Set<number>();
 	for (let f = 0; f < count; f += every) frames.add(f);
 	frames.add(count - 1);
 	for (const f of [...frames].sort((a, b) => a - b)) {
-		const refFile = join(dir, "ref", `f${String(f + 1).padStart(4, "0")}.png`);
-		const single = join(dir, "ref", "f.png");
+		const refFile = join(refDir, `f${String(f + 1).padStart(4, "0")}.png`);
+		const single = join(refDir, "f.png");
 		const refPath = existsSync(refFile) ? refFile : count === 1 && existsSync(single) ? single : null;
 		if (!refPath) continue;
 		const { svg } = renderStatic(ctx, root, { frame: f, movieClips: "first", includeBackground: true, embedImages: true, textAsOutlines: !realText });

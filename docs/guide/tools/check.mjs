@@ -3,7 +3,8 @@
  * Checks the built guide (docs/guide/dist) in Edge, served over HTTP as on GitHub Pages:
  * every page at desktop and phone width (no console errors or failed requests, no sideways
  * scrolling, every image loads), every demo's every format tab (the image, player or Lottie
- * animation really shows), search and the theme switch.
+ * animation really shows; links of linked demos are there), the scroll-driven demo (follows the
+ * scroll, stands still without it), search and the theme switch.
  *
  *   node docs/guide/tools/check.mjs [https://zcarecrow.github.io/Flash2Svg/]
  *
@@ -97,34 +98,81 @@ try {
 					for (let k = 0; k < n; k++) {
 						const tab = fig.locator("[role=tab]").nth(k);
 						const format = await tab.getAttribute("data-format");
+						const embed = await tab.getAttribute("data-embed");
 						await tab.scrollIntoViewIfNeeded();
 						await tab.click();
 						tabs++;
 						const what = `${where} demo ${(await fig.getAttribute("data-demo")) ?? d} ${format}`;
 						const ok = await fig
-							.evaluate(async (f, format) => {
-								const until = async (fn, ms = 15000) => {
-									for (const t = Date.now(); Date.now() - t < ms; await new Promise((r) => setTimeout(r, 50))) if (await fn()) return true;
-									return false;
-								};
-								const stage = f.querySelector(".demo__stage");
-								if (format === "dotlottie") {
-									const a = stage.querySelector("a[download]");
-									// a zip archive
-									const b = a && new Uint8Array(await (await fetch(a.href)).arrayBuffer());
-									return !!b && b[0] === 0x50 && b[1] === 0x4b;
-								}
-								if (format === "lottie") return until(() => stage.querySelector(".demo__lottie svg g") && stage.querySelector(".demo__lottie")._anim?.isLoaded);
-								if (format === "player") return until(() => stage.querySelector("object")?.contentDocument?.documentElement?.flash2svg);
-								return until(() => {
-									const i = stage.querySelector("img");
-									return i && i.complete && i.naturalWidth > 0;
-								});
-							}, format)
+							.evaluate(
+								async (f, [format, embed]) => {
+									const until = async (fn, ms = 15000) => {
+										for (const t = Date.now(); Date.now() - t < ms; await new Promise((r) => setTimeout(r, 50))) if (await fn()) return true;
+										return false;
+									};
+									const stage = f.querySelector(".demo__stage");
+									if (format === "dotlottie") {
+										const a = stage.querySelector("a[download]");
+										// a zip archive
+										const b = a && new Uint8Array(await (await fetch(a.href)).arrayBuffer());
+										return !!b && b[0] === 0x50 && b[1] === 0x4b;
+									}
+									if (format === "lottie")
+										return until(() => stage.querySelector(".demo__lottie svg g") && stage.querySelector(".demo__lottie")._anim?.isLoaded);
+									if (format === "player") return until(() => stage.querySelector("object")?.contentDocument?.documentElement?.flash2svg);
+									// links and scripts: an <object> with the SVG document in it
+									if (embed === "object") return until(() => stage.querySelector("object")?.contentDocument?.documentElement?.localName === "svg");
+									return until(() => {
+										const i = stage.querySelector("img");
+										return i && i.complete && i.naturalWidth > 0;
+									});
+								},
+								[format, embed],
+							)
 							.catch((e) => e.message);
 						if (ok !== true) fail(what, `doesn't show (${ok})`);
 						if (!(await fig.locator(".demo__get").getAttribute("href"))?.length) fail(what, "no download link");
 					}
+				}
+				// the banner's button links (Go to Web Page) in SMIL and CSS
+				if (name === "animation.html")
+					for (const format of ["smil", "css"]) {
+						const fig = page.locator('.demo[data-demo="banner"]');
+						await fig.locator(`[data-format="${format}"]`).click();
+						const href = await fig
+							.evaluate(async (f) => {
+								for (const t = Date.now(); Date.now() - t < 10000; await new Promise((r) => setTimeout(r, 50))) {
+									const a = f.querySelector("object")?.contentDocument?.querySelector("a");
+									if (a) return a.getAttribute("xlink:href") ?? a.getAttribute("href");
+								}
+								return null;
+							})
+							.catch(() => null);
+						if (!href?.startsWith("https://")) fail(`${where} demo banner ${format}`, "the button isn't a link");
+					}
+				// the scroll demo follows the page's scroll, and only that
+				if (name === "interactivity.html") {
+					const wheel = async () =>
+						page.evaluate(() => {
+							const fig = document.querySelector('.demo[data-demo="scroll"] svg');
+							const g = [...fig.querySelectorAll("[class]")].find((e) => getComputedStyle(e).rotate !== "none");
+							return g ? parseFloat(getComputedStyle(g).rotate) : NaN;
+						});
+					const at = async (k) => {
+						await page.evaluate((k) => {
+							const r = document.querySelector('.demo[data-demo="scroll"]').getBoundingClientRect();
+							// k = 0: the demo's bottom at the window's bottom; k = 1: its top at the window's top
+							scrollTo(0, scrollY + r.bottom - innerHeight + k * (innerHeight - r.height));
+						}, k);
+						await page.waitForTimeout(150);
+						return wheel();
+					};
+					const a = await at(0.2),
+						b = await at(0.8);
+					await page.waitForTimeout(600);
+					const c = await wheel();
+					if (!(Math.abs(b - a) > 90)) fail(where, `the scroll demo doesn't follow the scroll (wheel ${a}° → ${b}°)`);
+					if (Math.abs(c - b) > 0.5) fail(where, `the scroll demo moves without scrolling (${b}° → ${c}°)`);
 				}
 				// search finds pages; the theme switch flips the theme
 				if (name === "index.html") {

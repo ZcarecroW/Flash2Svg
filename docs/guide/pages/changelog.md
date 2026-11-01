@@ -7,6 +7,10 @@ description: The main changes in each Flash2SVG version since the version 4 rewr
 
 The full list is in the [changelog](https://github.com/ZcarecroW/Flash2Svg/blob/main/CHANGELOG.md); downloads are on the [releases page](https://github.com/ZcarecroW/Flash2Svg/releases).
 
+## 4.2.2
+
+**CSS fixed in Chrome and Edge.** While a CSS export ran, Chrome and Edge drew some objects in the wrong place — an object that moves and scales at once, whose transformation point also shifts (the banner's button on [Animation](animation.md#frame-scripts) sat in the top-left corner). Every CSS export is now also checked running, not only paused. **On scroll** now also works inside boxes with `overflow: hidden`, in an `<object>` and in browsers without scroll-driven animations ([Interactivity](interactivity.md#on-scroll)). In this guide: the scroll demo really follows the scroll, the filters demo shows all seven filters clearly, the banner's button is a clickable link, and a new demo shows [motion guides](animation.md#motion-guides).
+
 ## 4.2.1
 
 **GIF and WebP fixed.** Movie clips that keep running — on a one-frame main timeline, or after a `stop()` — now play in GIF and WebP as they do in the SVG formats (the gears demo on [Formats](formats.md) was a still picture). Above 50 frames a second they keep their speed (browsers slowed very short frames down to a tenth of a second). Animated WebP is lossless where that is smaller: flat drawings come out exact and smaller than the GIF. Long full-HD exports need a few pictures of memory instead of all of them (2.1 GB → 0.2 GB).

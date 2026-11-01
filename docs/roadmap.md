@@ -119,7 +119,7 @@ support (sources below) before starting a package.
 - ✅ Start triggers: hover and click (before), *when visible* (half on screen): SMIL and CSS hold the animation with a few lines of script (IntersectionObserver), so it still plays where scripts don't run; the player starts on its first sight (`src/core/emit/triggers.ts`).
 - ✅ Scroll scrubbing (*on scroll*: while fully visible = `contain`, while crossing = `cover`, or the page's scroll):
   - Measured first: Edge 156, Firefox 159 (now on by default) and WebKit 27.2 run scroll-driven animations alike, a named `view-timeline` on the `<svg>` drives its children, and time durations and delays map onto the range proportionally per animation (so every animation keeps the export's length, played once). The `animation` shorthand resets `animation-timeline`: the timeline rule comes after the animation rules.
-  - CSS: inline SVG only. SMIL and the player: a script sets the time from the position (the same ranges), also in an `<object>` of the same origin; alone or in `<img>` it just plays. The player scrubs forward step by step and replays from the start backwards (7 ms a frame for 150 tweened symbols).
+  - CSS: the browser's timeline inline in a page that scrolls normally; elsewhere (an `<object>`, inside a box with `overflow: hidden` — the view timeline then follows that box and stands still —, browsers without scroll timelines) a script sets the time (2026-11-01). SMIL and the player: a script sets the time from the position (the same ranges), also in an `<object>` of the same origin; alone or in `<img>` it just plays. The player scrubs forward step by step and replays from the start backwards (7 ms a frame for 150 tweened symbols).
   - `scripts/e2e-triggers.ts`: frames at scroll positions against the static frames, inline and in an `<object>` (served over HTTP), in Edge, Firefox and WebKit.
 - ✅ Animate's code snippets (`src/core/snippets.ts`): mouse handlers in AS3 and Canvas syntax (named functions, `.bind(this)`, `.on()`, function literals, arrows) on this timeline or named instances; in the handlers goto/play/stop/next/previous frame on this timeline, the root, the parent or named instances, `visible`, web pages. The player runs them (a build with the handler code only when needed: 14.6 → 17.4 KB); SMIL/CSS/frames turn web pages into SVG links. Their jumps had been mistaken for frame actions. Test document f47.
   - Found on the way (player): a `stop()` on frame 1 was overridden by the automatic start, and movie clips created at the start or after a jump skipped their first frame's script.
@@ -154,7 +154,69 @@ support (sources below) before starting a package.
 - ✅ Raster fallbacks: animated GIF (gifenc) and animated WebP (own muxer, changed rectangles), `src/core/raster.ts`; resvg-wasm in the CLI, the browser in the panel; `scripts/e2e-raster.ts`. (MP4 / AVIF sequences: not done — no small encoder without FFmpeg; WebCodecs could do H.264 in the panel.)
 - ✅ Pick the format automatically (`auto`): the player for sounds / mouse handlers, else CSS unless SMIL is more than 15 % smaller (test documents: CSS 40, SMIL 5, player 3).
 
+## Part 2: every Flash feature (research of 2026-11-01)
+
+Goal: everything a Flash/Animate document can do comes out of Flash2SVG — exactly where the
+format allows it, otherwise as close as possible and warned. Animate is in maintenance mode at
+2024 (24.0.x, no new features), so the target is fixed. Feature list from Animate's
+documentation and release notes (2017–2024: camera, layer depth, layer parenting, layer effects,
+Asset Warp with bones, Flexi bones and the envelope deformer, modern rigging, frame picker and
+auto lip-sync, last-frame looping), the Code Snippets panel and Flash Player itself. For
+comparison: Ruffle (a Flash Player in WebAssembly) runs ActionScript 3 at roughly 90 % of the
+language and 80 % of the API after years of work — a whole AS3 virtual machine is not the goal,
+the AS3 that Animate users actually write is.
+
+### Where we stand
+| Area | Status | Notes |
+|---|---|---|
+| Shapes, gradients (focal point, spread, linear RGB), bitmap fills, stroke styles | ✅ | checked against Animate's frames |
+| Stroke scale *Horizontal* / *Vertical* | 🟡 | drawn like *Normal* (warned) |
+| Variable-width strokes, art and pattern brushes, fluid brush | ❓ | come through Animate's SVG export; never tested |
+| Static, dynamic, input text; fonts embedded | ✅ | input text isn't editable in the output (❓ check) |
+| Bitmaps, smoothing, compression, downscaling | ✅ | |
+| Filters (all 7), colour effects, blend modes, layer effects | ✅ | tweened filters are written as one `<filter>` per frame: the filters demo is 284 KB (19 KB gzip) |
+| Masks, 9-slice | ✅ / 🟡 | 9-slice: animated scale of symbols with nested symbols |
+| Classic and motion tweens, eases, shape tweens with hints | ✅ | |
+| Motion guides, orient to path, motion-tween paths | 🟡 | exact, but Animate's frames (a keyframe per frame), not the path |
+| Graphic looping, frame picker, lip sync, movie clips, scenes | ✅ | SMIL/CSS: clips with unrelated loop lengths jump at the repeat (player exact) |
+| Layer parenting, modern rigging (scale/skew/flip) | ✅ / ❓ | the 2022 rigging never tested |
+| Camera pan, zoom, rotate | ✅ | camera colour effects ⬜; layer depth (parallax) ❓ |
+| 3D rotation and translation (perspective) | 🟡 | 2D projection |
+| IK armatures (bones on symbols and on shapes) | ⬜ | not exported; what JSFL reads of a pose layer is unknown |
+| Asset Warp, Flexi bones, envelope deformer (2020–2023) | ❓ | Animate turns vectors into bitmaps for warping by default; never tested |
+| Sounds | ✅ player / ⬜ SMIL, CSS, Lottie | |
+| Video components / video in the timeline | ✅ / ⬜ | |
+| Buttons (states, hit area), links, start triggers, scroll | ✅ | hit area ❓ in SMIL/CSS |
+| Frame scripts | 🟡 | `stop`/`play`/`goto`/counters; other conditions always run (warned) |
+| Code snippets | 🟡 | mouse events, timeline navigation, visibility, web pages; not: drag and drop, keyboard, `ENTER_FRAME`, timers, random, text, sounds, fades, load/unload |
+| ActionScript in general (variables, conditions, loops, Math, properties) / Canvas JavaScript | ⬜ | |
+| UI components (Button, CheckBox, ComboBox, … ; Canvas jQuery UI components) | ⬜ | |
+| *Export as bitmap* / *cache as bitmap* on instances | ⬜ | drawn as vectors (looks the same; never a bitmap) |
+
+### Packages, in the suggested order
+| # | Package | Benefit | Effort | Status |
+|---|---|---|---|---|
+| 8 | Motion along paths: motion guides and motion-tween paths as real paths (SMIL `animateMotion` with `keyPoints` and `rotate="auto"`, CSS `offset-path`, the player, Lottie position keys with spatial tangents) | smoother (any frame rate), smaller; the user's request | medium | ⬜ |
+| 9 | Animated filters as animated filter primitives (SMIL and player animate `stdDeviation`, `dx`, `slope`, colours; CSS keeps a filter per frame where nothing else is exact) | filter animations ~10× smaller | medium | ⬜ |
+| 10 | Measure-first sweep: a test document each for IK (symbols, shapes), Asset Warp (bitmap and vector, Flexi bones, envelope), layer depth with the camera, modern rigging, variable-width strokes and brushes, input text, button hit areas, 3D — extracted and compared with Animate's frames; fix what breaks | turns every ❓ into ✅ or a known gap | medium | ⬜ |
+| 11 | Bones and warps: whatever 10 finds missing (poses baked to transforms like guided tweens; deformed shapes as morphs or frames) | rigged characters export | medium–high | ⬜ |
+| 12 | Scripts in the player: Animate's AS3 (a subset compiled to JavaScript at export: variables, conditions, loops, functions, Math, display-object properties, events — mouse, keyboard, `ENTER_FRAME`, timers, drag and drop, text, sounds) and Canvas documents' JavaScript (run as it is, on a CreateJS-like `this`); every code snippet Animate offers that a browser can do; what can't be compiled is warned | interactive pieces, simple games | high | ⬜ |
+| 13 | Remaining appearance: camera colour effects, stroke scale *Horizontal*/*Vertical*, 3D with real perspective where the format allows (measure: CSS 3D, Lottie 3D layers), *Export as bitmap* | fidelity | medium | ⬜ |
+| 14 | Sounds outside the player: SMIL/CSS with a few lines of script (inline, `<object>`), Lottie audio layers where players support them | sound everywhere a script runs | medium | ⬜ |
+| 15 | Input text and UI components as real HTML controls (`<foreignObject>`), working in the player | forms, quizzes | medium | ⬜ |
+| 16 | Video: MP4/WebM export through WebCodecs in the panel, APNG; video embedded in the timeline if Animate can hand over its frames | social media, lossless with alpha | medium | ⬜ |
+
+Found while answering the guide feedback of 2026-11-01 (fixed, unreleased): Chromium 156 drew
+CSS exports wrong while running (a moving `transform` animation next to separate
+`translate`/`rotate`/`scale` ones: 18 of 59 documents) — `scripts/e2e-running.ts` checks every
+CSS export running against paused now; CSS on scroll stood still inside `overflow: hidden` boxes
+and in `<object>` — a script takes over there. Still open: the gradient bevel at low quality
+draws a 1 px softer rim than Animate (~0.1 % of the filters demo).
+
 ## Sources
+- Animate features: https://helpx.adobe.com/animate/using/whats-new/2023.html, https://www.videohelp.com/software/Flash-Professional/version-history, https://helpx.adobe.com/animate/desktop/animation/bone-tool-animation.html, https://helpx.adobe.com/animate/desktop/interactivity/add-interactivity-code-snippets.html, https://community.adobe.com/t5/animate-discussions/asset-warp-tool-creates-bitmaps-when-generating-mesh/m-p/12602916
+- Ruffle: https://en.wikipedia.org/wiki/Ruffle_(software), https://ruffle.rs/blog/2024/09/12/optimisations-text-more
+- `offset-path`: https://www.cssportal.com/css-properties/offset-path.php (support on SVG elements: to be measured)
 - SVGator: https://www.svgator.com/help/export-and-file-formats, https://www.svgator.com/alternatives/svgator-vs-lottielab, https://us.fitgap.com/products/008879/svgator
 - dotLottie: https://lottiefiles.com/dotlottie, https://docs.lottiefiles.com/en/format/dotlottie/why-dotlottie.md, https://docs.lottiefiles.com/en/runtimes
 - Lottie in Animate: https://community.adobe.com/t5/animate-discussions/export-to-lottie/m-p/9451694, https://aescripts.com/lottiefiles/

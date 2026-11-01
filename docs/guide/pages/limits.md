@@ -25,7 +25,7 @@ The Flash2SVG panel was saved as open in your workspace and then the extension w
 
 ### Scroll-driven CSS doesn't follow the scroll
 
-It needs the SVG **inline** in the page (or `<flash2svg-player>`), and a browser with scroll-driven animations (Chrome and Edge 115+, Safari 26, current Firefox). SMIL and the JS player also work in an `<object>` of the same site.
+It follows the page inline, in an `<object>` or `<iframe>` of the same site and in `<flash2svg-player>` — also inside boxes with `overflow: hidden` and in browsers without scroll-driven animations (a script takes over). Opened by itself, in an `<img>` or in a frame of another site it just plays: scripts can't see the page from there.
 
 ### No sound
 

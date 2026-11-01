@@ -15,7 +15,13 @@ Flash2SVG reads the timeline the way Flash plays it, and checks every tween agai
 
 *Smooth tweens* (on by default) interpolates between frames at the screen's rate. Turn it off for one step per frame, exactly like the SWF — the "limited animation" look.
 
-**Motion guides** and **orient to path**, rotations (*CW*, *CCW* with a number of turns, *Auto*) and tweens of colour effects and filters are all covered.
+Rotations (*CW*, *CCW* with a number of turns, *Auto*) and tweens of colour effects and filters are all covered.
+
+## Motion guides
+
+A classic tween on a guided layer follows the curve drawn on its **motion guide** — any stroke, drawn with the pencil, the pen or as lines bent into curves. *Orient to path* turns the symbol with the curve. The guide layer itself isn't exported; draw the curve on a normal layer too if it should show.
+
+::: demo path smil,css,player,lottie The ball follows a motion guide drawn as a free curve; the dart behind it has *Orient to path* on and turns with the curve.
 
 ## Shape tweens
 
@@ -62,7 +68,7 @@ Frame scripts aren't run as code, but the playback commands in them are followed
 
 Other conditions always run (warned), and a jump to a label that doesn't exist is left out (Flash stops the script there).
 
-::: demo banner smil,css,player A 300×250 banner: the intro plays once, then the button pulses — three times in all, then it stops, as its frame script says.
+::: demo banner smil,css,player A 300×250 banner: the intro plays once, then the button pulses — three times in all, then it stops, as its frame script says. The button is a button symbol with Animate's *Go to Web Page* snippet: point at it, click it (it opens the project's page in a new tab).
 
 ## Layers and more
 

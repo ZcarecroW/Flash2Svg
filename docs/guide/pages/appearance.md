@@ -9,7 +9,7 @@ description: How Animate's filters, blend modes, colour effects, gradients, bitm
 
 All of Animate's filters export, also tweened: **blur**, **drop shadow**, **glow**, **bevel**, **gradient glow**, **gradient bevel** and **adjust colour** — with *inner*, *knockout* and *hide object*, any quality, any strength. They are checked against Animate's own rendering and match within a fraction of a percent of the pixels.
 
-::: demo filters smil,css,player,lottie Drop shadow, glow, bevel and blur, each tweened up and back.
+::: demo filters smil,css,player,lottie All seven of Animate's filters, each tweened from a light setting up to a strong one and back.
 
 Two things work as in Animate, which can surprise:
 

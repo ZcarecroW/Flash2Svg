@@ -31,7 +31,7 @@ import { blendHides, blendSubtract, blendWhite, colorMatrix, cssBlendMode, isAlp
 import { alignTracks, encodeKeyframes, groupFrames, withLegacyTiming, type MKey } from "./keyframes.ts";
 import { StaticRenderer } from "./static.ts";
 import { outlineText, textField, textNode } from "./text.ts";
-import { scrollCss, scrollScript, visibleScript, type ScrollRange } from "./triggers.ts";
+import { scrollCss, scrollScript, scrollScriptCss, visibleScript, type ScrollRange } from "./triggers.ts";
 import { clickLink } from "../snippets.ts";
 import { playheadFrame } from "./timing.ts";
 
@@ -709,6 +709,12 @@ class Writer {
 			if (g2) g2.push(s);
 			else groups.push([s]);
 		}
+		// A moving `transform` in an animation of its own next to moving translate/rotate/scale:
+		// Chromium (156) then runs only the `transform` animation on the compositor and draws the
+		// element without the others (the banner's pulsing button sat at 0,0). Measured: one
+		// animation holding them all, or the `transform` on an element inside, draw right everywhere.
+		if (groups.length > 1 && X.length && slots[slots.length - 1]!.moving)
+			return this.cssTransformElement(this.cssTransformElement(inner, undefined, undefined, undefined, X, md), T, R, S, [], md);
 		const valuesAt = (s: Slot, tr: GTrack[]) => tr.map((x) => trackValueAt(x, 0)).slice(0, s.tracks.length);
 		// constants for the first keyframes: still slots, and the identity standing in for the attribute
 		const still = slots.filter((s) => !moves(s)).map((s) => s.body(s.tracks.map((x) => trackValueAt(x, 0))));
@@ -1118,6 +1124,7 @@ class Writer {
 			if (begin === "click")
 				this.doc.scripts.push(`document.getElementById(${JSON.stringify(this.svgId)}).addEventListener("click",function(){this.classList.add("playing")});`);
 			if (begin === "visible") this.doc.scripts.push(visibleScript(this.svgId, true));
+			if (begin === "scroll" && this.H > 1) this.doc.scripts.push(scrollScriptCss(this.svgId, range, this.H / this.fps));
 		}
 		if (!this.css && this.H > 1) {
 			if (begin === "visible") this.doc.scripts.push(visibleScript(this.svgId, false));

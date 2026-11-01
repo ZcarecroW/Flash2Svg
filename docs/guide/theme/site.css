@@ -578,7 +578,9 @@ article img {
 .demo {
 	border: 1px solid var(--line);
 	border-radius: 12px;
-	overflow: hidden;
+	/* clip, not hidden: hidden makes the box a scroll container, and the scroll-driven demo's
+	   view timeline would then follow it (it never scrolls) instead of the page */
+	overflow: clip;
 	background: var(--bg-soft);
 }
 .demo__stage {

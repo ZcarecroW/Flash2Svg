@@ -1,7 +1,8 @@
 /*
  * Runs the exporter's extractor on the guide's demo documents (docs/guide/demos/fla/*.fla) and
  * writes their scene data to docs/guide/demos/models/<name>/ — what the panel's Export does
- * before it compiles. Reads the names from docs/guide/demos/fla/extract.txt.
+ * before it compiles, and Animate's own PNG of every frame to docs/guide/demos/ref/<name>/ (for
+ * scripts/e2e-compare.ts). Reads the names from docs/guide/demos/fla/extract.txt.
  */
 (function () {
 	var here = fl.scriptURI.replace(/\/[^\/]*$/, "");
@@ -18,7 +19,12 @@
 			if (FLfile.exists(out)) FLfile.remove(out);
 			var doc = fl.openDocument(here + "/fla/" + name + ".fla");
 			var res = Flash2Svg.run({ outDir: out });
-			log.push(name + ": " + res + " (" + (new Date().getTime() - t0) + " ms)");
+			// Animate's own rendering of every frame (ref/<name>/f0001.png...), for scripts/e2e-compare.ts
+			var ref = here + "/ref/" + name;
+			if (FLfile.exists(ref)) FLfile.remove(ref);
+			FLfile.createFolder(ref);
+			var png = doc.exportPNG(ref + "/f.png", true, false);
+			log.push(name + ": " + res + (png ? "" : ", PNG export failed") + " (" + (new Date().getTime() - t0) + " ms)");
 			fl.closeDocument(doc, false);
 		} catch (e) {
 			log.push(name + ": ERROR " + e + (e.lineNumber ? " line " + e.lineNumber : ""));

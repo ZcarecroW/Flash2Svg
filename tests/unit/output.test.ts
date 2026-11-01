@@ -12,7 +12,57 @@ function compile(name: string, settings: Partial<ExportSettings>) {
 	return compileScene(model, files, settings);
 }
 
+/** Per element (class): for each of its animations, the properties whose value changes. */
+function animatedProps(svg: string): Map<string, string[][]> {
+	const css = svg.match(/<style>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/style>/)?.[1] ?? "";
+	const moving = new Map<string, string[]>();
+	for (const m of css.matchAll(/@keyframes (\S+?)\{((?:[^{}]*\{[^}]*\})*)\}/g)) {
+		const seen = new Map<string, Set<string>>();
+		for (const b of m[2]!.matchAll(/\{([^}]*)\}/g))
+			for (const d of b[1]!.split(";")) {
+				const i = d.indexOf(":");
+				if (i > 0 && !d.startsWith("animation-")) (seen.get(d.slice(0, i)) ?? seen.set(d.slice(0, i), new Set()).get(d.slice(0, i))!).add(d.slice(i + 1));
+			}
+		moving.set(
+			m[1]!,
+			[...seen].filter(([, v]) => v.size > 1).map(([p]) => p),
+		);
+	}
+	const out = new Map<string, string[][]>();
+	for (const m of css.matchAll(/ \.(\S+?)\{([^}]*)\}/g)) {
+		// the last `animation` declaration (the first one is the fallback for browsers before linear())
+		const parts = m[2]!.split(/;(?=animation:)/);
+		const decl = parts[parts.length - 1]!;
+		if (!decl.startsWith("animation:")) continue;
+		const names = decl
+			.slice(10)
+			.split(/,(?![^(]*\))/)
+			.map((a) => a.trim().split(" ")[0]!);
+		out.set(
+			m[1]!,
+			names.map((n) => moving.get(n) ?? []),
+		);
+	}
+	return out;
+}
+
 describe("CSS output", () => {
+	it("never runs a moving `transform` next to a separate translate/rotate/scale animation", () => {
+		// Chromium 156 composites the `transform` animation alone and drops the others (the guide's
+		// banner); scripts/e2e-running.ts checks the drawing, this the structure
+		for (const name of ["f02-eases", "f03-transforms", "f06-motionobject", "f09-guide", "f12-labels", "f28-onestop"]) {
+			for (const smooth of [true, false]) {
+				const svg = compile(name, { format: "css", smooth }).files[0]!.svg;
+				for (const [cls, anims] of animatedProps(svg)) {
+					if (anims.length < 2) continue;
+					const tf = anims.findIndex((p) => p.includes("transform"));
+					const ind = anims.findIndex((p, i) => i !== tf && p.some((x) => x === "translate" || x === "rotate" || x === "scale"));
+					expect(tf >= 0 && ind >= 0, `${name} .${cls}: ${JSON.stringify(anims)}`).toBe(false);
+				}
+			}
+		}
+	});
+
 	it("gives every @keyframes an explicit end when it does not repeat", () => {
 		// f12-labels ends on stop(); f02-eases is forced to play once
 		for (const [name, loop] of [

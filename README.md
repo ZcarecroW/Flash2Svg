@@ -457,7 +457,12 @@ download) and compares them frame by frame (smooth and stepped, plus the end sta
 drives the JS player's API, buttons and sounds, and inlines several exports into one HTML page
 (ids are unique per export, so they don't clash). The browser check also runs in Firefox (the
 installed one) and WebKit: `node scripts/e2e-browser.ts --browser=firefox` or `--browser=webkit`
-(once: `node node_modules/playwright-core/cli.js install webkit`).
+(once: `node node_modules/playwright-core/cli.js install webkit`). Those checks pause and seek,
+and a paused frame is drawn by the browser's main thread; `scripts/e2e-running.ts` draws every
+CSS export *running* (at a playback rate so low it stands still, so the compositor draws it) and
+compares it with the paused frame, in Edge and WebKit. The user guide's demos are checked against
+Animate's own frames too (`node scripts/e2e-compare.ts guide:<name>`, after
+`node docs/guide/tools/demos.mjs`).
 
 `npm run e2e:ui` checks the panel's interface without Animate (after `npm run build`): the built
 panel in Edge with a stand-in for Animate's host — every "i" tip (hover, keyboard, pinned, its

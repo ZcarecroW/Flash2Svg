@@ -12,6 +12,8 @@
 //  11. plays the video components (inline and in an <object>)
 //  12. checks the panel's interface (tips, icons, layout, contrast, presets) without Animate
 //  13. checks CSS output in browsers from before linear() easing (simulated): every animation runs
+//  14. checks that running CSS animations draw what paused ones draw (the compositor; Edge and WebKit),
+//      for the test documents and the user guide's demos
 // Usage: node scripts/e2e.mjs [names] [--rebuild] [--skip-animate]
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
@@ -47,5 +49,7 @@ if (!names) failed += run("e2e-raster.ts");
 if (!names) failed += run("e2e-video.ts");
 if (!names) failed += run("e2e-panel-ui.ts");
 if (!names) failed += run("e2e-compat.ts");
+failed += run("e2e-running.ts", names ? [names] : []);
+if (!names) failed += run("e2e-running.ts", ["--browser=webkit"]);
 console.log(failed ? `\nE2E: ${failed} step(s) reported failures` : "\nE2E: all good");
 process.exitCode = failed ? 1 : 0;

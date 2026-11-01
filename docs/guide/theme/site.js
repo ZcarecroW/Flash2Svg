@@ -61,7 +61,7 @@
 				stage.querySelector(".demo__lottie")?._anim?.destroy();
 				const [w, h] = (stage.style.aspectRatio || "16/9").split("/").map((x) => x.trim());
 				let el;
-				if (format === "player") {
+				if (format === "player" || tab.dataset.embed === "object") {
 					el = document.createElement("object");
 					el.type = "image/svg+xml";
 					el.data = src;

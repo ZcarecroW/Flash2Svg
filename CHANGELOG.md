@@ -1,5 +1,33 @@
 # Changelog
 
+## 4.2.2 (2026-11-01)
+
+- **CSS output drew some animated objects in the wrong place in Chrome and Edge** (Chromium 156,
+  while the animation ran; paused frames, which the tests compared, were right): an element with
+  a moving `transform` animation next to a separate `translate`/`rotate`/`scale` animation is
+  run on the compositor without the latter. The guide's banner button sat at the top-left corner;
+  18 of 59 test documents and guide demos were affected, the photo demo 91 % of its pixels. The
+  `transform` part now goes on an element inside (+1.8 KB over 146 CSS exports, +0.05 %). New
+  check `scripts/e2e-running.ts`: every CSS export drawn running (at a playback rate so low it
+  stands still, so the compositor draws it) against paused, in Edge and WebKit; a unit test
+  checks the structure.
+- **CSS on scroll inside a box with `overflow: hidden`, in an `<object>` and in browsers
+  without scroll-driven animations**: the view timeline follows the nearest scroll container, and
+  such a box never scrolls — the animation stood still (the guide's scroll demo, in its rounded
+  frame). A few lines of script now set the time from the scroll position where the browser's
+  timeline can't follow the page; inline in a page that scrolls normally the browser still runs
+  it. WebKit drops CSS animations whose timeline changes and finds none with
+  `svg.getAnimations({subtree: true})`: both worked around. Checked inline, boxed and in an
+  `<object>` in Edge, Firefox and WebKit.
+- **User guide:** the scroll demo is really driven by the scroll now (it was exported without the
+  setting, and its frame's `overflow: hidden` would have stopped it); the filters demo shows all
+  seven filters on a light stage and their peak (its frame-29 filters were never set: they faded to
+  nothing and back); the banner's button is a button with a *Go to Web Page* snippet, shown in an
+  `<object>` so it can be clicked; a new motion-guide demo (a ball and an oriented dart along a
+  free curve). The demos are compared with Animate's own frames like the test documents
+  (`scripts/e2e-compare.ts guide:<name>`), and the guide check scrolls the scroll demo and
+  looks for the banner's link.
+
 ## 4.2.1 (2026-10-31)
 
 - **GIF and WebP of movie clips.** The raster export followed only the main timeline's frames: a

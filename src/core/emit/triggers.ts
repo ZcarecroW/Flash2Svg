@@ -46,10 +46,38 @@ export function scrollScript(svgId: string, range: ScrollRange, dur: number): st
 	);
 }
 
-/** CSS: scroll-driven animations on the SVG's view timeline (or the page's scroll). Inline SVG only. */
+/**
+ * CSS: scroll-driven animations on the SVG's view timeline (or the page's scroll), inline SVG.
+ * The class `f2s-js` (set by scrollScriptCss where they can't work) puts them back on the clock.
+ */
 export function scrollCss(svgId: string, range: ScrollRange): string {
 	// after the animation rules (`#id .k1{animation:…}` resets the timeline; `[class]` ties on specificity)
 	const name = `--${svgId}`;
-	if (range === "page") return `#${svgId} [class]{animation-timeline:scroll(root)}`;
-	return `#${svgId}{view-timeline:${name}}#${svgId} [class]{animation-timeline:${name}${range === "visible" ? ";animation-range:contain" : ""}}`;
+	// f2s-off: none for a moment (WebKit 27 drops the animations when only their timeline changes)
+	const js = `#${svgId}.f2s-js [class]{animation-timeline:auto;animation-range:normal}#${svgId}.f2s-off [class]{animation:none!important}`;
+	if (range === "page") return `#${svgId} [class]{animation-timeline:scroll(root)}${js}`;
+	return `#${svgId}{view-timeline:${name}}#${svgId} [class]{animation-timeline:${name}${range === "visible" ? ";animation-range:contain" : ""}}${js}`;
+}
+
+/**
+ * CSS: where the browser's scroll-driven animations can't follow the page, a script sets the
+ * animations' time from the scroll position instead (the same ranges as scrollScript): browsers
+ * without them, an <object> (its own document doesn't scroll), and an inline SVG inside a box
+ * with overflow hidden, or auto/scroll that doesn't scroll — a view timeline follows the nearest
+ * scroll container, and such a box never moves (measured: stuck at one frame). Inline in a page
+ * that scrolls normally the script leaves them to the browser; alone or in <img> it just plays.
+ */
+export function scrollScriptCss(svgId: string, range: ScrollRange, dur: number): string {
+	return (
+		`(function(s,d,m){if(!s)return;var w=window,h=null,e,o;try{h=w.frameElement}catch(x){}if(!h&&(w!==w.top||document.documentElement===s))return;` +
+		`if(h)w=w.parent;else if(w.CSS&&CSS.supports("animation-timeline","--a")){for(e=s.parentElement;e&&e!==document.body;e=e.parentElement){o=getComputedStyle(e);o=o.overflowX+o.overflowY;` +
+		`if(/hidden/.test(o)||(/auto|scroll/.test(o)&&e.scrollHeight<=e.clientHeight))break}if(!e||e===document.body)return}` +
+		// (on the clock: without animations for one style pass, then with them again; the document's
+		// animations: WebKit 27's svg.getAnimations({subtree:true}) finds none)
+		`e=s.classList;e.add("f2s-off");s.getBoundingClientRect();e.remove("f2s-off");e.add("f2s-js");s.getBoundingClientRect();` +
+		`var b=h||s,q=0,A=document.getAnimations().filter(function(a){return a.effect&&s.contains(a.effect.target)});` +
+		`function u(){q=0;var r=b.getBoundingClientRect(),v=w.innerHeight,k,p=${PROGRESS},i;p=Math.min(1,Math.max(0,p))*d;for(i=0;i<A.length;i++){A[i].pause();A[i].currentTime=p}}` +
+		`function f(){if(!q){q=1;requestAnimationFrame(u)}}w.addEventListener("scroll",f,{capture:true,passive:true});w.addEventListener("resize",f);u()})` +
+		`(document.getElementById(${JSON.stringify(svgId)}),${+(dur * 1000).toFixed(1)},${SCROLL_RANGE_CODES[range]})`
+	);
 }

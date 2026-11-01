@@ -1,5 +1,6 @@
 // E2E: the start triggers "visible" and "scroll" (SMIL, CSS, player) in a real browser, with the SVG
-// inline in a page and in an <object> (served over HTTP, same origin).
+// inline in a page and in an <object> (served over HTTP, same origin); CSS on scroll also inline in
+// a box with overflow: hidden (a scroll container the view timeline would follow: script instead).
 // - scroll: the page is scrolled so the SVG's progress through its range puts the animation on
 //   a frame; the SVG is screenshotted there and compared with the static renderer's frame.
 // - visible: below the fold the animation must hold at its start; scrolled into view, it runs.
@@ -66,8 +67,10 @@ const diff = (a: PNG, b: PNG) => pixelmatch(a.data, b.data, null, a.width, a.hei
 const html = (body: string) =>
 	`<!doctype html><html><body style="margin:0;background:#fff"><div style="height:${TOP}px"></div>${body}<div style="height:3000px"></div></body></html>`;
 const embed = (how: string, file: string, svg: string, w: number, h: number) =>
-	how === "inline"
-		? svg.replace(/^<\?xml[^>]*>\s*/, "").replace("<svg ", '<svg style="display:block" ')
+	how === "inline" || how === "boxed"
+		? (how === "boxed" ? '<div style="overflow:hidden;border-radius:8px">' : "") +
+			svg.replace(/^<\?xml[^>]*>\s*/, "").replace("<svg ", '<svg style="display:block" ') +
+			(how === "boxed" ? "</div>" : "")
 		: `<object data="${file}" type="image/svg+xml" width="${w}" height="${h}" style="display:block"></object>`;
 
 for (const name of names) {
@@ -86,7 +89,7 @@ for (const name of names) {
 		const frames = anim.stats.frames;
 		const file = `${name}-${format}-scroll.svg`;
 		writeFileSync(join(dir, file), anim.files[0]!.svg);
-		for (const how of format === "css" ? ["inline"] : ["inline", "object"]) {
+		for (const how of format === "css" ? ["inline", "boxed", "object"] : ["inline", "object"]) {
 			const pageFile = `${name}-${format}-scroll-${how}.html`;
 			writeFileSync(join(dir, pageFile), html(embed(how, file, anim.files[0]!.svg, W, Hh)));
 			let ok = 0,
@@ -110,7 +113,7 @@ for (const name of names) {
 						const r = document.querySelector(sel)!.getBoundingClientRect();
 						return { x: r.left, y: r.top, width: r.width, height: r.height };
 					},
-					how === "inline" ? "svg" : "object",
+					how === "object" ? "object" : "svg",
 				);
 				const got = PNG.sync.read(await page.screenshot({ clip: box }));
 				const ratio = got.width === ref.width && got.height === ref.height ? diff(ref, got) : 1;

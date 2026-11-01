@@ -81,6 +81,12 @@ const LABEL = {
 	static: "Still",
 };
 
+/** Export settings of a demo beyond the defaults (what its page shows). */
+const DEMO_SETTINGS = {
+	// the page's scrolling runs it (CSS: inline, scroll-driven; SMIL and the player: by script)
+	scroll: { begin: "scroll" },
+};
+
 async function demo(name, format) {
 	const key = `${name}.${format}`;
 	if (demoCache.has(key)) return demoCache.get(key);
@@ -88,7 +94,7 @@ async function demo(name, format) {
 	if (!existsSync(join(dir, "scene.json"))) throw new Error(`no demo ${name} (run node docs/guide/tools/demos.mjs)`);
 	let model = JSON.parse(readFileSync(join(dir, "scene.json"), "utf8"));
 	let files = { readText: (r) => readFileSync(join(dir, r), "utf8"), readBinary: (r) => readFileSync(join(dir, r)) };
-	const s = { format, includeBackground: true };
+	const s = { format, includeBackground: true, ...DEMO_SETTINGS[name] };
 	({ model, files } = await encodeImages(model, files, s, codecs));
 	if ((format === "player" || format === "auto") && Object.keys(model.sounds).length) {
 		audio ??= createAudioCodecs(loader);
@@ -132,10 +138,11 @@ async function demoBlock(args) {
 	const tabs = made
 		.map(
 			([f, x], i) =>
-				`<button type="button" role="tab" aria-selected="${i === 0}" data-format="${f}" data-src="${x.file}" title="${kb(x.bytes)}${x.gzip !== x.bytes ? `, ${kb(x.gzip)} gzipped` : ""}">${LABEL[f]} <small>${kb(x.gzip)}</small></button>`,
+				`<button type="button" role="tab" aria-selected="${i === 0}" data-format="${f}" data-src="${x.file}"${needsDocument(f, x) ? ' data-embed="object"' : ""} title="${kb(x.bytes)}${x.gzip !== x.bytes ? `, ${kb(x.gzip)} gzipped` : ""}">${LABEL[f]} <small>${kb(x.gzip)}</small></button>`,
 		)
 		.join("");
-	const alt = caption || `${name} demo`;
+	// (the caption without its Markdown emphasis)
+	const alt = caption.replace(/[*_`]/g, "") || `${name} demo`;
 	// inline: the SVG markup itself in the page (scroll-driven CSS needs it)
 	const stage = inline ? `<div class="demo__svg">${d.svg.replace(/^<\?xml[^>]*>\s*/, "")}</div>` : stageFor(first, d, alt);
 	return `<figure class="demo" data-demo="${name}">
@@ -144,9 +151,11 @@ ${inline ? "" : `<div class="demo__bar" role="tablist" aria-label="Format">${tab
 ${caption ? `<figcaption>${inlineMd(caption)}</figcaption>` : ""}
 </figure>`;
 }
+/** An <img> shows a picture: links, buttons and scripts need a document of their own (<object>). */
+const needsDocument = (format, d) => format === "player" || (/^(smil|css|auto|static)$/.test(format) && /<a[\s>]|<script[\s>]/.test(d.svg ?? ""));
 function stageFor(format, d, alt) {
 	const a = alt.replace(/"/g, "&quot;");
-	if (format === "player") return `<object type="image/svg+xml" data="${d.file}" aria-label="${a}" width="${d.width}" height="${d.height}"></object>`;
+	if (needsDocument(format, d)) return `<object type="image/svg+xml" data="${d.file}" aria-label="${a}" width="${d.width}" height="${d.height}"></object>`;
 	if (format === "lottie") return `<div class="demo__lottie" data-src="${d.file}" role="img" aria-label="${a}"></div>`;
 	return `<img src="${d.file}" alt="${a}" width="${d.width}" height="${d.height}" loading="lazy" decoding="async">`;
 }

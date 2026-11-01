@@ -30,7 +30,7 @@ The page's scrolling plays the animation forwards and backwards. *Scroll range* 
 
 ::: demo scroll css inline Scroll this page: the wheel rolls and the bar fills while the demo is fully visible.
 
-CSS output uses the browser's scroll-driven animations (`view-timeline` and `animation-timeline`: Chrome and Edge from 115, Safari 26, current Firefox) and needs the SVG **inline** in the page. SMIL and the JS player set their time from the scroll position by script — inline, or in an `<object>` or `<iframe>` of the same site. Opened by itself or in an `<img>`, it just plays.
+Inline in a page, CSS output uses the browser's scroll-driven animations (`view-timeline` and `animation-timeline`: Chrome and Edge from 115, Safari 26, current Firefox), which run off the main thread. Where they can't follow the page — in an `<object>` or `<iframe>` of the same site, inside a box with `overflow: hidden` (a view timeline follows its nearest scrolling box, and that one never scrolls), in older browsers — a few lines of script set the time from the scroll position instead. SMIL and the JS player always do it by script. Opened by itself, in an `<img>` or in a frame of another site, it just plays: no script there can see the page.
 
 ## Buttons
 

@@ -50,6 +50,22 @@ describe("scroll", () => {
 		expect(compile("f03-transforms", { format: "css", begin: "scroll", scrollRange: "page" }).files[0]!.svg).toMatch(/animation-timeline:scroll\(root\)/);
 	});
 
+	it("CSS: a script takes over where the view timeline can't follow the page (duration in ms)", () => {
+		const out = compile("f03-transforms", { format: "css", begin: "scroll" });
+		const svg = out.files[0]!.svg;
+		const id = /<svg[^>]* id="([^"]+)"/.exec(svg)![1]!;
+		// back on the clock (after the timeline rule: same selector, more specific), recreated first
+		const js = svg.indexOf(`#${id}.f2s-js [class]{animation-timeline:auto;animation-range:normal}`);
+		expect(js).toBeGreaterThan(svg.indexOf(`#${id} [class]{animation-timeline:--${id}`));
+		expect(svg).toContain(`#${id}.f2s-off [class]{animation:none!important}`);
+		// inline in a page that scrolls: left to the browser; boxes with overflow, frames: the script
+		expect(svg).toMatch(/CSS\.supports\("animation-timeline","--a"\)/);
+		expect(svg).toMatch(/\/hidden\/\.test\(o\)/);
+		const m = /\(document\.getElementById\("[^"]+"\),([\d.]+),(\d)\)/.exec(svg);
+		expect(+m![1]!).toBeCloseTo(out.stats.durationSeconds * 1000, 0);
+		expect(m![2]).toBe("0");
+	});
+
 	it("SMIL: a script sets the time from the scroll position (range code and duration)", () => {
 		const out = compile("f03-transforms", { format: "smil", begin: "scroll", scrollRange: "crossing" });
 		const svg = out.files[0]!.svg;

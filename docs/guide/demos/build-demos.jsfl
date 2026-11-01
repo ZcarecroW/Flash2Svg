@@ -414,31 +414,105 @@
 		extendAll(90);
 	});
 
-	// ------------------------------------------------------------------ filters: Animate's filters, animated
+	// ------------------------------------------------------------------ filters: all of Animate's filters, tweened up and back
 	build("filters", function () {
-		newDoc(600, 220, 30);
-		symbol("tile", "movie clip", function () { rect(-44, -44, 44, 44, SKY, 14); rect(-18, -18, 18, 18, WHITE, 6); });
+		// a light stage: a dark shadow on the dark guide colours would hardly show
+		newDoc(720, 220, 30, "#E2E8F0");
+		symbol("tile", "movie clip", function () { rect(-34, -34, 34, 34, SKY, 14); rect(-14, -14, 14, 14, WHITE, 5); });
+		function p(k, v) { doc.setFilterProperty(k, 0, v); }
+		function blur(v) { p("blurX", v); p("blurY", v); }
+		/** The gradient of the selection's gradient glow or bevel. */
+		function stops(colors, ratios) {
+			var fs = doc.getFilters();
+			fs[0].colorArray = colors;
+			fs[0].posArray = ratios;
+			doc.setFilters(fs);
+		}
+		// [label, filter, settings at rest (frames 0 and 59), settings at the peak (frame 29)]
 		var specs = [
-			["dropShadowFilter", function () { doc.setFilterProperty("distance", 0, 2); doc.setFilterProperty("blurX", 0, 4); doc.setFilterProperty("blurY", 0, 4); }, function () { doc.setFilterProperty("distance", 0, 14); doc.setFilterProperty("blurX", 0, 16); doc.setFilterProperty("blurY", 0, 16); }],
-			["glowFilter", function () { doc.setFilterProperty("color", 0, AMBER); doc.setFilterProperty("strength", 0, 40); doc.setFilterProperty("blurX", 0, 6); doc.setFilterProperty("blurY", 0, 6); }, function () { doc.setFilterProperty("color", 0, AMBER); doc.setFilterProperty("strength", 0, 200); doc.setFilterProperty("blurX", 0, 24); doc.setFilterProperty("blurY", 0, 24); }],
-			["bevelFilter", function () { doc.setFilterProperty("distance", 0, 2); }, function () { doc.setFilterProperty("distance", 0, 8); doc.setFilterProperty("blurX", 0, 10); doc.setFilterProperty("blurY", 0, 10); }],
-			["blurFilter", function () { doc.setFilterProperty("blurX", 0, 0); doc.setFilterProperty("blurY", 0, 0); }, function () { doc.setFilterProperty("blurX", 0, 14); doc.setFilterProperty("blurY", 0, 14); doc.setFilterProperty("quality", 0, "high"); }]
+			["Drop shadow", "dropShadowFilter", function () { p("color", INK); p("distance", 3); blur(4); p("strength", 60); }, function () { p("color", INK); p("distance", 18); blur(16); p("strength", 80); p("quality", "high"); }],
+			["Blur", "blurFilter", function () { blur(0); }, function () { blur(14); p("quality", "high"); }],
+			["Glow", "glowFilter", function () { p("color", CORAL); blur(4); p("strength", 100); }, function () { p("color", CORAL); blur(30); p("strength", 220); p("quality", "high"); }],
+			["Bevel", "bevelFilter", function () { p("highlightColor", WHITE); p("shadowColor", NAVY); p("distance", 2); blur(3); }, function () { p("highlightColor", WHITE); p("shadowColor", NAVY); p("distance", 8); blur(10); p("strength", 160); p("quality", "high"); }],
+			["Gradient glow", "gradientGlowFilter", function () { p("distance", 0); blur(4); stops(["#9B5DE500", VIOLET, AMBER], [0, 128, 255]); }, function () { p("distance", 0); blur(32); p("strength", 200); p("quality", "high"); stops(["#9B5DE500", VIOLET, AMBER], [0, 128, 255]); }],
+			["Gradient bevel", "gradientBevelFilter", function () { p("distance", 2); blur(3); }, function () { p("distance", 9); blur(10); p("strength", 160); p("quality", "high"); }],
+			["Adjust color", "adjustColorFilter", function () { p("hue", 0); }, function () { p("hue", 180); p("saturation", 40); }]
 		];
-		for (var i = 0; i < specs.length; i++) {
+		layer("labels");
+		for (var i = 0; i < specs.length; i++) text(10 + i * 100, 168, 110 + i * 100, 188, specs[i][0], 13, "#334155", { align: "center", bold: true });
+		for (i = 0; i < specs.length; i++) {
 			layer("f" + i);
-			var e = tween("tile", 90 + i * 140, 110, 0, 29, function () {}, function (f) { f.tweenEasing = -50; });
 			var t = tl(), li = t.currentLayer;
-			select(t.layers[li].frames[0].elements[0]); doc.addFilter(specs[i][0]); specs[i][1](); doc.selectNone();
-			select(t.layers[li].frames[29].elements[0]); doc.addFilter(specs[i][0]); specs[i][2](); doc.selectNone();
-			// and back
+			tween("tile", 60 + i * 100, 95, 0, 29, function () {}, function (f) { f.tweenEasing = -50; });
 			t.insertKeyframe(59);
-			t.currentFrame = 59;
-			select(t.layers[li].frames[59].elements[0]); doc.removeAllFilters(); doc.addFilter(specs[i][0]); specs[i][1](); doc.selectNone();
 			t.setSelectedFrames(29, 30);
 			t.createMotionTween();
 			t.layers[li].frames[29].tweenEasing = 50;
+			// the filters of each keyframe, with the playhead on it (a selection elsewhere is ignored)
+			var keys = [[0, 2], [29, 3], [59, 2]];
+			for (var k = 0; k < keys.length; k++) {
+				t.currentFrame = keys[k][0];
+				select(t.layers[li].frames[keys[k][0]].elements[0]);
+				doc.removeAllFilters();
+				doc.addFilter(specs[i][1]);
+				specs[i][keys[k][1]]();
+				doc.selectNone();
+			}
 		}
 		extendAll(60);
+	});
+
+	// ------------------------------------------------------------------ path: a motion guide drawn as a free curve
+	build("path", function () {
+		newDoc(600, 260, 30);
+		// a smooth curve through the midpoints of these control points (one quadratic piece each)
+		var C = [[40, 210], [100, 40], [230, 30], [270, 200], [360, 240], [450, 40], [560, 50], [560, 200]];
+		var P = [C[0]];
+		for (var i = 1; i < C.length - 2; i++) P.push([(C[i][0] + C[i + 1][0]) / 2, (C[i][1] + C[i + 1][1]) / 2]);
+		P.push(C[C.length - 1]);
+		/** Draws the curve as a stroke on the current frame (JSFL's path: quadratic pieces). */
+		function curve(color, width) {
+			doc.selectNone();
+			doc.setCustomStroke({ style: "solid", color: color, thickness: width, capType: "round", joinType: "round" });
+			var path = fl.drawingLayer.newPath();
+			for (var j = 0; j < P.length - 1; j++) path.addCurve(P[j][0], P[j][1], C[j + 1][0], C[j + 1][1], P[j + 1][0], P[j + 1][1]);
+			path.makeShape(true, false);
+			doc.selectNone();
+		}
+		layer("track");
+		curve("#3A4A6B", 3);
+		symbol("ball", "graphic", function () { radialOval(0, 0, 16, [WHITE, CORAL]); });
+		symbol("arrow", "graphic", function () {
+			// a dart pointing right (the direction of travel with Orient to path), one polygon: a
+			// rectangle and a circle of one fill drawn over each other lost the fill as soon as the
+			// symbol was placed on the stage (Animate 2024, measured)
+			doc.selectNone();
+			fill(TEAL);
+			noStroke();
+			var pa = fl.drawingLayer.newPath();
+			var pts = [[18, 0], [-12, -10], [-5, 0], [-12, 10], [18, 0]];
+			for (var q = 0; q < pts.length; q++) pa.addPoint(pts[q][0], pts[q][1]);
+			pa.makeShape(false, true);
+		});
+		layer("arrow");
+		tween("arrow", P[0][0], P[0][1], 10, 99, function (e) { e.x = P[P.length - 1][0]; e.y = P[P.length - 1][1]; }, function (f) { f.tweenEasing = 0; f.motionTweenOrientToPath = true; f.motionTweenSnap = true; });
+		layer("ball");
+		tween("ball", P[0][0], P[0][1], 0, 89, function (e) { e.x = P[P.length - 1][0]; e.y = P[P.length - 1][1]; }, function (f) { f.tweenEasing = 0; f.motionTweenSnap = true; });
+		// the guide (not exported: the track layer shows the same curve); a new layer moves the
+		// indices of those below it, so layers are found by name
+		var t = tl();
+		function find(test) { for (var L = 0; L < t.layers.length; L++) if (test(t.layers[L])) return L; return -1; }
+		t.currentLayer = find(function (l) { return l.name == "ball"; });
+		t.setSelectedLayers(t.currentLayer);
+		t.addMotionGuide();
+		var gi = find(function (l) { return l.layerType == "guide"; });
+		t.currentLayer = gi;
+		t.currentFrame = 0;
+		curve("#FFFFFF", 1);
+		var ai = find(function (l) { return l.name == "arrow"; });
+		t.layers[ai].layerType = "guided";
+		t.layers[ai].parentLayer = t.layers[gi];
+		extendAll(120);
 	});
 
 	// ------------------------------------------------------------------ blend: blend modes
@@ -524,9 +598,18 @@
 	// ------------------------------------------------------------------ banner: an intro once, then a loop, three times
 	build("banner", function () {
 		newDoc(300, 250, 24, "#1E1B4B");
-		symbol("headline", "movie clip", function () { text(-140, -22, 140, 22, "Spring Sale", 34, WHITE, { bold: true, align: "center" }); });
-		symbol("sub", "movie clip", function () { text(-140, -12, 140, 12, "Up to 40 % off — this week only", 14, "#C7D2FE", { align: "center" }); });
-		symbol("cta", "movie clip", function () { rect(-70, -20, 70, 20, AMBER, 20); text(-60, -10, 60, 10, "Shop now", 15, "#1E1B4B", { bold: true, align: "center" }); });
+		symbol("headline", "movie clip", function () { text(-140, -22, 140, 22, "Flash2SVG", 34, WHITE, { bold: true, align: "center" }); });
+		symbol("sub", "movie clip", function () { text(-140, -12, 140, 12, "Your Animate banners as SVG", 14, "#C7D2FE", { align: "center" }); });
+		// a button symbol (Up, Over, Down, Hit) that links: Animate's "Go to Web Page" snippet below
+		symbol("cta", "button", function () {
+			var t = tl(), colors = [AMBER, "#FFD27A", "#E0A52E", AMBER];
+			for (var i = 0; i < 4; i++) {
+				if (i > 0) t.insertBlankKeyframe(i);
+				t.currentFrame = i;
+				rect(-70, -20, 70, 20, colors[i], 20);
+				if (i < 3) text(-60, -10, 60, 10, i == 1 ? "Get it free ›" : "Get it free", 15, "#1E1B4B", { bold: true, align: "center" });
+			}
+		});
 		layer("headline");
 		var h = tween("headline", 150, 60, 0, 14, function (e) { e.y = 90; select(e); doc.setInstanceAlpha(100); doc.selectNone(); }, function (f) { f.tweenEasing = 100; });
 		select(h); doc.setInstanceAlpha(0); doc.selectNone();
@@ -544,6 +627,9 @@
 		p.scaleX = p.scaleY = 1.12;
 		t.setSelectedFrames(30, 31); t.createMotionTween(); t.layers[li].frames[30].tweenEasing = -60;
 		t.setSelectedFrames(40, 41); t.createMotionTween(); t.layers[li].frames[40].tweenEasing = 60;
+		// the same instance name on every keyframe (the snippet finds the button by it)
+		var ck = [18, 30, 40, 50];
+		for (var k = 0; k < ck.length; k++) t.layers[li].frames[ck[k]].elements[0].name = "btn_get";
 		extendAll(51);
 		layer("labels");
 		t = tl();
@@ -551,6 +637,17 @@
 		t.layers[t.currentLayer].frames[30].name = "loop";
 		layer("actions");
 		t = tl();
+		// Animate's code snippet "Click to Go to Web Page", where the button appears
+		t.insertKeyframe(18);
+		t.layers[t.currentLayer].frames[18].actionScript = [
+			"/* Click to Go to Web Page */",
+			"btn_get.addEventListener(MouseEvent.CLICK, fl_ClickToGoToWebPage);",
+			"",
+			"function fl_ClickToGoToWebPage(event:MouseEvent):void",
+			"{",
+			"\tnavigateToURL(new URLRequest(\"https://github.com/ZcarecroW/Flash2Svg\"), \"_blank\");",
+			"}"
+		].join("\n");
 		t.insertKeyframe(50);
 		// Animate's code snippet idiom: loop three times, then stop
 		t.layers[t.currentLayer].frames[50].actionScript = [
