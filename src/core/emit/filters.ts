@@ -177,9 +177,11 @@ export function blurSigma(amount: number, quality: unknown): number {
 
 /**
  * Builds primitives for a list of Animate filters. `scale` is the element's own scale; Animate
- * filters work in stage pixels, SVG filters in the element's units.
+ * filters work in stage pixels, SVG filters in the element's units. `uniform`: primitives that
+ * would do nothing are kept too (a shadow's offset at distance 0), so filters of one kind have one
+ * make-up whatever their values (filteranim.ts).
  */
-export function buildFilters(filters: FilterData[], scale: { x: number; y: number }, warn: (m: string) => void): FilterBuild {
+export function buildFilters(filters: FilterData[], scale: { x: number; y: number }, warn: (m: string) => void, uniform = false): FilterBuild {
 	const prims: XmlNode[] = [];
 	const reach = { x: 0, y: 0 };
 	let both = 0;
@@ -226,7 +228,7 @@ export function buildFilters(filters: FilterData[], scale: { x: number; y: numbe
 				const blur = id();
 				prims.push(el("feGaussianBlur", { in: alphaIn, stdDeviation: std, result: blur }));
 				let shaped = blur;
-				if (isShadow && (dx || dy)) {
+				if (isShadow && (dx || dy || uniform)) {
 					const o = id();
 					prims.push(el("feOffset", { in: blur, dx: fmt(dx, 3), dy: fmt(dy, 3), result: o }));
 					shaped = o;
@@ -336,7 +338,7 @@ export function buildFilters(filters: FilterData[], scale: { x: number; y: numbe
 				const blur = id();
 				prims.push(el("feGaussianBlur", { in: a, stdDeviation: std, result: blur }));
 				let shaped = blur;
-				if (dx || dy) {
+				if (dx || dy || uniform) {
 					const o = id();
 					prims.push(el("feOffset", { in: blur, dx: fmt(dx, 3), dy: fmt(dy, 3), result: o }));
 					shaped = o;

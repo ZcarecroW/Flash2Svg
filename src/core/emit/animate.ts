@@ -558,15 +558,15 @@ class Writer {
 			if (ref) attrs.filter = ref;
 		}
 		if (filterSets.length > 1) {
-			// filters change over time: switch between filter definitions
-			const refs = filterSets.map((f) => this.doc.filter(f.filters, null, scale, this.warn, size) ?? "none");
-			const wrap = el("g", { filter: refs[0]! }, [inner]);
-			this.discrete(
-				wrap,
-				"filter",
-				filterSets.map((f, i) => ({ t: f.t, v: refs[i]! })),
-				"none",
-			);
+			// filters change over time: switch between filter definitions. (Not one filter whose primitives
+			// animate, as the player does (filteranim.ts): CSS can't, and Chromium draws a filter again at
+			// every refresh of the screen while a SMIL animation of one of its primitives runs, even when
+			// its value stays the same — measured: 2.8 times the rendering work of the filters demo at
+			// 144 Hz; a filter per frame compresses well, e.g. 284 KB to 19 KB with gzip there)
+			const refs = filterSets.map((f) => ({ t: f.t, v: this.doc.filter(f.filters, null, scale, this.warn, size) ?? "none" }));
+			const shown = refs.filter((r) => r.t <= this.posterTick).pop() ?? refs[0]!;
+			const wrap = el("g", { filter: shown.v }, [inner]);
+			this.discrete(wrap, "filter", refs, "none");
 			inner = wrap;
 		}
 		const blend = cssBlendMode(n.item.blendMode, this.warn);

@@ -18,6 +18,8 @@ Two things work as in Animate, which can surprise:
 
 In Lottie, blur, drop shadow and glow become effects; the others are built from mattes and blend modes — see [Lottie](lottie.md#what-carries-over).
 
+A tweened filter changes with the frames, as in Animate. The **JS player** writes it as one filter whose numbers it sets frame by frame (the filters demo: 61 KB instead of 297 KB). SMIL and CSS switch between a filter per frame: CSS can't change a filter's numbers, and while SMIL changes them, Chrome and Edge draw the filter again at every refresh of the screen — about three times the drawing work in the demo. The filters per frame are much alike and compress well: the demo's SMIL is 284 KB, 19 KB with gzip.
+
 ## Blend modes
 
 *Normal*, *layer*, *multiply*, *screen*, *overlay*, *hard light*, *lighten*, *darken*, *difference*, *add*, *subtract*, *invert*, *alpha* and *erase*.

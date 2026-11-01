@@ -67,7 +67,7 @@ export interface InstanceItem extends ItemBase {
 	/** null when the colour is identity for the whole item. */
 	color: ColorTracks | null;
 	/** Filters by frame (keyframe changes / samples); static when one entry. */
-	filters: { t: number; filters: FilterData[] }[];
+	filters: FilterSet[];
 	blendMode: string;
 	visible: boolean;
 	cacheAsBitmap: boolean;
@@ -126,6 +126,12 @@ export interface VideoItem extends ItemBase {
 }
 
 export type Item = InstanceItem | ArtItem | ArtSeqItem | BitmapItem | TextItem | VideoItem;
+
+/** The filters from frame (or tick) `t` on. */
+export interface FilterSet {
+	t: number;
+	filters: FilterData[];
+}
 
 export interface ProgramLayer {
 	index: number;

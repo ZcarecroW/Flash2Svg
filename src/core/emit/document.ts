@@ -269,13 +269,7 @@ export class OutputDoc {
 			prims.push(el("feColorMatrix", { ...(last ? { in: last } : {}), type: "matrix", values: matrixString(colorMatrix(color)) }));
 		}
 		if (!prims.length) return null;
-		const node = el("filter", { "color-interpolation-filters": "sRGB" }, prims);
-		if (margin.x > 0 || margin.y > 0) {
-			// region relative to the element's bounding box, grown by the effect's reach
-			const mx = Math.min(5, margin.x / Math.max(1, size.w) + 0.05);
-			const my = Math.min(5, margin.y / Math.max(1, size.h) + 0.05);
-			Object.assign(node.attrs, { x: fmt(-mx, 3), y: fmt(-my, 3), width: fmt(1 + 2 * mx, 3), height: fmt(1 + 2 * my, 3) });
-		}
+		const node = filterNode(prims, margin, size);
 		const key = serialize(node);
 		let id = this.filterCache.get(key);
 		if (!id) {
@@ -285,6 +279,13 @@ export class OutputDoc {
 			this.filterCache.set(key, id);
 		}
 		return `url(#${id})`;
+	}
+
+	/** A filter of its own (animated: never shared); returns url(#id). */
+	ownFilter(node: XmlNode): string {
+		node.attrs.id = this.uid("f");
+		this.defs.push(node);
+		return `url(#${node.attrs.id})`;
 	}
 
 	/** Shared filter that turns any painted pixel opaque white (Animate masks ignore colour/alpha). */
@@ -407,6 +408,20 @@ export class OutputDoc {
  * <desc> and a role: "img", or "group" when parts of it are accessible themselves (named
  * instances, buttons); "Make movie accessible" off hides it from assistive technology.
  */
+/**
+ * A <filter> of `prims`, its region relative to the element's bounding box (`size`, its own units)
+ * grown by the effect's reach (`margin`).
+ */
+export function filterNode(prims: XmlNode[], margin: { x: number; y: number }, size: { w: number; h: number }): XmlNode {
+	const node = el("filter", { "color-interpolation-filters": "sRGB" }, prims);
+	if (margin.x > 0 || margin.y > 0) {
+		const mx = Math.min(5, margin.x / Math.max(1, size.w) + 0.05);
+		const my = Math.min(5, margin.y / Math.max(1, size.h) + 0.05);
+		Object.assign(node.attrs, { x: fmt(-mx, 3), y: fmt(-my, 3), width: fmt(1 + 2 * mx, 3), height: fmt(1 + 2 * my, 3) });
+	}
+	return node;
+}
+
 export function svgRoot(ctx: Context, attrs: Record<string, string | number> = {}): XmlNode {
 	const d = ctx.model.doc;
 	const scale = ctx.scale ?? "fixed";

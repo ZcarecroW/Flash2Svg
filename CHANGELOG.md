@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+- **Tweened filters in the JS player** (roadmap package 9): one filter per tween whose numbers
+  the player sets frame by frame (blur, offsets, strengths, colours, colour matrices, gradient
+  tables; `src/core/emit/filteranim.ts`), instead of a filter per frame. The guide's filters demo
+  297 → 61 KB, f46-filters3 72 → 39 KB, the other three test documents with filter tweens 9–27 %
+  smaller; every frame the same as before, checked in Edge, Firefox and WebKit. The runtime with
+  morphs takes the code (17.2 KB, +0.5 KB); the others stay as they were.
+  - Measured first, and kept as it is: SMIL and CSS switch between a filter per frame. CSS can't
+    change a filter's numbers; SMIL could (the demo 284 → 41 KB, gzipped 19 → 8 KB), but Chromium
+    draws a filter again at every refresh of the screen while a SMIL animation of one of its
+    primitives runs, even when its value stays the same: 2.8 times the rendering work of the demo
+    at 144 Hz (a minimal test: 660 ms per 4 s against 240 still and 150 switching filters).
+    Interpolating filter values between frames, which Animate doesn't do either, costs the same;
+    values step with the frames. (Firefox draws a fractional `feOffset` cut to whole pixels.)
+- **JS player: movie clips with a colour effect added a filter each time they appeared** and
+  never removed it: f24-deep had 1278 filters after 12 s (about 380,000 after an hour), the page
+  getting heavier as it played. Filters made at runtime now go with their instance; a new check in
+  `e2e-player` plays three documents for 30 s.
+- **SMIL and CSS with the poster set to the last frame:** an instance whose filters change showed
+  its first frame's filters where animation doesn't run (reduced motion in CSS, renderers without
+  SMIL); now the poster frame's.
+
 ## 4.3.0 (2026-11-01)
 
 - **Motion guides as paths** (roadmap package 8). A classic tween along a motion guide is written

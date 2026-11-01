@@ -31,6 +31,8 @@ const INTERNAL = [
 	"seqIndex",
 	"lastM",
 	"filterRef",
+	"fcopies",
+	"fanim",
 	"colorWrap",
 	"vanim",
 	"anims",

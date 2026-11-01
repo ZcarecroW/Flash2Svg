@@ -174,7 +174,7 @@ the AS3 that Animate users actually write is.
 | Variable-width strokes, art and pattern brushes, fluid brush | ❓ | come through Animate's SVG export; never tested |
 | Static, dynamic, input text; fonts embedded | ✅ | input text isn't editable in the output (❓ check) |
 | Bitmaps, smoothing, compression, downscaling | ✅ | |
-| Filters (all 7), colour effects, blend modes, layer effects | ✅ | tweened filters are written as one `<filter>` per frame: the filters demo is 284 KB (19 KB gzip) |
+| Filters (all 7), colour effects, blend modes, layer effects | ✅ | tweened filters: one filter whose numbers change in the player (package 9); SMIL and CSS a `<filter>` per frame — cheaper to draw in Chromium, compresses well (filters demo 284 KB, 19 KB gzip) |
 | Masks, 9-slice | ✅ / 🟡 | 9-slice: animated scale of symbols with nested symbols |
 | Classic and motion tweens, eases, shape tweens with hints | ✅ | |
 | Motion guides, orient to path, motion-tween paths | 🟡 | exact, but Animate's frames (a keyframe per frame), not the path |
@@ -197,7 +197,7 @@ the AS3 that Animate users actually write is.
 | # | Package | Benefit | Effort | Status |
 |---|---|---|---|---|
 | 8 | Motion along paths: motion guides and motion-tween paths as real paths (SMIL `animateMotion` with `keyPoints` and `rotate="auto"`, CSS `offset-path`, the player, Lottie position keys with spatial tangents) | smoother (any frame rate), smaller; the user's request | medium | ✅ motion guides (SMIL, CSS, Lottie); ⬜ motion tweens (see below) |
-| 9 | Animated filters as animated filter primitives (SMIL and player animate `stdDeviation`, `dx`, `slope`, colours; CSS keeps a filter per frame where nothing else is exact) | filter animations ~10× smaller | medium | ⬜ |
+| 9 | Animated filters as animated filter primitives (SMIL and player animate `stdDeviation`, `dx`, `slope`, colours; CSS keeps a filter per frame where nothing else is exact) | filter animations ~10× smaller | medium | ✅ player (one filter per tween); SMIL/CSS measured and kept (see below) |
 | 10 | Measure-first sweep: a test document each for IK (symbols, shapes), Asset Warp (bitmap and vector, Flexi bones, envelope), layer depth with the camera, modern rigging, variable-width strokes and brushes, input text, button hit areas, 3D — extracted and compared with Animate's frames; fix what breaks | turns every ❓ into ✅ or a known gap | medium | ⬜ |
 | 11 | Bones and warps: whatever 10 finds missing (poses baked to transforms like guided tweens; deformed shapes as morphs or frames) | rigged characters export | medium–high | ⬜ |
 | 12 | Scripts in the player: Animate's AS3 (a subset compiled to JavaScript at export: variables, conditions, loops, functions, Math, display-object properties, events — mouse, keyboard, `ENTER_FRAME`, timers, drag and drop, text, sounds) and Canvas documents' JavaScript (run as it is, on a CreateJS-like `this`); every code snippet Animate offers that a browser can do; what can't be compiled is warned | interactive pieces, simple games | high | ⬜ |
@@ -215,6 +215,26 @@ handles per key), no path geometry: fit those curves exactly instead of sampling
 JSFL to measure it: a curve fitted through the frames). The JS player could move along the curve
 with `offset-path` in its Web Animations too. Firefox's SMIL draws f09 wrong far into the loop
 (~8 minutes, before this package too).
+
+**9. Animated filters** (2026-11-01): the JS player writes a tweened filter as one filter whose
+numbers it sets frame by frame (`src/core/emit/filteranim.ts`: filter sets built into primitives,
+runs of one make-up, the attributes that change as held tracks; the runtime animates a copy per
+instance, in the runtime with morphs): the filters demo 297 → 61 KB, every frame the same in three
+engines. Measured and kept: SMIL and CSS switch between a filter per frame. Chromium draws a filter
+again at every refresh of the screen while a SMIL animation of one of its primitives runs, even
+with an unchanged value (2.8 times the rendering work of the filters demo at 144 Hz; minimal test:
+660 ms per 4 s against 240 still, 150 switching filters); the filters per frame compress about
+15× (284 KB → 19 KB with gzip). Values step with the frames, as in Animate: interpolating them costs
+the same redraws, and Firefox draws a fractional `feOffset` cut to whole pixels (a step a frame
+early). Found on the way: the player added a colour filter to `<defs>` each time a movie clip
+appeared (f24-deep: 1278 after 12 s) — fixed, checked in `e2e-player`. Open, to measure next:
+SMIL colour tweens animate an `feColorMatrix` the same way (the whole time the document plays,
+holds too) — switch matrices per frame instead where that is cheaper; CSS filter functions
+(`blur()`, `drop-shadow()`) interpolate cheaply but are isotropic and without strength — exact
+for some filters? Firefox keeps SMIL times in whole milliseconds (seeks round to 1 ms): loops
+whose length isn't whole milliseconds (.7923269 s next to 1.6666667 s in f35-edge) drift apart,
+visibly after a few minutes (f35 far ahead 4.1 %, f09) — whole-millisecond loop lengths (×3
+unrolled at 24/30/60 fps) would cure it.
 
 Found by covering the guide's demos in the browser and Lottie checks (2026-11-01): the JS player
 with *Play once* and a one-frame root moved its movie clips one frame on before holding, and its

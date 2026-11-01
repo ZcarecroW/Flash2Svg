@@ -144,6 +144,8 @@ export interface PMorph {
  * values at ratio 1] or, for values that don't follow the ratio, [..., values per frame of the part].
  */
 export type PChannel = [number, string, number, string, number[], number[]] | [number, string, number, string, number[][]];
+/** [index path of the primitive in the filter, attribute, kind (0 numbers, 1 colour), a track per number] */
+export type PFilterAnim = [number[], string, number, PTrack[]];
 export interface PInst extends PBase {
 	k: "i";
 	/** symbol timeline id */
@@ -165,6 +167,8 @@ export interface PInst extends PBase {
 	sa?: number;
 	/** filters: [frame, filterId] */
 	f?: [number, string][];
+	/** filters whose numbers change (by filterId): the runtime animates a copy of each */
+	fa?: Record<string, PFilterAnim[]>;
 	/** css blend mode */
 	b?: string;
 	/** graphic ranges: [start, end, loop(0 loop,1 once,2 single,3 loop rev,4 once rev), first, last] */

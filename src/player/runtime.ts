@@ -7,7 +7,7 @@
  * This file is bundled (esbuild, minified) into an IIFE string by scripts/build.mjs.
  */
 import { evalBezier } from "../core/easing.ts";
-import type { PChannel, PFrameSound, PInst, PItem, PListener, PMorph, PProgram, PTimeline, PTrack } from "./format.ts";
+import type { PChannel, PFilterAnim, PFrameSound, PInst, PItem, PListener, PMorph, PProgram, PTimeline, PTrack } from "./format.ts";
 
 /** Build flags: the sound code (Mixer) is only in the runtime of programs with sounds, the
  * morph code (shape tweens) only in that of programs with path morphs. */
@@ -428,6 +428,9 @@ class Inst {
 	private animTransform = false;
 	private animAlpha = false;
 	private filterRef = "";
+	/** animated filters: this instance's copies (by filter id: copy, animated primitives, values last written), the one shown */
+	private fcopies?: Record<string, [Element, Element[], string[]]>;
+	private fanim?: [PFilterAnim[], [Element, Element[], string[]]] | null;
 
 	constructor(owner: Clip, it: PItem) {
 		this.owner = owner;
@@ -638,8 +641,35 @@ class Inst {
 			if (ref !== this.filterRef) {
 				this.filterRef = ref;
 				const target = this.fnode ?? this.node;
-				if (ref) target.setAttribute("filter", `url(#${ref})`);
+				let id = ref;
+				// changing numbers (in the runtime with morphs: animated drawings): a copy of the filter of
+				// this instance's own, its primitives animated
+				if (__MORPH__) {
+					this.fanim = null;
+					const fa = it.fa?.[ref];
+					if (fa) {
+						let c = (this.fcopies ??= {})[ref];
+						if (!c) {
+							const f = this.owner.player.svg.ownerDocument.getElementById(ref)!.cloneNode(true) as Element;
+							f.id = `${this.owner.player.svg.id}_c${uidCounter++}`;
+							this.owner.player.defs.appendChild(f);
+							c = this.fcopies[ref] = [f, fa.map((a) => a[0].reduce((e, i) => e.children[i]!, f)), fa.map(() => "")];
+						}
+						id = c[0].id;
+						this.fanim = [fa, c];
+					}
+				}
+				if (id) target.setAttribute("filter", `url(#${id})`);
 				else target.removeAttribute("filter");
+			}
+			if (__MORPH__ && this.fanim) {
+				const [fa, [, els, last]] = this.fanim;
+				fa.forEach((a, i) => {
+					const v = a[3].map((tk) => trackAt(P, tk, t, 0));
+					const s = a[2] ? `rgb(${v.map(Math.round)})` : v.map(r4).join(" ");
+					// (unchanged values aren't written again: a write makes the browser filter again)
+					if (s !== last[i]) els[i]!.setAttribute(a[1], (last[i] = s));
+				});
 			}
 		}
 		const clip = this.clip;
@@ -659,6 +689,9 @@ class Inst {
 			this.owner.player.anims.delete(a);
 		}
 		this.clip?.dispose();
+		// its own filters go with it (movie clips are made anew each time they appear)
+		if (__MORPH__) for (const k in this.fcopies) this.fcopies[k]![0].remove();
+		this.cm?.parentElement?.remove();
 	}
 
 	private colorWrap(id: string) {

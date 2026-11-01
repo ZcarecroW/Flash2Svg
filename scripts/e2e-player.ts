@@ -192,6 +192,30 @@ async function pixel(x: number, y: number): Promise<[number, number, number]> {
 }
 const near = (a: [number, number, number], b: [number, number, number]) => a.every((v, i) => Math.abs(v - b[i]!) < 24);
 
+// ------------------------------------------------------------------ filters made at runtime
+// Movie clips are made anew each time they appear: the colour filters and animated filter copies
+// of their instances must go with them (4.3.0 added a filter per appearance: f24-deep 1278 after
+// 12 s). f24-deep: colour effects in nested clips; f20-misc / f46-filters3: tweened filters.
+for (const name of ["f24-deep", "f20-misc", "f46-filters3"]) {
+	const b = build(name, {}, "defs");
+	if (!b) continue;
+	await open(b.file, b.model);
+	const r = await page.evaluate(() => {
+		const svg = document.documentElement;
+		const p = (svg as unknown as { flash2svg: Api }).flash2svg;
+		const count = () => svg.querySelectorAll("defs > filter").length;
+		p.pause();
+		let most = 0;
+		for (let t = 0; t < 30; t += 1 / 30) {
+			p.seek(t);
+			most = Math.max(most, count());
+		}
+		p.seek(0);
+		return { start: count(), most };
+	});
+	check(`filters: ${name} keeps its runtime filters (no pile-up over 30 s)`, r.most <= r.start + 8, `${r.start} at the start, at most ${r.most}`);
+}
+
 // ------------------------------------------------------------------ Web Animations
 {
 	// f04-nested: tweens in nested movie clips (a 12-frame spinner loops twice a second, the root

@@ -12,7 +12,8 @@ import type { PChannel, PFrameSound, PInst, PItem, PListener, PMorph, PProgram, 
 import type { HandlerAction, InteractionEvent } from "../snippets.ts";
 import { channelNumbers, channelText, channelVaries, type MorphChannel } from "../morph.ts";
 import { audioMime } from "../mime.ts";
-import { accAttrs, OutputDoc, svgRoot } from "./document.ts";
+import { accAttrs, filterNode, OutputDoc, svgRoot } from "./document.ts";
+import { filterRuns } from "./filteranim.ts";
 import { blendHides, blendSubtract, blendWhite, cssBlendMode } from "./filters.ts";
 import { PLAYER_RUNTIMES } from "./runtime-code.generated.ts";
 import { StaticRenderer } from "./static.ts";
@@ -180,15 +181,23 @@ export function renderPlayer(
 		if (it.filters.length) {
 			// applied outside the instance transform, in the parent's units (see the runtime)
 			const size = { w: it.bounds.width, h: it.bounds.height };
-			p.f = it.filters.map((f) => {
-				const key = JSON.stringify(f.filters);
+			// a filter per make-up; where its numbers change, the runtime animates a copy (filteranim.ts)
+			p.f = filterRuns(it.filters, { x: 1, y: 1 }, warn, -Infinity).map((run) => {
+				const a = run.animated;
+				if (a) {
+					const ref = doc.ownFilter(filterNode(a.primitives, a.margin, size)).slice(5, -1);
+					(p.fa ??= {})[ref] = a.anims.map((an) => [an.path, an.attr, an.kind, an.tracks.map((tr) => track(tr, an.digits))]);
+					return [run.t, ref] as [number, string];
+				}
+				const fs = run.sets[0]!.filters;
+				const key = JSON.stringify(fs);
 				let ref = filterRefs.get(key);
 				if (ref === undefined) {
-					const url = doc.filter(f.filters, null, { x: 1, y: 1 }, warn, size);
+					const url = doc.filter(fs, null, { x: 1, y: 1 }, warn, size);
 					ref = url ? url.slice(5, -1) : "";
 					filterRefs.set(key, ref);
 				}
-				return [f.t, ref] as [number, string];
+				return [run.t, ref] as [number, string];
 			});
 		}
 		const blend = cssBlendMode(it.blendMode, warn);
@@ -340,7 +349,8 @@ export function renderPlayer(
 	if (s.includeBackground) svg.children.push(el("rect", { width: fmt(d.width, 2), height: fmt(d.height, 2), fill: d.backgroundColor }));
 	svg.children.push(poster);
 	svg.children.push(el("script", { type: "application/json" }, [cdata(JSON.stringify(P).replace(/</g, "\\u003c"))]));
-	const morphs = Object.values(P.tl).some((t) => t.ly.some((l) => l.it.some((i) => i.k === "q" && i.mp)));
+	// the runtime with morphs also animates filters (shape tweens, filters with changing numbers)
+	const morphs = Object.values(P.tl).some((t) => t.ly.some((l) => l.it.some((i) => (i.k === "q" && i.mp) || (i.k === "i" && i.fa))));
 	// mouse handlers and the start triggers share a build
 	const events = s.begin === "visible" || s.begin === "scroll" || Object.values(P.tl).some((t) => t.ev);
 	doc.scripts.push(PLAYER_RUNTIMES[(Object.keys(P.snd).length ? 1 : 0) + (morphs ? 2 : 0) + (events ? 4 : 0)]!);
