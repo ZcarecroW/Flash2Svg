@@ -173,7 +173,7 @@ the AS3 that Animate users actually write is.
 | Stroke scale *Normal* under uneven scale, *Horizontal*, *Vertical* | ✅ | a round pen, as measured (`src/core/pens.ts`, f83); scale that changes over time keeps the plain stroke |
 | Variable-width strokes | ✅ | come through Animate's SVG export as outlines: 0.00 % in f70, on scaled symbols and in shape tweens |
 | Art and pattern brushes, fluid brush | ❓ | `PaintBrushStroke`; no test document yet |
-| Static, dynamic, input text; fonts embedded | ✅ | input text isn't editable in the output (❓ check) |
+| Static, dynamic, input text; fonts embedded | ✅ | input text is a real field in SMIL, CSS and the player |
 | Bitmaps, smoothing, compression, downscaling | ✅ | |
 | Filters (all 7), colour effects, blend modes, layer effects | ✅ | tweened filters: one filter whose numbers change in the player (package 9); SMIL and CSS a `<filter>` per frame — cheaper to draw in Chromium, compresses well (filters demo 284 KB, 19 KB gzip) |
 | Masks, 9-slice | ✅ / 🟡 | 9-slice: animated scale of symbols with nested symbols |
@@ -186,11 +186,11 @@ the AS3 that Animate users actually write is.
 | IK armatures (bones on symbols and on shapes) | ✅ | baked in the working copy (f67–f69): 0.00 % |
 | Asset Warp | ✅ | as Animate's warped bitmaps (f71–f73) |
 | Flexi bones, envelope deformer; warps with "Auto convert vector to bitmap" off | ❓ | go the same way; no test document yet |
-| Sounds | ✅ player / ⬜ SMIL, CSS, Lottie | |
+| Sounds | ✅ | player, SMIL, CSS, MP4, WebM; Lottie JSON on request |
 | Video components / video in the timeline | ✅ / ⬜ | embedded FLV: warned, see package 16 |
 | Buttons (states, Hit frame), links, start triggers, scroll | ✅ | e2e-hit: a real mouse in three engines; Lottie: its art is the hit area |
 | Frame scripts | ✅ | run in the JS player (package 12); SMIL, CSS and Lottie keep `stop`/`play`/`goto`/counters (warned) |
-| Code snippets | 🟡 | mouse events, timeline navigation, visibility, web pages; not: drag and drop, keyboard, `ENTER_FRAME`, timers, random, text, sounds, fades, load/unload |
+| Code snippets | ✅ | all of them run, AS3 and HTML5 Canvas, tested one by one (`tests/out/snipsmoke.ts`, the snippets' text isn't committed) |
 | ActionScript in general (variables, conditions, loops, Math, properties) / Canvas JavaScript | ✅ | package 12; 392 lines identical to Flash Player, 57 to CreateJS |
 | Document class, classes in `.as` files | ⬜ | warned; would need the parser to learn `package` and `class` |
 | UI components (Button, CheckBox, ComboBox, … ; Canvas components) | ✅ | real HTML controls; TileList, ScrollPane, UIScrollBar and the jQuery UI components warned |
