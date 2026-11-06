@@ -3379,7 +3379,7 @@
 		c.setColorFilter(0, 0, 0, 0, 0);
 		c.setTint(8, 60, 255, 128, 0);
 		c.setColorFilter(8, 0, 0, 0, 0);
-		c.setTint(16, 0, 255, 128, 0);
+		c.setTint(16, 30, 255, 128, 0);
 		c.setColorFilter(16, 20, 30, -40, 60);
 		t.setSelectedFrames(0, 7);
 		t.createMotionTween();
@@ -3396,11 +3396,12 @@
 					doc.setStrokeSize(4);
 					doc.setStrokeColor("#222222");
 					doc.setFillColor("#FFCC00");
-					doc.addNewRectangle({ left: -20, top: -20, right: 20, bottom: 20 }, 0, true, true);
+					doc.addNewRectangle({ left: -20, top: -20, right: 20, bottom: 20 }, 0, false, false);
 					var els = tl().layers[0].frames[0].elements;
 					doc.selectAll();
 					var st = doc.getCustomStroke("selection");
 					st.scaleType = kind;
+					st.thickness = 4;
 					doc.setCustomStroke(st);
 					doc.selectNone();
 				});

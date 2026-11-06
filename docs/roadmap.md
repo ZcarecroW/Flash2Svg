@@ -170,7 +170,7 @@ the AS3 that Animate users actually write is.
 | Area | Status | Notes |
 |---|---|---|
 | Shapes, gradients (focal point, spread, linear RGB), bitmap fills, stroke styles | ✅ | checked against Animate's frames |
-| Stroke scale *Horizontal* / *Vertical* | 🟡 | drawn like *Normal* (warned) |
+| Stroke scale *Normal* under uneven scale, *Horizontal*, *Vertical* | ✅ | a round pen, as measured (`src/core/pens.ts`, f83); scale that changes over time keeps the plain stroke |
 | Variable-width strokes | ✅ | come through Animate's SVG export as outlines: 0.00 % in f70, on scaled symbols and in shape tweens |
 | Art and pattern brushes, fluid brush | ❓ | `PaintBrushStroke`; no test document yet |
 | Static, dynamic, input text; fonts embedded | ✅ | input text isn't editable in the output (❓ check) |
@@ -181,7 +181,7 @@ the AS3 that Animate users actually write is.
 | Motion guides, orient to path, motion-tween paths | 🟡 | exact, but Animate's frames (a keyframe per frame), not the path |
 | Graphic looping, frame picker, lip sync, movie clips, scenes | ✅ | SMIL/CSS: clips with unrelated loop lengths jump at the repeat (player exact) |
 | Layer parenting, modern rigging (scale/skew/flip) | ✅ | f65 |
-| Camera pan, zoom, rotate, depth; layer depth (parallax), attached layers | ✅ | f61, f62; camera colour effects ⬜ |
+| Camera pan, zoom, rotate, depth; layer depth (parallax), attached layers; colour effects | ✅ | f61, f62, f82 |
 | 3D rotation and translation (perspective) | ⬜ | drawn flat: `element.matrix` holds no 3D (30 % of f63's pixels differ); `matrix3D` and `is3D` are there: package 13 |
 | IK armatures (bones on symbols and on shapes) | ✅ | baked in the working copy (f67–f69): 0.00 % |
 | Asset Warp | ✅ | as Animate's warped bitmaps (f71–f73) |
@@ -194,7 +194,7 @@ the AS3 that Animate users actually write is.
 | ActionScript in general (variables, conditions, loops, Math, properties) / Canvas JavaScript | ✅ | package 12; 392 lines identical to Flash Player, 57 to CreateJS |
 | Document class, classes in `.as` files | ⬜ | warned; would need the parser to learn `package` and `class` |
 | UI components (Button, CheckBox, ComboBox, … ; Canvas jQuery UI components) | ⬜ | |
-| *Export as bitmap* / *cache as bitmap* on instances | ⬜ | drawn as vectors (looks the same; never a bitmap) |
+| *Export as bitmap* / *cache as bitmap* on instances | ✅ | drawn as vectors: measured the same (f84: 0.00 %) |
 
 ### Packages, in the suggested order
 | # | Package | Benefit | Effort | Status |

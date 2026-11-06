@@ -992,15 +992,16 @@
 				if (lin.length) c.owner.linearRGB = lin;
 			}
 			if (text.indexOf('stroke="#') < 0) continue;
-			var fixed = c.owner.fixedStrokes || [];
-			try { fixedStrokes(c.el, fixed, 0); } catch (e) {}
+			var fixed = c.owner.fixedStrokes || [], pens = c.owner.penStrokes || [];
+			try { fixedStrokes(c.el, fixed, pens, 0); } catch (e) {}
 			if (fixed.length) c.owner.fixedStrokes = fixed;
+			if (pens.length) c.owner.penStrokes = pens;
 		}
 		job.strokeChecks = [];
 	}
 
-	/** Signatures ("#rrggbb|width") of strokes that keep their width when scaled. */
-	function fixedStrokes(el, out, depth) {
+	/** Signatures ("#rrggbb|width") of strokes that keep their width when scaled, and those that scale one way ("...|horizontal"). */
+	function fixedStrokes(el, out, pens, depth) {
 		if (depth > 8) return;
 		var edges = get(el, "edges", null);
 		if (edges) {
@@ -1009,17 +1010,16 @@
 				if (!st || st.style == "noStroke") continue;
 				var scale = get(st, "scaleType", "normal");
 				if (scale == "normal") continue;
+				var sig = String(st.color).substr(0, 7).toLowerCase() + "|" + round(st.thickness);
 				if (scale != "none") {
-					if (!job.warnedScale) warn("Strokes that scale only horizontally or vertically are exported as normal strokes");
-					job.warnedScale = true;
+					if (indexOf(pens, sig + "|" + scale) < 0) pens.push(sig + "|" + scale);
 					continue;
 				}
-				var sig = String(st.color).substr(0, 7).toLowerCase() + "|" + round(st.thickness);
 				if (indexOf(out, sig) < 0) out.push(sig);
 			}
 		}
 		var members = get(el, "members", null);
-		if (members) for (var m = 0; m < members.length; m++) fixedStrokes(members[m], out, depth + 1);
+		if (members) for (var m = 0; m < members.length; m++) fixedStrokes(members[m], out, pens, depth + 1);
 	}
 
 	/** Symbol and bitmap instances inside a group and its sub-groups, in drawing order. */

@@ -15,6 +15,7 @@ import type {
 	ColorTransform,
 	ElementData,
 	FilterData,
+	CameraFrame,
 	InstanceElement,
 	Keyframe,
 	LayerData,
@@ -37,6 +38,8 @@ export interface CompileOptions {
 	includeGuides: boolean;
 	/** A guide layer's drawing as a curve (motionpath.ts), by atlas id; without it guided tweens keep their frames. */
 	guide?: (atlas: string) => GuideCurve | null;
+	/** Lottie: an uneven scale goes into the drawings, see pens.ts. */
+	pensInDrawings?: boolean;
 }
 
 export const TRANSFORM_PROPS = ["x", "y", "rot", "skw", "sx", "sy", "tpx", "tpy"] as const;
@@ -237,6 +240,7 @@ export function buildPrograms(model: SceneModel, opts: CompileOptions): CompileR
 		wrapLayerEffects(programs, programs[id]!, model.timelines[id]!, warnings);
 		wrapRigs(programs, programs[id]!, opts);
 		wrapDepth(programs, programs[id]!, model.timelines[id]!, opts, warnings, model.doc);
+		wrapCameraColor(programs, programs[id]!, model.timelines[id]!, model.doc);
 	}
 	for (const [id, list] of uses) {
 		const layered = list.filter((it) => it.blendMode === "layer");
@@ -676,6 +680,53 @@ function wrapLayerEffects(programs: Record<string, Program>, prog: Program, tl: 
 	}
 }
 
+/**
+ * The camera's tint and colour filter act on everything it sees: all layers go into a synced graphic
+ * whose instance has them, frame by frame, as a colour effect and an Adjust Color filter.
+ */
+function wrapCameraColor(programs: Record<string, Program>, prog: Program, tl: TimelineData, doc: SceneModel["doc"]) {
+	const cam = tl.camera;
+	const coloured = (c: CameraFrame) => !!c.tint?.percent || (!!c.colorFilter && Object.values(c.colorFilter).some((v) => v));
+	if (!cam?.some(coloured)) return;
+	const id = `${prog.id}#camera`;
+	programs[id] = { id, name: `${prog.name} camera`, kind: "graphic", frameCount: prog.frameCount, layers: prog.layers, labels: [], actions: {} };
+	const hold = (v: number, t = 0): Track => [{ t, v, ease: "hold" }];
+	const transform = Object.fromEntries(TRANSFORM_PROPS.map((k) => [k, hold(k === "sx" || k === "sy" ? 1 : 0)])) as TransformTracks;
+	const color: ColorTracks = emptyTracks(COLOR_PROPS);
+	const filters: InstanceItem["filters"] = [];
+	cam.forEach((c, t) => {
+		const p = c.tint?.percent ?? 0;
+		const v: Record<ColorProp, number> = { rP: 100 - p, gP: 100 - p, bP: 100 - p, aP: 100, rA: ((c.tint?.red ?? 0) * p) / 100, gA: ((c.tint?.green ?? 0) * p) / 100, bA: ((c.tint?.blue ?? 0) * p) / 100, aA: 0 };
+		for (const k of COLOR_PROPS) {
+			const track = color[k];
+			if (!track.length || track[track.length - 1]!.v !== v[k]) track.push({ t, v: v[k], ease: "hold" });
+		}
+		const f = c.colorFilter;
+		const list = f && Object.values(f).some((x) => x) ? [{ name: "adjustColorFilter", enabled: true, ...f }] : [];
+		if (JSON.stringify(list) !== JSON.stringify(filters[filters.length - 1]?.filters ?? [])) filters.push({ t, filters: list });
+	});
+	if (filters.length && filters[0]!.t > 0) filters.unshift({ t: 0, filters: [] });
+	const wrapper: InstanceItem = {
+		kind: "instance",
+		uid: `${prog.id}|camera`,
+		start: 0,
+		end: prog.frameCount,
+		slot: 0,
+		symbol: id,
+		symbolType: "graphic",
+		name: "",
+		transform,
+		color: COLOR_PROPS.every((k) => color[k].every((key) => key.v === (k.endsWith("P") ? 100 : 0))) ? null : color,
+		filters,
+		blendMode: "normal",
+		visible: true,
+		cacheAsBitmap: false,
+		bounds: { left: 0, top: 0, width: doc.width, height: doc.height },
+		graphic: [{ start: 0, end: prog.frameCount, loop: "play once", firstFrame: 0, lastFrame: prog.frameCount - 1 }],
+	};
+	prog.layers = [{ index: 0, name: "camera", type: "normal", maskedBy: -1, items: [wrapper] }];
+}
+
 export function layerIncluded(layers: LayerData[], i: number, opts: Pick<CompileOptions, "includeGuides" | "includeHiddenLayers">): boolean {
 	const l = layers[i]!;
 	if (l.type === "folder" || l.type === "camera") return false;
@@ -760,8 +811,6 @@ function buildProgram(tl: TimelineData, opts: CompileOptions, warnings: string[]
  * camera frame in the world. The view transform is translate(stage centre) * inverse(camera).
  */
 function cameraView(tl: TimelineData, li: number, opts: CompileOptions, warnings: string[], doc: SceneModel["doc"]): TransformTracks | undefined {
-	if (tl.camera?.some((c) => (c.tint && c.tint.percent) || (c.colorFilter && Object.values(c.colorFilter).some((v) => v))))
-		warnings.push("The camera's colour effects (tint, colour filter) aren't exported: only its position, zoom and rotation");
 	const frames = cameraMatrices(tl, li, opts, warnings, doc).flatMap((m, t) => (m ? [{ t, m }] : []));
 	return frames.length ? matrixTracks(frames, opts) : undefined;
 }

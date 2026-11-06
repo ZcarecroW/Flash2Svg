@@ -348,7 +348,7 @@ function contentBounds(prog: Program, art: (id: string) => Artwork | null): Box 
 }
 
 /** A copy of an artwork that scales normally (text outlines, things that are never sliced). */
-function scaleArtwork(a: Artwork, t: Mat, id: string, digits: number): Artwork {
+export function scaleArtwork(a: Artwork, t: Mat, id: string, digits: number): Artwork {
 	const s = fmtMatrix(t, digits + 2);
 	return { ...a, id, body: s ? el("g", { transform: s }, [a.body]) : a.body };
 }
@@ -374,7 +374,7 @@ function matrixOf(tr: TransformTracks, t: number): Mat {
 }
 
 /** Transform tracks for L * M(t) (an instance inside a 9-slice symbol that scales normally). */
-function scaleTracks(tr: TransformTracks, L: Mat, start: number, end: number): TransformTracks {
+export function scaleTracks(tr: TransformTracks, L: Mat, start: number, end: number): TransformTracks {
 	const diag = Math.abs(L[1]) < 1e-9 && Math.abs(L[2]) < 1e-9;
 	const uniform = diag && Math.abs(L[0] - L[3]) < 1e-9;
 	const unrotated = isZeroAngle(tr.rot) && isZeroAngle(tr.skw);

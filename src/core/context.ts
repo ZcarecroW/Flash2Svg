@@ -3,6 +3,7 @@ import { fmt } from "./geom.ts";
 import { el } from "./xml.ts";
 import type { BitmapFill, SceneModel } from "./model.ts";
 import { applyNineSlice } from "./nineslice.ts";
+import { applyPens, type PenModes } from "./pens.ts";
 import { buildMorph, type Morph } from "./morph.ts";
 import { guideCurve, type GuideCurve } from "./motionpath.ts";
 import { measurePrecision, type Precision } from "./precision.ts";
@@ -86,6 +87,16 @@ export function createContext(model: SceneModel, files: FileSource, opts: Compil
 		for (const g of sigs) s.add(g);
 		fixed.set(atlas, s);
 	};
+	// atlas id -> strokes that scale one way only
+	const pens = new Map<string, PenModes>();
+	const addPens = (atlas: string, sigs: string[]) => {
+		const m = pens.get(atlas) ?? new Map<string, string>();
+		for (const g of sigs) {
+			const at = g.lastIndexOf("|");
+			m.set(g.slice(0, at), g.slice(at + 1));
+		}
+		pens.set(atlas, m);
+	};
 	// atlas id -> bitmaps used as fills
 	const bitmapFills = new Map<string, BitmapFill[]>();
 	const addBitmaps = (atlas: string, fills: BitmapFill[]) => {
@@ -101,6 +112,7 @@ export function createContext(model: SceneModel, files: FileSource, opts: Compil
 					if (e.linearRGB?.length) addLinear(e.atlas, e.linearRGB);
 					if (e.bitmapFills?.length) addBitmaps(e.atlas, e.bitmapFills);
 					if (e.fixedStrokes?.length) addFixed(e.atlas, e.fixedStrokes);
+					if (e.penStrokes?.length) addPens(e.atlas, e.penStrokes);
 				}
 				// shape tween frames: in-between gradients have in-between colours, so match them all ("*")
 				const frames = kf.tween?.type === "shape" ? kf.tween.shapeFrames : undefined;
@@ -197,6 +209,7 @@ export function createContext(model: SceneModel, files: FileSource, opts: Compil
 	};
 	const addArt = (id: string, a: Artwork | null) => derived.set(id, a);
 	applyNineSlice(model, programs, ctx.art, addArt, digits, warn, opts.smooth);
+	applyPens(model.roots, programs, ctx.art, addArt, (id) => precision.art(id), pens, !!opts.pensInDrawings);
 	markShapeAlpha(programs, model.roots, (id) => {
 		const a = ctx.art(id);
 		return (bitmapFills.has(id) ? 4 : 0) | (a ? artworkPaints(a) : 0);

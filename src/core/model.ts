@@ -174,6 +174,8 @@ export interface ShapeElement extends ElementBase {
 	linearRGB?: string[];
 	/** Strokes that keep their width when scaled (scale "none"), as "#rrggbb|width". */
 	fixedStrokes?: string[];
+	/** Strokes that scale one way only: "#rrggbb|width|horizontal" or "...|vertical". */
+	penStrokes?: string[];
 	/** Library bitmaps used as fills (Animate's SVG export only links them by file name). */
 	bitmapFills?: BitmapFill[];
 }
@@ -292,7 +294,7 @@ export interface CameraFrame {
 	rotation: number;
 	/** The camera's depth, when it isn't 0. */
 	z?: number;
-	tint?: { color: string; percent: number };
+	tint?: { percent: number; red: number; green: number; blue: number };
 	colorFilter?: { brightness: number; contrast: number; saturation: number; hue: number };
 }
 

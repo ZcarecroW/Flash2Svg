@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **The camera's colour effects export** (tint and Adjust Color, also while they change), in every format: on all layers through one wrapper, the stage colour behind them untouched.
+- **Strokes keep a round pen under an uneven scale**, as in Animate: SVG and Lottie stretch a stroke with its drawing (6 px at the sides and 2 px at the top where Animate draws 4.9 px all around). Also *Horizontal* and *Vertical* stroke scale, which came out like *Normal* before. Measured widths: Normal width x sqrt((sx² + sy²) / 2), Horizontal x sx, Vertical x sy. f83: 0.00 % against Animate in SMIL, CSS, the player, lottie-web, dotLottie and Skottie. Scale that changes over time keeps the plain stroke.
 - **Frame scripts run in the JS player** (roadmap package 12), in AS3 and in HTML5 Canvas documents, wherever scripts run: inline, as a file of its own, in an `<object>`.
   - **AS3** is compiled to JavaScript at export (`src/core/as3`) and runs on a Flash API in the player (`src/player/script.ts`): variables, functions, conditions, loops, types with their conversions, `int` overflow, Array, Vector, Dictionary, Date, Math, display objects and the display list, events with their phases, mouse, keyboard, ENTER_FRAME, timers, dragging, bounds and hit tests, matrices, colour transforms, filters, masks, text fields with formats and HTML, drawing with `graphics`, bitmaps and pixels, library symbols, bitmaps and sounds with `new`, Sound and SoundChannel, Loader and URLLoader, Tween, SharedObject, ExternalInterface, scenes, errors with Flash's numbers and words.
   - **Canvas documents'** JavaScript runs as it is, on a CreateJS layer: Graphics, Text, Tween, Ease, Ticker, Sound, its events and mouse.

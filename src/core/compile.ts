@@ -224,6 +224,7 @@ export function compileScene(
 		includeHiddenLayers: s.includeHiddenLayers,
 		includeGuides: s.includeGuides,
 		digits: s.digits,
+		pensInDrawings: s.format === "lottie" || s.format === "dotlottie",
 	});
 	ctx.scale = s.scale ?? "fixed";
 	ctx.background = s.includeBackground;
