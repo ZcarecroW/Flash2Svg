@@ -3302,6 +3302,50 @@
 		t.layers[t.currentLayer].frames[0].actionScript = FLfile.read(root + "/as3/f79-canvas.js") + "\n" + FLfile.read(root + "/as3/f79-mouse.js");
 	});
 
+	// ---------------------------------------------------------------- f80: three scenes with scripts, exported as one
+	build("f80-as3scenes", function () {
+		newDoc("timeline", 300, 200, 24);
+		doc.as3StrictMode = false;
+		function frames(n, labels, scripts) {
+			rect(10, 10, 60, 60, "#3366CC");
+			var t = tl();
+			t.insertFrames(n - 1);
+			layer("labels");
+			t = tl();
+			var ll = t.layers[t.currentLayer];
+			for (var f in labels) {
+				var at = +f;
+				if (at > 0) t.convertToKeyframes(at);
+				ll.frames[at].name = labels[f];
+			}
+			layer("actions");
+			t = tl();
+			var al = t.layers[t.currentLayer];
+			for (var g in scripts) {
+				var to = +g;
+				if (to > 0) t.convertToKeyframes(to);
+				al.frames[to].actionScript = scripts[g];
+			}
+		}
+		frames(4, { 1: "here", 3: "shared" }, {
+			0: FLfile.read(root + "/as3/f80-scene1.as"),
+			1: 'say("one 2"); nextFrame();',
+			2: 'say("one 3"); nextScene();',
+			3: 'say("one 4"); gotoAndPlay(1, "Last");'
+		});
+		doc.addNewScene("Middle");
+		frames(3, { 0: "shared" }, {
+			0: 'say("two 1"); gotoAndPlay(2);',
+			1: 'say("two 2"); this.again = true; prevScene();'
+		});
+		doc.addNewScene("Last");
+		frames(3, { 0: "begin", 1: "end" }, {
+			0: 'say("three 1"); gotoAndStop("end");',
+			1: 'say("three 2"); ' + QUIT
+		});
+		doc.editScene(0);
+	});
+
 	FLfile.write(outDir + "/build-log.txt", log.join("\n"));
 	fl.closeAll(false);
 	fl.quit(false);

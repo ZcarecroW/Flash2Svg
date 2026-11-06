@@ -948,6 +948,12 @@ class Sprite extends DisplayObjectContainer {
 	}
 }
 
+/** A label in several scenes carries its scene's name on the joined timeline. */
+function bareLabel(k: string) {
+	const i = k.indexOf("/");
+	return i > 0 && current.P.sc?.some((s) => s[0] === k.slice(0, i)) ? k.slice(i + 1) : k;
+}
+
 class FFrameLabel {
 	name: string;
 	frame: number;
@@ -1012,7 +1018,14 @@ class MovieClip extends Sprite {
 	_labels(from: number, n: number) {
 		const lb = this._c?.tl.lb ?? {};
 		const out: FFrameLabel[] = [];
-		for (const k in lb) if (lb[k]! >= from && lb[k]! < from + n) out.push(new FFrameLabel(k.slice(k.indexOf("/") + 1), lb[k]! - from + 1));
+		for (const k in lb) {
+			const f = lb[k]!;
+			if (f < from || f >= from + n) continue;
+			const name = bareLabel(k);
+			// (a label an earlier scene has too is left out of the lists: Flash Player's table holds one)
+			if (name !== k && Object.keys(lb).some((o) => o !== k && bareLabel(o) === name && lb[o]! < from)) continue;
+			out.push(new FFrameLabel(name, f - from + 1));
+		}
 		return out.sort((a, b) => a.frame - b.frame);
 	}
 	get currentLabels() {
@@ -1031,7 +1044,7 @@ class MovieClip extends Sprite {
 		const c = this._c;
 		if (!c) return null;
 		const lb = c.tl.lb ?? {};
-		for (const k in lb) if (lb[k] === c.frame) return k.slice(k.indexOf("/") + 1);
+		for (const k in lb) if (lb[k] === c.frame) return bareLabel(k);
 		return null;
 	}
 	get currentLabel() {
@@ -1041,7 +1054,7 @@ class MovieClip extends Sprite {
 			at = -1;
 		const lb = c.tl.lb ?? {};
 		for (const k in lb) if (lb[k]! <= c.frame && lb[k]! > at) (best = k), (at = lb[k]!);
-		return best && best.slice(best.indexOf("/") + 1);
+		return best && bareLabel(best);
 	}
 	play() {
 		const c = this._c;
@@ -3106,6 +3119,7 @@ export class Scripts {
 	objOfClip(c: Clip): MovieClip {
 		let o = this.clips.get(c);
 		if (o) return o;
+		const self = this;
 		const m = c.inst && (c.inst.it as PInst).t === 2 ? new SimpleButton(c.node) : new MovieClip(c.node);
 		m._c = c;
 		m._cls = this.classNames.get(c.tl) ?? (c.kind === -1 ? "MainTimeline" : "MovieClip");
@@ -3115,6 +3129,8 @@ export class Scripts {
 				if (k in t || typeof k === "symbol") return Reflect.get(t, k, t);
 				const kid = t._list().find((x) => x.name === k);
 				if (kid) return kid;
+				// (taken elsewhere by a script: the variable still holds it)
+				for (const i of c.items.values()) if ((i.it as PInst).nm === k) return self.objOfInst(i);
 				// (an instance of this timeline that isn't there now: its variable is null)
 				return c.tl.ly.some((l) => l.it.some((i) => (i as PInst).nm === k)) ? null : undefined;
 			},

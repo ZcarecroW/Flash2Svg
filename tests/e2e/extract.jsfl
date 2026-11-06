@@ -22,7 +22,8 @@
 		if (fl.__checkpoint) fl.__checkpoint(name);
 		try {
 			var doc = fl.openDocument(fla);
-			var res = Flash2Svg.run({ outDir: outRoot + "/" + name + "/model" });
+			// (documents named for it are exported with all their scenes in a row)
+			var res = Flash2Svg.run({ outDir: outRoot + "/" + name + "/model", allScenes: /scenes$/.test(name) && !/^f(36|58)/.test(name) });
 			log.push(name + " extract: " + res + " (" + (new Date().getTime() - t0) + "ms)");
 			if (refs) {
 				FLfile.createFolder(outRoot + "/" + name + "/ref");
