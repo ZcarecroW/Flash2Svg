@@ -9,6 +9,7 @@
  */
 import type { Clip, Inst, Player } from "./runtime.ts";
 import type { PInst, PItem, PRef, PScene, PTextExtras, PTimeline, PTrack } from "./format.ts";
+import { installCreateJS } from "./createjs.ts";
 import { buildFilters } from "../core/emit/filters.ts";
 import type { FilterData } from "../core/model.ts";
 import type { XmlNode } from "../core/xml.ts";
@@ -52,6 +53,7 @@ export interface Frozen {
 	k: number;
 	sx: number;
 	sy: number;
+	c?: unknown;
 }
 
 const RAD = Math.PI / 180;
@@ -158,49 +160,19 @@ class FTimerEvent extends FEvent {
 	updateAfterEvent() {}
 }
 
-/** CreateJS's mouse and frame events by what they are here. */
-const CANVAS_EVENTS: Record<string, string> = {
-	mousedown: "mouseDown",
-	pressup: "mouseUp",
-	mouseover: "mouseOver",
-	mouseout: "mouseOut",
-	rollover: "rollOver",
-	rollout: "rollOut",
-	dblclick: "doubleClick",
-	tick: "enterFrame",
-	stagemousedown: "mouseDown",
-	stagemouseup: "mouseUp",
-	stagemousemove: "mouseMove",
-	pressmove: "pressMove",
-};
-
 class Dispatcher {
 	_on: Map<string, { fn: Fn; capture: boolean; prio: number }[]> | null = null;
 	addEventListener(type: string, fn: Fn, capture = false, prio = 0) {
-		if (!current.base) type = CANVAS_EVENTS[type] ?? type;
 		const m = (this._on ??= new Map<string, { fn: Fn; capture: boolean; prio: number }[]>());
 		let l = m.get(type);
 		if (!l) m.set(type, (l = []));
-		if (l.some((e) => e.fn === fn && e.capture === capture)) return;
+		if (l.some((e) => e.fn === fn && e.capture === capture)) return fn;
 		l.push({ fn, capture, prio });
 		l.sort((a, b) => b.prio - a.prio);
 		this._listening(type);
-	}
-	/** CreateJS: the listener, to give to off(). */
-	on(type: string, fn: Fn, scope?: unknown) {
-		const f = scope ? fn.bind(scope) : fn;
-		this.addEventListener(type, f);
-		return f;
-	}
-	off(type: string, fn: Fn) {
-		this.removeEventListener(type, fn);
-	}
-	removeAllEventListeners(type?: string) {
-		if (type) this._on?.delete(CANVAS_EVENTS[type] ?? type);
-		else this._on?.clear();
+		return fn;
 	}
 	removeEventListener(type: string, fn: Fn, capture = false) {
-		if (!current.base) type = CANVAS_EVENTS[type] ?? type;
 		const l = this._on?.get(type);
 		if (!l) return;
 		const i = l.findIndex((e) => e.fn === fn && e.capture === capture);
@@ -270,7 +242,10 @@ const fromMat = (m: Mat): Frozen => {
 	const r = Math.atan2(m[1], m[0]) / RAD;
 	return { x: m[4], y: m[5], r, k: Math.atan2(-m[2], m[3]) / RAD - r, sx: Math.hypot(m[0], m[1]), sy: Math.hypot(m[2], m[3]) };
 };
+/** CreateJS keeps a transform in other terms (set when a document needs it). */
+let canvasMatrix: ((f: Frozen) => Mat) | null = null;
 const matOf = (f: Frozen): Mat => {
+	if (f.c) return canvasMatrix!(f);
 	const r = f.r * RAD,
 		q = (f.r + f.k) * RAD;
 	return [Math.cos(r) * f.sx, Math.sin(r) * f.sx, -Math.sin(q) * f.sy, Math.cos(q) * f.sy, f.x, f.y];
@@ -1269,8 +1244,11 @@ class TextField extends DisplayObject {
 	_br = 0;
 	_html: string | null = null;
 	_v = 1;
-	constructor(node?: SVGElement, extras?: PTextExtras) {
+	/** The gutter around the text (CreateJS has none). */
+	_gutter: number;
+	constructor(node?: SVGElement, extras?: PTextExtras, gutter = 2) {
 		super(node);
+		this._gutter = gutter;
 		this._def = new FTextFormat("Times New Roman", 12, 0, false, false, false, "", "", "left", 0, 0, 0, 0);
 		this._def.letterSpacing = 0;
 		this._def.blockIndent = 0;
@@ -1294,8 +1272,9 @@ class TextField extends DisplayObject {
 			const list = t.transform.baseVal;
 			const m = list.numberOfItems ? list.consolidate()!.matrix : null;
 			const v: Mat = m ? [m.a, m.b, m.c, m.d, m.e, m.f] : ONE;
-			node!.setAttribute("transform", matrixText(mul(v, [1, 0, 0, 1, -2, -2])));
-			t.setAttribute("transform", "translate(2 2)");
+			const g = this._gutter;
+			node!.setAttribute("transform", matrixText(mul(v, [1, 0, 0, 1, -g, -g])));
+			t.setAttribute("transform", `translate(${g} ${g})`);
 			if (extras) {
 				this._w = extras[0] / (Math.abs(v[0]) || 1);
 				this._h = extras[1] / (Math.abs(v[3]) || 1);
@@ -1303,6 +1282,7 @@ class TextField extends DisplayObject {
 				this.selectable = !!extras[4];
 				this.multiline = !!extras[5];
 				this.wordWrap = !!extras[5];
+				(this as any)._lh = extras[6];
 			}
 			this._lay();
 		} else this._draw();
@@ -1317,7 +1297,7 @@ class TextField extends DisplayObject {
 	_lay() {
 		const c = canvas2d();
 		const text = this._text;
-		const room = this._w - 4;
+		const room = this._w - 2 * this._gutter;
 		const lines: TextLine[] = [];
 		let from = 0;
 		const close = (to: number, width: number) => {
@@ -1376,8 +1356,8 @@ class TextField extends DisplayObject {
 	}
 	/** autoSize: the box around the text. */
 	private _fit() {
-		const w = this.textWidth + 4,
-			h = this.textHeight + 4;
+		const w = this.textWidth + 2 * this._gutter,
+			h = this.textHeight + 2 * this._gutter;
 		if (!this.wordWrap) {
 			const dx = this._w - w;
 			if (this._auto === "center") this.x += dx / 2;
@@ -1396,19 +1376,20 @@ class TextField extends DisplayObject {
 		t.removeAttribute("transform");
 		const parts: SVGElement[] = [];
 		const box = this._w;
-		let y = 2;
+		const g = this._gutter;
+		let y = g;
 		const hide = this.displayAsPassword;
 		for (let l = this._v - 1; l < this._lines.length; l++) {
 			const line = this._lines[l]!;
 			y += line.ascent;
 			const first = this._chars[line.from] ?? this._def;
 			const align = first.align ?? "left";
-			const row = svgEl("tspan", { x: String(align === "center" ? box / 2 : align === "right" ? box - 2 : 2 + (first.leftMargin ?? 0)), y: String(y), "text-anchor": align === "center" ? "middle" : align === "right" ? "end" : "start" });
+			const row = svgEl("tspan", { x: String(align === "center" ? box / 2 : align === "right" ? box - g : g + (first.leftMargin ?? 0)), y: String(y), "text-anchor": align === "center" ? "middle" : align === "right" ? "end" : "start" });
 			for (let i = line.from; i < line.to; ) {
 				const f = this._chars[i]!;
 				let e = i + 1;
 				while (e < line.to && this._chars[e] === f) e++;
-				const s = svgEl("tspan", { "font-family": `'${f.font}', sans-serif`, "font-size": String(f.size), fill: colorOf(f.color ?? 0) });
+				const s = svgEl("tspan", { "font-family": `'${f.font}', sans-serif`, "font-size": String(f.size), fill: (this as any)._css ?? colorOf(f.color ?? 0) });
 				if (f.bold) s.setAttribute("font-weight", "bold");
 				if (f.italic) s.setAttribute("font-style", "italic");
 				if (f.underline) s.setAttribute("text-decoration", "underline");
@@ -1442,7 +1423,7 @@ class TextField extends DisplayObject {
 		return !!b && x >= b.l && x <= b.r && y >= b.t && y <= b.b;
 	}
 	get text() {
-		return this._text;
+		return current.base ? this._text : this._text.replace(/\r/g, "\n");
 	}
 	set text(v: string) {
 		this._text = (v === null || v === undefined ? "" : String(v)).replace(/\n/g, "\r");
@@ -1788,6 +1769,53 @@ class FGraphics {
 		this.flush();
 		this.fill = "none";
 	}
+	/** The arcs and stars CreateJS draws. */
+	arc(x: number, y: number, r: number, a0: number, a1: number, ccw: boolean) {
+		const sx = x + r * Math.cos(a0),
+			sy = y + r * Math.sin(a0);
+		this.start();
+		this.d += `L${sx} ${sy}`;
+		let sweep = a1 - a0;
+		if (ccw) sweep = sweep > 0 ? sweep - 2 * Math.PI : sweep;
+		else sweep = sweep < 0 ? sweep + 2 * Math.PI : sweep;
+		sweep = Math.max(-2 * Math.PI + 1e-4, Math.min(2 * Math.PI - 1e-4, sweep));
+		const ex = x + r * Math.cos(a0 + sweep),
+			ey = y + r * Math.sin(a0 + sweep);
+		this.d += `A${r} ${r} 0 ${Math.abs(sweep) > Math.PI ? 1 : 0} ${sweep > 0 ? 1 : 0} ${ex} ${ey}`;
+		this.box(x - r, y - r, 2 * r, 2 * r);
+		this.x = ex;
+		this.y = ey;
+	}
+	arcCorner(a: number, b: number, x: number, y: number, r: number) {
+		const ux = this.x - a,
+			uy = this.y - b,
+			vx = x - a,
+			vy = y - b;
+		const lu = Math.hypot(ux, uy),
+			lv = Math.hypot(vx, vy);
+		const turn = Math.acos(Math.max(-1, Math.min(1, (ux * vx + uy * vy) / (lu * lv))));
+		const t = r / Math.tan(turn / 2);
+		this.lineTo(a + (ux / lu) * t, b + (uy / lu) * t);
+		const ex = a + (vx / lv) * t,
+			ey = b + (vy / lv) * t;
+		this.d += `A${r} ${r} 0 0 ${ux * vy - uy * vx < 0 ? 1 : 0} ${ex} ${ey}`;
+		this.pt(ex, ey);
+		this.x = ex;
+		this.y = ey;
+	}
+	polyStar(x: number, y: number, r: number, sides: number, ptr: number, angle: number) {
+		const inner = r * (1 - ptr);
+		const n = ptr ? sides * 2 : sides;
+		for (let i = 0; i < n; i++) {
+			const q = ptr && i % 2 ? inner : r;
+			const a = (angle * Math.PI) / 180 + (i * 2 * Math.PI) / n;
+			const px = x + Math.cos(a) * q,
+				py = y + Math.sin(a) * q;
+			this.d += `${i ? "L" : "M"}${px} ${py}`;
+			this.pt(px, py);
+		}
+		this.d += "Z";
+	}
 	moveTo(x: number, y: number) {
 		this.d += `M${x} ${y}`;
 		this.x = x;
@@ -2079,229 +2107,6 @@ class Bitmap extends DisplayObject {
 	override _covers(x: number, y: number) {
 		const b = this._boxIn(this._world(), false);
 		return !!b && x >= b.l && x <= b.r && y >= b.t && y <= b.b;
-	}
-}
-
-// ------------------------------------------------------------------ CreateJS (HTML5 Canvas documents)
-
-/** A color of CreateJS: CSS, or a number. */
-const css = (c: unknown) => (typeof c === "number" ? colorOf(c) : c === null || c === undefined ? "none" : String(c));
-
-/** createjs.Graphics: its calls chain, colours are CSS. */
-class CGraphics {
-	private g: FGraphics | null = null;
-	private ops: ((g: any) => void)[] = [];
-	private id = 0;
-	private op(f: (g: any) => void) {
-		if (this.g) f(this.g);
-		else this.ops.push(f);
-		return this;
-	}
-	_on(host: SVGElement) {
-		this.g = new FGraphics(host);
-		for (const o of this.ops) o(this.g);
-		this.g._end();
-	}
-	_paint(key: "fill" | "stroke", paint: string) {
-		return this.op((g) => {
-			g._end();
-			g[key] = paint;
-		});
-	}
-	private gradient(linear: boolean, colors: string[], stops: number[], a: number[]) {
-		const id = `${current.player.svg.id}_g${++this.id}${current.uid++}`;
-		const e = svgEl(linear ? "linearGradient" : "radialGradient", { id, gradientUnits: "userSpaceOnUse" });
-		const names = linear ? ["x1", "y1", "x2", "y2"] : ["fx", "fy", "fr", "cx", "cy", "r"];
-		names.forEach((n, i) => e.setAttribute(n, String(a[i])));
-		colors.forEach((c, i) => e.appendChild(svgEl("stop", { offset: String(stops[i]), "stop-color": c })));
-		current.player.defs.appendChild(e);
-		return `url(#${id})`;
-	}
-	beginFill(c: unknown) {
-		return this._paint("fill", css(c));
-	}
-	beginStroke(c: unknown) {
-		return this._paint("stroke", css(c));
-	}
-	beginLinearGradientFill(c: string[], s: number[], x0: number, y0: number, x1: number, y1: number) {
-		return this._paint("fill", this.gradient(true, c, s, [x0, y0, x1, y1]));
-	}
-	beginRadialGradientFill(c: string[], s: number[], x0: number, y0: number, r0: number, x1: number, y1: number, r1: number) {
-		return this._paint("fill", this.gradient(false, c, s, [x0, y0, r0, x1, y1, r1]));
-	}
-	beginLinearGradientStroke(c: string[], s: number[], x0: number, y0: number, x1: number, y1: number) {
-		return this._paint("stroke", this.gradient(true, c, s, [x0, y0, x1, y1]));
-	}
-	setStrokeStyle(w: number) {
-		return this.op((g) => {
-			g._end();
-			g.sw = w;
-		});
-	}
-	endFill() {
-		return this._paint("fill", "none");
-	}
-	endStroke() {
-		return this._paint("stroke", "none");
-	}
-	moveTo(x: number, y: number) {
-		return this.op((g) => g.moveTo(x, y));
-	}
-	lineTo(x: number, y: number) {
-		return this.op((g) => g.lineTo(x, y));
-	}
-	quadraticCurveTo(a: number, b: number, x: number, y: number) {
-		return this.op((g) => g.curveTo(a, b, x, y));
-	}
-	bezierCurveTo(a: number, b: number, c: number, d: number, x: number, y: number) {
-		return this.op((g) => g.cubicCurveTo(a, b, c, d, x, y));
-	}
-	arcTo(a: number, b: number, x: number, y: number, r: number) {
-		return this.op((g) => (g.d += `Q${a} ${b} ${x} ${y}`, void r));
-	}
-	drawRect(x: number, y: number, w: number, h: number) {
-		return this.op((g) => g.drawRect(x, y, w, h));
-	}
-	drawRoundRect(x: number, y: number, w: number, h: number, r: number) {
-		return this.op((g) => g.drawRoundRect(x, y, w, h, r * 2, r * 2));
-	}
-	drawCircle(x: number, y: number, r: number) {
-		return this.op((g) => g.drawCircle(x, y, r));
-	}
-	drawEllipse(x: number, y: number, w: number, h: number) {
-		return this.op((g) => g.drawEllipse(x, y, w, h));
-	}
-	drawPolyStar(x: number, y: number, r: number, sides: number, ptr = 0, angle = 0) {
-		return this.op((g) => {
-			const inner = r * (1 - ptr);
-			const n = ptr ? sides * 2 : sides;
-			let d = "";
-			for (let i = 0; i < n; i++) {
-				const q = ptr && i % 2 ? inner : r;
-				const a = (angle * Math.PI) / 180 + (i * 2 * Math.PI) / n;
-				d += `${i ? "L" : "M"}${x + Math.cos(a) * q} ${y + Math.sin(a) * q}`;
-			}
-			g.d += `${d}Z`;
-		});
-	}
-}
-
-class CShape extends Shape {
-	graphicsC: CGraphics;
-	constructor(g?: CGraphics) {
-		super();
-		this.graphicsC = g ?? new CGraphics();
-		this.graphicsC._on(this._node);
-	}
-	override get graphics() {
-		return this.graphicsC as any;
-	}
-}
-
-class CText extends TextField {
-	constructor(text = "", font = "12px Arial", color = "#000") {
-		super();
-		const m = /(\d+(?:\.\d+)?)px\s*(.*)/.exec(font);
-		this._def.size = m ? +m[1]! : 12;
-		this._def.font = m?.[2] || "Arial";
-		this._def.bold = /bold/.test(font);
-		this._def.color = parseInt(String(color).replace(/^#/, "").padEnd(6, "0"), 16) || 0;
-		this.text = text;
-		this._field()?.setAttribute("fill", String(color));
-	}
-	get color() {
-		return "";
-	}
-	set color(v: string) {
-		this._field()?.setAttribute("fill", v);
-	}
-}
-
-const easePow = (p: number) => ({
-	in: (t: number) => t ** p,
-	out: (t: number) => 1 - (1 - t) ** p,
-	inOut: (t: number) => (t < 0.5 ? (2 * t) ** p / 2 : 1 - (2 * (1 - t)) ** p / 2),
-});
-const bounceOut = (t: number) => {
-	const a = 7.5625;
-	if (t < 1 / 2.75) return a * t * t;
-	if (t < 2 / 2.75) return a * (t -= 1.5 / 2.75) * t + 0.75;
-	if (t < 2.5 / 2.75) return a * (t -= 2.25 / 2.75) * t + 0.9375;
-	return a * (t -= 2.625 / 2.75) * t + 0.984375;
-};
-const CEase: Record<string, (t: number) => number> = {
-	linear: (t) => t,
-	bounceOut,
-	bounceIn: (t) => 1 - bounceOut(1 - t),
-	bounceInOut: (t) => (t < 0.5 ? (1 - bounceOut(1 - 2 * t)) / 2 : (1 + bounceOut(2 * t - 1)) / 2),
-	backOut: (t) => 1 + 2.70158 * (t - 1) ** 3 + 1.70158 * (t - 1) ** 2,
-	backIn: (t) => 2.70158 * t ** 3 - 1.70158 * t ** 2,
-	sineIn: (t) => 1 - Math.cos((t * Math.PI) / 2),
-	sineOut: (t) => Math.sin((t * Math.PI) / 2),
-	sineInOut: (t) => (1 - Math.cos(t * Math.PI)) / 2,
-};
-for (const [n, p] of [["quad", 2], ["cubic", 3], ["quart", 4], ["quint", 5]] as [string, number][]) {
-	const e = easePow(p);
-	CEase[`${n}In`] = e.in;
-	CEase[`${n}Out`] = e.out;
-	CEase[`${n}InOut`] = e.inOut;
-}
-
-/** createjs.Tween: to, wait, call, one after the other in real time. */
-class CTween {
-	static get(o: any, opts?: { loop?: boolean | number }) {
-		return new CTween(o, !!opts?.loop);
-	}
-	private steps: ((done: () => void) => void)[] = [];
-	private at = 0;
-	private o: any;
-	private loop: boolean;
-	constructor(o: any, loop: boolean) {
-		this.o = o;
-		this.loop = loop;
-		queueMicrotask(() => this.next());
-	}
-	private next() {
-		if (this.at >= this.steps.length) {
-			if (!this.loop || !this.steps.length) return;
-			this.at = 0;
-		}
-		this.steps[this.at++]!(() => this.next());
-	}
-	to(props: Record<string, number>, ms = 0, ease: (t: number) => number = CEase.linear!) {
-		this.steps.push((done) => {
-			const o = this.o,
-				from: Record<string, number> = {};
-			for (const k in props) from[k] = o[k];
-			const t0 = performance.now();
-			const tick = (now: number) => {
-				const u = ms > 0 ? Math.min(1, (now - t0) / ms) : 1;
-				const e = ease(u);
-				for (const k in props) o[k] = from[k]! + (props[k]! - from[k]!) * e;
-				if (u < 1) requestAnimationFrame(tick);
-				else done();
-			};
-			requestAnimationFrame(tick);
-		});
-		return this;
-	}
-	wait(ms: number) {
-		this.steps.push((done) => void setTimeout(done, ms));
-		return this;
-	}
-	call(f: Fn, args?: unknown[], scope?: unknown) {
-		this.steps.push((done) => {
-			current.safely(() => f.apply(scope ?? this.o, args ?? []));
-			done();
-		});
-		return this;
-	}
-	set(props: Record<string, unknown>) {
-		this.steps.push((done) => {
-			Object.assign(this.o, props);
-			done();
-		});
-		return this;
 	}
 }
 
@@ -3128,21 +2933,10 @@ export class Scripts {
 			BitmapFilterType: { INNER: "inner", OUTER: "outer", FULL: "full" },
 			Loader: FLoader,
 			ProLoader: FLoader,
-			// HTML5 Canvas documents
-			createjs: {
-				Shape: CShape,
-				Graphics: CGraphics,
-				Text: CText,
-				Tween: CTween,
-				Ease: { ...CEase, get: () => CEase.linear },
-				Ticker: Object.assign(new Dispatcher(), { framerate: player.P.fps, getTicks: () => Math.round(performance.now() * player.P.fps / 1000) }),
-				MovieClip,
-				Container: Sprite,
-				Touch: { enable: () => {} },
-				Event: FEvent,
+			stage: this.stage,
+			get root() {
+				return self.rootObj;
 			},
-			canvas: player.svg,
-			lib: new Proxy({}, { get: (_t, k) => self.classOf(String(k)) }),
 		};
 		this.helpers = {
 			str: (x: unknown) => (x === null || x === undefined ? null : String(x)),
@@ -3167,7 +2961,49 @@ export class Scripts {
 			const tl = this.P.tl[this.P.cl[n]!];
 			if (tl) this.classNames.set(tl, n);
 		}
+		if (!this.base)
+			Object.assign(
+				this.api,
+				installCreateJS({
+					DisplayObject,
+					DisplayObjectContainer,
+					Sprite,
+					MovieClip,
+					Shape,
+					TextField,
+					Bitmap,
+					FBitmapData,
+					FGraphics,
+					FPoint,
+					FRectangle,
+					FMatrix,
+					Dispatcher,
+					mul,
+					inverse,
+					svgEl,
+					colorOf,
+					noBox,
+					addBox,
+					alphaNow,
+					free,
+					run,
+					stagePoint,
+					canvasMatrix: (f: (x: Frozen) => Mat) => (canvasMatrix = f),
+					scripts: this,
+				}),
+			);
 		this.listen();
+	}
+
+	/** Canvas documents: what the frame event carries; the ticker's listeners and tweens. */
+	tickEvent: (() => any) | null = null;
+	ticker: Dispatcher | null = null;
+	private beats = new Set<() => void>();
+	onTick(f: () => void) {
+		this.beats.add(f);
+	}
+	offTick(f: () => void) {
+		this.beats.delete(f);
 	}
 
 	/** Hides the mouse pointer, whatever an object below it asks for. */
@@ -3221,7 +3057,14 @@ export class Scripts {
 		const self = this;
 		const pic = this.P.bd?.[name];
 		const key = this.P.cl?.[name] as string;
-		if (pic) {
+		if (pic && !this.base) {
+			// (in a Canvas document a library bitmap is a display object)
+			c = class extends Bitmap {
+				constructor() {
+					super(FBitmapData._picture(pic![0], pic![1], pic![2], !!pic![3], FBitmapData.prototype));
+				}
+			};
+		} else if (pic) {
 			const K: any = class extends FBitmapData {
 				constructor() {
 					super(1, 1);
@@ -3266,7 +3109,7 @@ export class Scripts {
 		const m = c.inst && (c.inst.it as PInst).t === 2 ? new SimpleButton(c.node) : new MovieClip(c.node);
 		m._c = c;
 		m._cls = this.classNames.get(c.tl) ?? (c.kind === -1 ? "MainTimeline" : "MovieClip");
-		if (c.kind === -1) m._name = "root1";
+		if (c.kind === -1 && this.base) m._name = "root1";
 		o = new Proxy(m, {
 			get(t, k) {
 				if (k in t || typeof k === "symbol") return Reflect.get(t, k, t);
@@ -3283,6 +3126,10 @@ export class Scripts {
 		// (the proxy is what scripts see, of a parent or a child too)
 		c.obj = o;
 		this.clips.set(c, o);
+		if (c.kind === -1) {
+			this.rootObj = o;
+			m._parent = this.stage;
+		}
 		const i = c.inst;
 		if (i) {
 			m._i = i;
@@ -3299,7 +3146,7 @@ export class Scripts {
 		if (o) return o;
 		const it = i.it as PInst;
 		if (i.clip) return this.objOfClip(i.clip);
-		if ((i.it as PItem).k === "r" && i.node.querySelector("text")) o = new TextField(i.node, (i.it as PRef).tx);
+		if ((i.it as PItem).k === "r" && i.node.querySelector("text")) o = new TextField(i.node, (i.it as PRef).tx, this.base ? 2 : 0);
 		else o = new Shape(i.node);
 		o._i = i;
 		o._parent = this.objOfClip(i.owner);
@@ -3392,6 +3239,14 @@ export class Scripts {
 		}
 	}
 
+	/** CreateJS's tick: tweens, then the objects listening, then the ticker's listeners. */
+	private tock() {
+		for (const f of [...this.beats]) f();
+		const set = this.heard.get("tick");
+		if (set) for (const o of [...set]) (o as any)._fireAll(this.tickEvent!(), 2);
+		(this.ticker as any)?._fireAll(this.tickEvent!(), 2);
+	}
+
 	/** Runs script code; afterwards the stage shows the changes. */
 	safely(fn: () => void) {
 		this.busy++;
@@ -3431,7 +3286,8 @@ export class Scripts {
 		this.ticks++;
 		advance();
 		for (const c of this.orphans) c.tick();
-		this.broadcast(FEvent.ENTER_FRAME);
+		if (this.base) this.broadcast(FEvent.ENTER_FRAME);
+		else this.tock();
 		this.construct();
 		this.busy--;
 		this.dirty = false;
@@ -3467,14 +3323,14 @@ export class Scripts {
 	}
 
 	/** The object that takes the mouse at a DOM node. */
-	private targetOf(n: Node | null): DisplayObject {
+	targetOf(n: Node | null): DisplayObject {
 		let target: DisplayObject | null = null;
 		for (let x: Node | null = n; x && x !== this.player.svg; x = x.parentNode) {
 			const i = this.nodes.get(x);
 			const o = (i ? this.objOfInst(i) : this.placed.get(x)) as any;
 			if (!o) continue;
-			// (a drawing doesn't take the mouse: the clip it is in does)
-			if (o instanceof Shape) continue;
+			// (a drawing doesn't take the mouse in Flash: the clip it is in does)
+			if (o instanceof Shape && this.base) continue;
 			if (o.mouseEnabled !== false && !target) target = o;
 			// a parent that keeps the mouse from its children takes it
 			if (o.mouseChildren === false) target = o;
@@ -3498,7 +3354,7 @@ export class Scripts {
 		return out;
 	}
 
-	private listen() {
+	listen() {
 		const svg = this.player.svg;
 		const pick = (e: Event) => this.targetOf(e.target as Node);
 		const on = (t: string, fn: (e: any) => void) => svg.addEventListener(t, (e) => this.safely(() => fn(e)), true);
@@ -3578,7 +3434,7 @@ export class Scripts {
 	}
 
 	hear(type: string, o: Dispatcher) {
-		if (type !== FEvent.ENTER_FRAME && type !== FEvent.FRAME_CONSTRUCTED && type !== FEvent.EXIT_FRAME) return;
+		if (type !== FEvent.ENTER_FRAME && type !== FEvent.FRAME_CONSTRUCTED && type !== FEvent.EXIT_FRAME && type !== "tick") return;
 		let s = this.heard.get(type);
 		if (!s) this.heard.set(type, (s = new Set()));
 		s.add(o);
@@ -3586,9 +3442,7 @@ export class Scripts {
 
 	/** The root timeline is there: its object hangs from the stage. */
 	started(root: Clip) {
-		const o = this.objOfClip(root);
-		this.rootObj = o;
-		o._parent = this.stage;
+		this.objOfClip(root);
 	}
 }
 

@@ -183,5 +183,5 @@ function canvasScripts(units: ScriptUnit[], name: string, warn: (m: string) => v
 			warn(`${name}, frame ${u.frame + 1}: this script can't run (${(e as Error).message})`);
 		}
 	}
-	return `function($t,$f,$r){var createjs=$f.createjs,cjs=createjs,stage=$f.stage,exportRoot=$f.root,canvas=$f.canvas,lib=$f.lib;return{${frames.join(",")}}}`;
+	return `function($t,$f,$r){var createjs=$f.createjs,cjs=createjs,stage=$f.stage,exportRoot=$f.root,canvas=$f.canvas,lib=$f.lib,playSound=$f.playSound;return{${frames.join(",")}}}`;
 }

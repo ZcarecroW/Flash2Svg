@@ -37,7 +37,7 @@ function actionCode(a: HandlerAction): (number | string)[] {
 /** What scripts can ask a text field: width, height, alignment, type, selectable, multiline. */
 function textExtras(t: TextElement): PTextExtras {
 	const r = t.runs[0];
-	return [round(t.width, 2), round(t.height, 2), r?.alignment ?? "left", t.textType === "input" ? "input" : "dynamic", t.selectable ? 1 : 0, t.multiline ? 1 : 0];
+	return [round(t.width, 2), round(t.height, 2), r?.alignment ?? "left", t.textType === "input" ? "input" : "dynamic", t.selectable ? 1 : 0, t.multiline ? 1 : 0, Math.round((r?.size ?? 12) * 1.1 + (r?.lineSpacing ?? 0))];
 }
 
 export function renderPlayer(

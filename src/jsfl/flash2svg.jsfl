@@ -902,13 +902,15 @@
 				for (var r = 0; r < el.textRuns.length; r++) {
 					var run = el.textRuns[r];
 					var a = run.textAttrs;
+					// (each by itself: some of them throw in HTML5 Canvas documents)
 					var tr = {
 						text: mask(run.characters),
-						face: a.face, size: a.size, fillColor: a.fillColor,
-						bold: !!a.bold, italic: !!a.italic,
-						alignment: a.alignment, letterSpacing: a.letterSpacing || 0, lineSpacing: a.lineSpacing || 0
+						face: get(a, "face", "Arial"), size: get(a, "size", 12), fillColor: get(a, "fillColor", "#000000"),
+						bold: !!get(a, "bold", false), italic: !!get(a, "italic", false),
+						alignment: get(a, "alignment", "left"), letterSpacing: get(a, "letterSpacing", 0) || 0, lineSpacing: get(a, "lineSpacing", 0) || 0
 					};
-					if (a.url) { tr.url = a.url; if (a.target) tr.target = a.target; }
+					var url = get(a, "url", "");
+					if (url) { tr.url = url; var target = get(a, "target", ""); if (target) tr.target = target; }
 					runs.push(tr);
 				}
 			} catch (e) {}

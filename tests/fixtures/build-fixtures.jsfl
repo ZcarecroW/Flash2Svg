@@ -3246,6 +3246,62 @@
 		t.layers[t.currentLayer].frames[0].actionScript = FLfile.read(root + "/as3/f78-display.as");
 	});
 
+	// ---------------------------------------------------------------- f79: HTML5 Canvas scripts, compared with CreateJS (scripts/e2e-canvas.ts)
+	build("f79-canvas", function () {
+		newDoc("htmlcanvas", 400, 300, 24);
+		symbol("dot", "movie clip", function () { rect(-5, -5, 5, 5, "#FFCC00"); });
+		symbol("box", "movie clip", function () {
+			rect(-20, -20, 20, 20, "#3366CC");
+			var d = place("dot", 10, 0, 0);
+			d.name = "kid";
+			var s = tl();
+			s.insertFrames(2);
+			s.setSelectedFrames(0, 0);
+			s.layers[0].frames[0].name = "a";
+			s.convertToKeyframes(2);
+			s.layers[0].frames[2].name = "b";
+		});
+		symbol("disc", "movie clip", function () { oval(-20, -20, 20, 20, "#CC3366"); });
+		symbol("star", "movie clip", function () { oval(-8, -8, 8, 8, "#FFCC00"); tl().insertFrames(1); });
+		lib.selectItem("star");
+		lib.setItemProperty("linkageExportForAS", true);
+		lib.setItemProperty("linkageClassName", "Star");
+		layer("things");
+		var o = place("box", 100, 80, 0);
+		o.name = "one";
+		o.rotation = 30;
+		o.scaleX = 2;
+		var w = place("box", 300, 200, 0);
+		w.name = "two";
+		var c = place("disc", 300, 100, 0);
+		c.name = "ball";
+		var mirrored = place("box", 60, 220, 0);
+		mirrored.name = "flip";
+		mirrored.scaleX = -1;
+		var skewed = place("box", 150, 220, 0);
+		skewed.name = "slant";
+		skewed.skewX = 20;
+		doc.addNewText({ left: 20, top: 250, right: 220, bottom: 280 });
+		doc.setElementProperty("textType", "dynamic");
+		doc.setTextString("Label");
+		doc.setElementTextAttr("bold", false);
+		doc.setElementTextAttr("alignment", "left");
+		var tf = doc.selection[0] || tl().layers[tl().currentLayer].frames[0].elements[5];
+		tf.name = "label";
+		doc.selectNone();
+		var t = tl();
+		t.insertFrames(4);
+		t.currentFrame = 0;
+		layer("labels");
+		t = tl();
+		t.layers[t.currentLayer].frames[0].name = "intro";
+		t.convertToKeyframes(2);
+		t.layers[t.currentLayer].frames[2].name = "mid";
+		layer("actions");
+		t = tl();
+		t.layers[t.currentLayer].frames[0].actionScript = FLfile.read(root + "/as3/f79-canvas.js") + "\n" + FLfile.read(root + "/as3/f79-mouse.js");
+	});
+
 	FLfile.write(outDir + "/build-log.txt", log.join("\n"));
 	fl.closeAll(false);
 	fl.quit(false);

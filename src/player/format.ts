@@ -12,8 +12,8 @@ export type PTrack = number | number[];
 /** A scene of the root timeline, in documents whose scripts run: name, first frame, frames. */
 export type PScene = [string, number, number];
 
-/** A text field for scripts: width, height, alignment, type, selectable, multiline. */
-export type PTextExtras = [number, number, string, string, number, number];
+/** A text field for scripts: width, height, alignment, type, selectable, multiline, line height. */
+export type PTextExtras = [number, number, string, string, number, number, number];
 
 export interface PProgram {
 	v: 1;
