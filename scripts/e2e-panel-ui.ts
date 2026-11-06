@@ -196,7 +196,8 @@ for (const width of [220, 300, 480]) {
 			const describedBy = await b.getAttribute("aria-describedby");
 			if (describedBy !== "tip") fail(`${label}: "i" ${name} isn't described by its open tip`);
 		}
-		const expected = Object.keys(HELP).filter((k) => !["budget", "stateMachine"].includes(k));
+		// (videoBitrate shows with the formats it is for)
+		const expected = Object.keys(HELP).filter((k) => !["budget", "stateMachine", "videoBitrate"].includes(k));
 		const unseen = expected.filter((k) => !seen.has(k));
 		if (unseen.length) fail(`${label}: no "i" found for ${unseen.join(", ")}`);
 		await page.mouse.move(0, 0);
@@ -306,7 +307,7 @@ for (const skinName of ["darkest", "light"]) {
 	const stored = {
 		"flash2svg.settings.v4": JSON.stringify({
 			export: {
-				format: "apng",
+				format: "tiff",
 				digits: "three",
 				loop: "sometimes",
 				imageModes: { "a.png": "lossy", "b.png": "blurry", __proto__x: 1 },

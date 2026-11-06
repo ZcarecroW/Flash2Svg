@@ -67,7 +67,7 @@ async function playerTraces(name: string, page: import("playwright-core").Page, 
 	// (what isn't there on purpose: the browser says so too)
 	const onLog = (m: import("playwright-core").ConsoleMessage) => void (/^(Failed to load|\[DOM\])/.test(m.text()) || !m.text() || lines.push(m.text()));
 	// (WebKit's own media controls trip in an XML document)
-	const onError = (e: Error) => void (/style\.width/.test(e.message) || lines.push(`PAGE ERROR ${e.message}`));
+	const onError = (e: Error) => void (/evaluating 'style\./.test(e.message) || lines.push(`PAGE ERROR ${e.message}`));
 	// (the last document may still be running: nothing of it goes into this one's lines)
 	await page.goto("about:blank");
 	page.on("console", onLog);

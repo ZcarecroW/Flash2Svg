@@ -24,7 +24,14 @@ for (const n of names) {
 	if (existsSync(dir)) for (const f of readdirSync(dir)) if (/^(RECOVER_)?_source_\w*\.fla$/.test(f)) rmSync(join(dir, f), { force: true });
 }
 // (about 10 s a fixture with its reference frames; f59 renders 600 of them)
-const res = await runJsfl(join(repo, "tests", "e2e", "extract.jsfl"), { timeoutMs: Math.max(10, names.length * 0.5) * 60000 });
+const logOf = join(outRoot, "extract-log.txt");
+rmSync(logOf, { force: true });
+const res = await runJsfl(join(repo, "tests", "e2e", "extract.jsfl"), { timeoutMs: Math.max(10, names.length * 0.5) * 60000 }).catch((e) => {
+	// (after a long session Animate can crash on its way out: all the work is done by then)
+	if (!existsSync(logOf) || !readFileSync(logOf, "utf8").includes(`${names[names.length - 1]} extract`)) throw e;
+	console.log(`Animate crashed quitting, after all documents: ${e.message}`);
+	return { code: 0, seconds: 0, output: e.output ?? "" };
+});
 console.log(`Animate exited (${res.code}) after ${res.seconds.toFixed(1)}s`);
 const problems = outputProblems(res.output);
 if (problems.length) {

@@ -62,6 +62,9 @@ if (!names) failed += run("e2e-statemachine.ts");
 if (!names) failed += run("e2e-triggers.ts");
 if (!names) failed += run("e2e-raster.ts");
 if (!names) failed += run("e2e-video.ts");
+// (the panel as it is now, and the guide its help links to)
+if (!names) failed += run("build.mjs");
+if (!names) spawnSync(process.execPath, [join(repo, "docs", "guide", "build.mjs")], { stdio: "inherit", cwd: repo });
 if (!names) failed += run("e2e-panel-ui.ts");
 if (!names) failed += run("e2e-compat.ts");
 failed += run("e2e-running.ts", names ? [names] : []);

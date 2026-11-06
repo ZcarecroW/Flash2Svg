@@ -149,7 +149,9 @@ export function inputNode(t: TextElement, digits: number, fonts?: FontSet): XmlN
 	const line = f ? ((f.ascent + f.descent) * r.size) / f.upm + r.lineSpacing : r.size * 1.15 + r.lineSpacing;
 	const area = (t.multiline || !!t.noWrap) && !t.password;
 	const size = fieldSize(t);
-	const padding = area ? "2px" : `2px 2px ${fmt(Math.max(0, size.h - GUTTER - line), 2)}px`;
+	// (CSS puts half the line spacing above a line, Flash all of it below)
+	const top = fmt(Math.max(0, GUTTER - r.lineSpacing / 2), 2);
+	const padding = area ? `${top}px 2px 2px` : `${top}px 2px ${fmt(Math.max(0, size.h - GUTTER - line), 2)}px`;
 	const style =
 		`box-sizing:border-box;display:block;width:100%;height:100%;margin:0;padding:${padding};border:0;outline:0;border-radius:0;background:none;resize:none;overflow:hidden;` +
 		`font:${r.italic ? "italic " : ""}${r.bold ? "bold " : ""}${fmt(r.size, 2)}px/${fmt(line, 2)}px ${fontFamily(r.face, f?.family)};color:${r.fillColor}` +

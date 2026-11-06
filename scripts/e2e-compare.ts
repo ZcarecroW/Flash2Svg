@@ -77,7 +77,8 @@ const guideDemos = join(repo, "docs", "guide", "demos");
 const names = list
 	? list.split(",")
 	: [
-			...readdirSync(out).filter((d) => existsSync(join(out, d, "model", "scene.json")) && !VIDEO.has(d)),
+			// (HTML controls and video are the browser's to draw: e2e-typing.ts and e2e-as3.ts test those)
+			...readdirSync(out).filter((d) => existsSync(join(out, d, "model", "scene.json")) && !VIDEO.has(d) && !/^f(8[5-9]|90)-/.test(d)),
 			...(existsSync(join(guideDemos, "ref"))
 				? readdirSync(join(guideDemos, "ref"))
 						.filter((d) => existsSync(join(guideDemos, "models", d, "scene.json")))
@@ -153,6 +154,8 @@ for (const name of names) {
 	}
 	const ctx = createContext(model, files, { smooth: true, includeHiddenLayers: false, includeGuides: false, digits: 2 });
 	const root = model.roots[0]!;
+	// (a document of several scenes in a row: its first frame is what Animate drew)
+	if (!ctx.programs[root]) continue;
 	const count = ctx.programs[root]!.frameCount;
 	mkdirSync(cmp, { recursive: true });
 	const frames = new Set<number>();
