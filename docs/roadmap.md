@@ -189,9 +189,10 @@ the AS3 that Animate users actually write is.
 | Sounds | ✅ player / ⬜ SMIL, CSS, Lottie | |
 | Video components / video in the timeline | ✅ / ⬜ | |
 | Buttons (states, Hit frame), links, start triggers, scroll | ✅ | e2e-hit: a real mouse in three engines; Lottie: its art is the hit area |
-| Frame scripts | 🟡 | `stop`/`play`/`goto`/counters; other conditions always run (warned) |
+| Frame scripts | ✅ | run in the JS player (package 12); SMIL, CSS and Lottie keep `stop`/`play`/`goto`/counters (warned) |
 | Code snippets | 🟡 | mouse events, timeline navigation, visibility, web pages; not: drag and drop, keyboard, `ENTER_FRAME`, timers, random, text, sounds, fades, load/unload |
-| ActionScript in general (variables, conditions, loops, Math, properties) / Canvas JavaScript | ⬜ | |
+| ActionScript in general (variables, conditions, loops, Math, properties) / Canvas JavaScript | ✅ | package 12; 392 lines identical to Flash Player, 57 to CreateJS |
+| Document class, classes in `.as` files | ⬜ | warned; would need the parser to learn `package` and `class` |
 | UI components (Button, CheckBox, ComboBox, … ; Canvas jQuery UI components) | ⬜ | |
 | *Export as bitmap* / *cache as bitmap* on instances | ⬜ | drawn as vectors (looks the same; never a bitmap) |
 
@@ -202,7 +203,7 @@ the AS3 that Animate users actually write is.
 | 9 | Animated filters as animated filter primitives (SMIL and player animate `stdDeviation`, `dx`, `slope`, colours; CSS keeps a filter per frame where nothing else is exact) | filter animations ~10× smaller | medium | ✅ player (one filter per tween); SMIL/CSS measured and kept (see below) |
 | 10 | Measure-first sweep: a test document each for IK (symbols, shapes), Asset Warp (bitmap and vector, Flexi bones, envelope), layer depth with the camera, modern rigging, variable-width strokes and brushes, input text, button hit areas, 3D — extracted and compared with Animate's frames; fix what breaks | turns every ❓ into ✅ or a known gap | medium | ✅ but brushes (see below) |
 | 11 | Bones and warps: whatever 10 finds missing (poses baked to transforms like guided tweens; deformed shapes as morphs or frames) | rigged characters export | medium–high | ✅ done in 10 |
-| 12 | Scripts in the player: Animate's AS3 (a subset compiled to JavaScript at export: variables, conditions, loops, functions, Math, display-object properties, events — mouse, keyboard, `ENTER_FRAME`, timers, drag and drop, text, sounds) and Canvas documents' JavaScript (run as it is, on a CreateJS-like `this`); every code snippet Animate offers that a browser can do; what can't be compiled is warned | interactive pieces, simple games | high | ⬜ |
+| 12 | Scripts in the player: Animate's AS3 (a subset compiled to JavaScript at export: variables, conditions, loops, functions, Math, display-object properties, events — mouse, keyboard, `ENTER_FRAME`, timers, drag and drop, text, sounds) and Canvas documents' JavaScript (run as it is, on a CreateJS-like `this`); every code snippet Animate offers that a browser can do; what can't be compiled is warned | interactive pieces, simple games | high | ✅ (see below); all snippets but FLVPlayback's |
 | 13 | Remaining appearance: camera colour effects, stroke scale *Horizontal*/*Vertical*, 3D with real perspective where the format allows (measure: CSS 3D, Lottie 3D layers), *Export as bitmap* | fidelity | medium | ⬜ |
 | 14 | Sounds outside the player: SMIL/CSS with a few lines of script (inline, `<object>`), Lottie audio layers where players support them | sound everywhere a script runs | medium | ⬜ |
 | 15 | Input text and UI components as real HTML controls (`<foreignObject>`), working in the player | forms, quizzes | medium | ⬜ |
@@ -217,6 +218,21 @@ handles per key), no path geometry: fit those curves exactly instead of sampling
 JSFL to measure it: a curve fitted through the frames). The JS player could move along the curve
 with `offset-path` in its Web Animations too. Firefox's SMIL draws f09 wrong far into the loop
 (~8 minutes, before this package too).
+
+**12. Scripts** (2026-11-06): frame scripts run. `src/core/as3` parses AS3 and compiles it to JavaScript at
+export (`parser.ts`, `emit.ts`); Canvas documents' JavaScript goes in as it is (`src/core/emit/scripts.ts`).
+`src/player/script.ts` is the Flash API on the player's clips and instances, `src/player/flash-lib.ts` what
+doesn't touch the player, `src/player/parts/` what comes only with documents that use it (media, filters,
+createjs). The order of events is measured, not assumed: the test documents f74–f78 and f80 trace everything
+they do, Animate's debug Flash Player runs the SWF (`scripts/e2e-as3.ts`), and the JS player must trace the
+same lines; f79 does the same against the document Animate publishes, on its own `createjs.min.js`
+(`scripts/e2e-canvas.ts`), real mouse included. Things only measuring finds: positions keep twentieths of a
+pixel (truncated when set), alpha 256ths (0.3 reads 0.296875, nothing clamps), `width` on a turned object
+changes both scales, `isPlaying` is what `play()` and `stop()` said last, `concatenatedMatrix` is rounded to
+quarter pixels, a label two scenes share is listed only in the first. Open: the document class and `.as`
+files; a BitmapData from the library reads as empty until the browser has decoded it; `BitmapData.draw()` of
+display objects (a browser can't read them back at once); FLVPlayback (packages 15, 16); WebKit plays sound
+only after a click, like every browser, so `SOUND_COMPLETE` comes after it.
 
 **10. Sweep** (2026-11-06): each feature got a test document (f61–f73) checked against Animate's frames.
 JSFL can't make bones, warps or width profiles: documents are written as XFL (`tests/fixtures/build-xfl.mjs`:

@@ -1,12 +1,12 @@
 // E2E: the frame scripts of HTML5 Canvas documents against CreateJS itself. Animate publishes the
 // test document (HTML and JavaScript); it runs in Edge on the createjs.min.js Animate ships. The
 // JS player must log the same lines, and react to the same mouse in the same way.
-// Usage: node scripts/e2e-canvas.ts [name,name,...] [--no-publish] [--all]
+// Usage: node scripts/e2e-canvas.ts [name,name,...] [--no-publish] [--all] [--browser=msedge|firefox|webkit]
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { dirname, extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
-import { chromium, type Page } from "playwright-core";
+import { chromium, firefox, webkit, type Page } from "playwright-core";
 import { compileScene } from "../src/core/compile.ts";
 import type { SceneModel } from "../src/core/model.ts";
 // @ts-expect-error (a plain module)
@@ -37,7 +37,7 @@ async function publish() {
 	}
 }
 
-const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".png": "image/png", ".jpg": "image/jpeg" };
+const TYPES: Record<string, string> = { ".svg": "image/svg+xml", ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".png": "image/png", ".jpg": "image/jpeg" };
 const server = createServer((req, res) => {
 	const path = decodeURIComponent(req.url!.split("?")[0]!);
 	const file = normalize(join(out, path));
@@ -77,7 +77,13 @@ async function play(page: Page, url: string): Promise<string[]> {
 
 let failures = 0;
 if (!args.includes("--no-publish")) await publish();
-const browser = await chromium.launch({ channel: "msedge", headless: true });
+const engine = args.find((a) => a.startsWith("--browser="))?.slice(10) ?? "msedge";
+const browser =
+	engine === "firefox"
+		? await firefox.launch({ channel: "moz-firefox", headless: true, firefoxUserPrefs: { "security.sandbox.content.level": 0, "media.autoplay.default": 0, "media.autoplay.blocking_policy": 0 }, env: { ...process.env, MOZ_DISABLE_CONTENT_SANDBOX: "1" } })
+		: engine === "webkit"
+			? await webkit.launch({ headless: true })
+			: await chromium.launch({ channel: "msedge", headless: true, args: ["--autoplay-policy=no-user-gesture-required"] });
 const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
 await page.route("**/createjs*.js", (r) => r.fulfill({ path: createjs, contentType: "text/javascript" }));
 for (const name of names) {
@@ -89,17 +95,20 @@ for (const name of names) {
 	const res = compileScene(model, files, { format: "player", includeBackground: true });
 	for (const w of res.warnings) console.log(`  warning: ${w}`);
 	writeFileSync(join(out, name, "canvas-player.html"), `<!doctype html><html><body style="margin:0">${res.files[0]!.svg}</body></html>`);
-	const got = await play(page, `${origin}/${name}/canvas-player.html`);
-	writeFileSync(join(out, name, "canvas-got.txt"), got.join("\n"));
-	let bad = 0;
-	const shown = args.includes("--all") ? 1e9 : 14;
-	const n = Math.max(expected.length, got.length);
-	for (let i = 0; i < n; i++) {
-		if (expected[i] === got[i]) continue;
-		if (bad++ < shown) console.log(`  line ${i + 1}\n    CreateJS: ${expected[i] ?? "(nothing)"}\n    player:   ${got[i] ?? "(nothing)"}`);
+	writeFileSync(join(out, name, "canvas-player.svg"), res.files[0]!.svg);
+	for (const form of ["html", "svg"]) {
+		const got = await play(page, `${origin}/${name}/canvas-player.${form}`);
+		writeFileSync(join(out, name, "canvas-got.txt"), got.join("\n"));
+		let bad = 0;
+		const shown = args.includes("--all") ? 1e9 : 14;
+		const n = Math.max(expected.length, got.length);
+		for (let i = 0; i < n; i++) {
+			if (expected[i] === got[i]) continue;
+			if (bad++ < shown) console.log(`  line ${i + 1}\n    CreateJS: ${expected[i] ?? "(nothing)"}\n    player:   ${got[i] ?? "(nothing)"}`);
+		}
+		console.log(`${bad ? "FAIL" : "ok  "} ${name}${form === "svg" ? " (as an SVG file)" : ""}: ${expected.length} lines from CreateJS, ${bad} differ`);
+		if (bad) failures++;
 	}
-	console.log(`${bad ? "FAIL" : "ok  "} ${name}: ${expected.length} lines from CreateJS, ${bad} differ`);
-	if (bad) failures++;
 }
 await browser.close();
 server.close();

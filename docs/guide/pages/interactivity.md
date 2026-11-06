@@ -59,9 +59,35 @@ Recognised:
 | **Syntax** | `btn.addEventListener(MouseEvent.CLICK, …)`, `this.btn.addEventListener("click", ….bind(this))`, `.on("click", …)`, function literals and arrows |
 | **Actions** | `gotoAndPlay()` / `gotoAndStop()` (frame or label), `play()`, `stop()`, `nextFrame()`, `prevFrame()` on this timeline, the root, the parent or named instances (`MovieClip(this.root)`, `exportRoot`, `this.parent`, `event.currentTarget`); `instance.visible = true / false`; *Go to Web Page* (`navigateToURL(new URLRequest(…))`, `window.open(…)`) |
 
-Other code in a handler is warned about. Instances with click handlers show the hand cursor and can be reached with <kbd>Tab</kbd> and clicked with <kbd>Enter</kbd> or <kbd>Space</kbd>.
+Instances with click handlers show the hand cursor and can be reached with <kbd>Tab</kbd> and clicked with <kbd>Enter</kbd> or <kbd>Space</kbd>. Handlers that do more than this run as frame scripts (below).
 
 **In other formats:** SMIL, CSS and still frames turn *Go to Web Page* into an SVG link and warn about the other handlers. A **.lottie** gets them as its state machine (see [Lottie](lottie.md#buttons-in-a-lottie)). *Automatic* picks the JS player when a document has mouse handlers.
+
+## Frame scripts
+
+Frame scripts run in the **JS player**, wherever scripts run: inline in a page, as a file of its own, in an `<object>`. *Automatic* format picks the player for a document that needs it.
+
+- **ActionScript 3** is compiled to JavaScript at export. The language is there: variables and types with their conversions, functions, conditions, loops, `try`, Array, Vector, Dictionary, Date, Math, String, RegExp. So is the API people use in frame scripts: display objects and the display list, mouse, keyboard, `ENTER_FRAME`, timers, dragging, bounds and hit tests, matrices, colour transforms, filters, masks, text fields, drawing with `graphics`, bitmaps and pixels, library symbols, bitmaps and sounds with `new`, Sound, Loader, URLLoader, Tween, SharedObject, ExternalInterface, scenes.
+- **HTML5 Canvas** documents' JavaScript runs as it is, on the CreateJS API: Shape and Graphics, Text, Tween, Ease, Ticker, Sound, its events and mouse.
+
+What scripts see and the order things happen in are Flash Player's and CreateJS's own: the test documents trace everything they do, and the traces are compared line by line with Flash Player and with the document as Animate publishes it.
+
+```actionscript-3
+var score:int = 0;
+ball.addEventListener(MouseEvent.MOUSE_DOWN, function (e:MouseEvent):void { ball.startDrag(); });
+stage.addEventListener(MouseEvent.MOUSE_UP, function (e:MouseEvent):void {
+	ball.stopDrag();
+	if (ball.hitTestObject(goal)) label.text = "Score " + (++score);
+});
+```
+
+A library symbol, bitmap or sound needs *Export for ActionScript* and a class name to be made with `new`; only those your scripts name are exported.
+
+Plain `stop()`, `play()` and frame jumps, simple mouse handlers and counted loops don't need any of this: they work in every format, and the player stays small (15.6 KB; 78 KB with scripts, and pixels and sounds, filters or CreateJS add to it only if the scripts use them).
+
+**Not run:** the document class and classes in `.as` files (warned at export); `BitmapData.draw()` of display objects, because a browser can't read them back at once; the FLVPlayback component. A SWF can't be loaded, pictures can. Web pages block sound until the visitor clicks or presses a key, also for scripts.
+
+**In other formats:** SMIL, CSS and Lottie follow plain frame jumps and warn that the rest needs the JS player.
 
 ## Links
 

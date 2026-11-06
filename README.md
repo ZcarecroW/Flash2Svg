@@ -161,9 +161,17 @@ beep came out as a 3.7 s file). *Convert stereo to mono* is followed. Browsers b
 the visitor clicks or presses a key: until then the sounds run on silently and join at their
 position (a long one starts in the middle). In SMIL and CSS output sounds don't play (warned).
 
+### Frame scripts
+
+Frame scripts run in the JS player: AS3 compiled to JavaScript at export, the JavaScript of HTML5
+Canvas documents as it is, on the APIs of Flash Player and CreateJS. Tested line by line against
+both. Documents without scripts pay nothing for this. A document class and classes in `.as` files
+aren't compiled (warned). See the guide's *Interactivity* page.
+
 ### Code snippets
 
-Mouse handlers that Animate's *Code Snippets* panel writes into frame scripts work in the JS
+Mouse handlers that Animate's *Code Snippets* panel writes into frame scripts also work without
+any of that, in the JS
 player — in AS3 and in HTML5 Canvas documents (`btn.addEventListener(MouseEvent.CLICK, …)`,
 `this.btn.addEventListener("click", ….bind(this))`, `.on("click", …)`, function literals and
 arrows). Recognised: click, mouse over / out (and roll over / out), mouse down / up, double click

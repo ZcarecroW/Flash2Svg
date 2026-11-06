@@ -3,14 +3,14 @@
 // mm.cfg, which this script writes and takes away again); the JS player must trace the same lines.
 // tests/out/<name>/as3-expected.txt keeps Flash Player's log. Files the scripts load lie next to the
 // SWF and the page.
-// Usage: node scripts/e2e-as3.ts [name,name,...] [--flash-only] [--no-flash]
+// Usage: node scripts/e2e-as3.ts [name,name,...] [--flash-only] [--no-flash] [--browser=msedge|firefox|webkit]
 import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { homedir } from "node:os";
 import { dirname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
-import { chromium } from "playwright-core";
+import { chromium, firefox, webkit } from "playwright-core";
 import { compileScene } from "../src/core/compile.ts";
 import type { SceneModel } from "../src/core/model.ts";
 // @ts-expect-error (a plain module)
@@ -54,20 +54,21 @@ function flashTraces(name: string): string[] {
 	return text.split(/\r?\n/).filter((l) => l && !l.startsWith("Warning:"));
 }
 
-async function playerTraces(name: string, page: import("playwright-core").Page): Promise<string[]> {
+/** The document in a page, or as a file of its own (an XML document, with what that changes). */
+async function playerTraces(name: string, page: import("playwright-core").Page, alone = false): Promise<string[]> {
 	const dir = join(out, name, "model");
 	const model: SceneModel = JSON.parse(readFileSync(join(dir, "scene.json"), "utf8"));
 	const files = { readText: (r: string) => readFileSync(join(dir, r), "utf8"), readBinary: (r: string) => readFileSync(join(dir, r)) };
 	const res = compileScene(model, files, { format: "player", includeBackground: true });
-	const file = join(out, name, "as3-player.html");
-	writeFileSync(file, `<!doctype html><html><body style="margin:0">${res.files[0]!.svg}</body></html>`);
+	const file = join(out, name, alone ? "as3-player.svg" : "as3-player.html");
+	writeFileSync(file, alone ? res.files[0]!.svg : `<!doctype html><html><body style="margin:0">${res.files[0]!.svg}</body></html>`);
 	const lines: string[] = [];
 	// (what isn't there on purpose: the browser says so too)
 	const onLog = (m: import("playwright-core").ConsoleMessage) => void (m.text().startsWith("Failed to load") || lines.push(m.text()));
 	const onError = (e: Error) => void lines.push(`PAGE ERROR ${e.message}`);
 	page.on("console", onLog);
 	page.on("pageerror", onError);
-	await page.goto(`${origin}/${name}/as3-player.html`);
+	await page.goto(`${origin}/${name}/${alone ? "as3-player.svg" : "as3-player.html"}`);
 	for (let i = 0; i < 100 && !lines.includes("END"); i++) await page.waitForTimeout(100);
 	page.off("console", onLog);
 	page.off("pageerror", onError);
@@ -90,7 +91,7 @@ const server = createServer((req, res) => {
 		res.writeHead(404).end();
 		return;
 	}
-	res.writeHead(200, { "content-type": file.endsWith(".html") ? "text/html; charset=utf-8" : file.endsWith(".png") ? "image/png" : "text/plain" }).end(readFileSync(file));
+	res.writeHead(200, { "content-type": file.endsWith(".html") ? "text/html; charset=utf-8" : file.endsWith(".svg") ? "image/svg+xml" : file.endsWith(".png") ? "image/png" : "text/plain" }).end(readFileSync(file));
 });
 await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
 const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
@@ -98,8 +99,30 @@ const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`
 let failures = 0;
 for (const name of names) loadable(name);
 if (!noFlash) await publish();
-const browser = await chromium.launch({ channel: "msedge", headless: true, args: ["--autoplay-policy=no-user-gesture-required"] });
+const engine = args.find((a) => a.startsWith("--browser="))?.slice(10) ?? "msedge";
+const browser =
+	engine === "firefox"
+		? await firefox.launch({ channel: "moz-firefox", headless: true, firefoxUserPrefs: { "security.sandbox.content.level": 0, "media.autoplay.default": 0, "media.autoplay.blocking_policy": 0 }, env: { ...process.env, MOZ_DISABLE_CONTENT_SANDBOX: "1" } })
+		: engine === "webkit"
+			? await webkit.launch({ headless: true })
+			: await chromium.launch({ channel: "msedge", headless: true, args: ["--autoplay-policy=no-user-gesture-required"] });
 const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
+// (Playwright's WebKit on Windows has no sound at all: an <audio> that ends at once stands in)
+if (engine === "webkit")
+	await page.addInitScript(() => {
+		(window as unknown as { Audio: unknown }).Audio = class {
+			onended: (() => void) | null = null;
+			get currentTime() {
+				return 1e9;
+			}
+			set currentTime(_v: number) {}
+			play() {
+				setTimeout(() => this.onended?.(), 30);
+				return Promise.resolve();
+			}
+			pause() {}
+		};
+	});
 for (const name of names) {
 	const expected = noFlash ? readFileSync(join(out, name, "as3-expected.txt"), "utf8").split(/\r?\n/).filter((l) => l && !l.startsWith("Warning:")) : flashTraces(name);
 	if (!expected.includes("END")) {
@@ -110,16 +133,18 @@ for (const name of names) {
 		console.log(`${name}: ${expected.length} lines from Flash Player`);
 		continue;
 	}
-	const got = await playerTraces(name, page);
-	let bad = 0;
-	const n = Math.max(expected.length, got.length);
-	const shown = args.includes("--all") ? 1e9 : 14;
-	for (let i = 0; i < n; i++) {
-		if (expected[i] === got[i]) continue;
-		if (bad++ < shown) console.log(`  line ${i + 1}\n    Flash:  ${expected[i] ?? "(nothing)"}\n    player: ${got[i] ?? "(nothing)"}`);
+	for (const alone of [false, true]) {
+		const got = await playerTraces(name, page, alone);
+		let bad = 0;
+		const n = Math.max(expected.length, got.length);
+		const shown = args.includes("--all") ? 1e9 : 14;
+		for (let i = 0; i < n; i++) {
+			if (expected[i] === got[i]) continue;
+			if (bad++ < shown) console.log(`  line ${i + 1}\n    Flash:  ${expected[i] ?? "(nothing)"}\n    player: ${got[i] ?? "(nothing)"}`);
+		}
+		console.log(`${bad ? "FAIL" : "ok  "} ${name}${alone ? " (as an SVG file)" : ""}: ${expected.length} lines from Flash Player, ${bad} differ`);
+		if (bad) failures++;
 	}
-	console.log(`${bad ? "FAIL" : "ok  "} ${name}: ${expected.length} lines from Flash Player, ${bad} differ`);
-	if (bad) failures++;
 }
 await browser.close();
 server.close();

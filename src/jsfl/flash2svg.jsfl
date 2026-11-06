@@ -354,6 +354,8 @@
 		job.pendingTimelines = [];
 		job.seen = {};
 		job.linked = {};
+		var docClass = String(get(job.srcDoc || fl.getDocumentDOM(), "docClass", "") || "");
+		if (docClass) warn("The document class " + docClass + " isn't run: classes in .as files aren't compiled, only frame scripts are");
 		for (i = 0; i < roots.length; i++) {
 			var id = roots[i].item ? "sym:" + roots[i].item : "scene:" + roots[i].scene;
 			job.model.roots.push(id);

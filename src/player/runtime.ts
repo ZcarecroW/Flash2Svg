@@ -1618,7 +1618,8 @@ function alone(svg: Element): boolean {
 	// runs the frame loop: the root plays unless frame 1's script stops it (as in Flash)
 	const start = () => setTimeout(() => player.wake(), delay);
 	// "reduce motion" in the system settings: the poster frame, still, until a click plays it
-	const still = svg.getAttribute("data-reduce") !== "0" && typeof matchMedia === "function" ? matchMedia("(prefers-reduced-motion: reduce)") : null;
+	// (a document whose scripts run is something to use, not a decoration: it doesn't wait)
+	const still = svg.getAttribute("data-reduce") !== "0" && typeof matchMedia === "function" && !(__SCRIPTS__ && player.scripts) ? matchMedia("(prefers-reduced-motion: reduce)") : null;
 	if ((begin === "auto" || begin === "visible" || begin === "scroll") && still?.matches) {
 		player.root.gotoFrame(P.pf ?? 0, false);
 		player.root.render(0);

@@ -33,8 +33,16 @@ const launch = (e: string): Promise<Browser> =>
 			: chromium.launch({ channel: e, headless: true });
 
 const res = compileScene(model, files, { format: "player", includeBackground: true });
-const file = join(out, "game.html");
-writeFileSync(file, `<!doctype html><html><body style="margin:0;background:#fff">${res.files[0]!.svg}</body></html>`);
+const svgFile = join(out, "game.svg");
+writeFileSync(svgFile, res.files[0]!.svg);
+/** In a page, as a file of its own, and in an <object>. */
+const forms: [string, string][] = [
+	["inline", join(out, "game.html")],
+	["file", svgFile],
+	["object", join(out, "game-object.html")],
+];
+writeFileSync(forms[0]![1], `<!doctype html><html><body style="margin:0;background:#fff">${res.files[0]!.svg}</body></html>`);
+writeFileSync(forms[2]![1], `<!doctype html><html><body style="margin:0;background:#fff"><object data="game.svg" type="image/svg+xml" style="display:block" width="400" height="300"></object></body></html>`);
 
 async function pixel(page: Page, x: number, y: number) {
 	const p = PNG.sync.read(await page.screenshot({ clip: { x, y, width: 1, height: 1 } }));
@@ -42,16 +50,17 @@ async function pixel(page: Page, x: number, y: number) {
 }
 const near = (a: number[], b: number[], tol = 40) => a.every((v, i) => Math.abs(v - b[i]!) < tol);
 
-for (const engine of engines) {
+for (const engine of engines) for (const [form, file] of forms) {
 	const browser = await launch(engine);
 	const page = await browser.newPage({ viewport: { width: 500, height: 400 }, deviceScaleFactor: 1 });
 	const log: string[] = [];
 	page.on("console", (m) => void log.push(m.text()));
 	page.on("pageerror", (e) => void log.push(`PAGE ERROR ${e.message}`));
 	await page.goto(pathToFileURL(file).href);
-	await page.waitForTimeout(300);
+	await page.waitForTimeout(form === "object" ? 800 : 300);
 	const has = (s: string) => log.some((l) => l === s || l.startsWith(s));
-	const at = (s: string) => `${engine}: ${s}`;
+	const at = (s: string) => `${engine} ${form}: ${s}`;
+	const inside = () => page.frames()[form === "object" ? 1 : 0]!;
 	check(at("the first frame's script ran"), has("ready"), log.slice(0, 3).join(" / "));
 
 	// dragging the ball onto the crate
@@ -73,7 +82,7 @@ for (const engine of engines) {
 	await page.mouse.click(320, 80);
 	await page.waitForTimeout(100);
 	check(at("a click on the button"), has("score 10 Score 10"), log.filter((l) => l.startsWith("score")).join());
-	const text = await page.evaluate(() => document.querySelector("svg text")?.textContent ?? "");
+	const text = await inside().evaluate(() => document.querySelector("text")?.textContent ?? "");
 	check(at("the text field shows it"), text.includes("Score 10"), text);
 
 	// keys
@@ -89,7 +98,7 @@ for (const engine of engines) {
 	await page.mouse.move(225, 85, { steps: 2 });
 	await page.waitForTimeout(80);
 	check(at("roll over"), has("over 0.5"), log.filter((l) => l.startsWith("over")).join());
-	const before = await page.evaluate(() => getComputedStyle(document.elementFromPoint(225, 85)!).cursor);
+	const before = await inside().evaluate(() => getComputedStyle(document.elementFromPoint(225, 85)!).cursor);
 	check(at("a click target has the hand"), before === "pointer", before);
 	await page.mouse.down();
 	await page.mouse.up();

@@ -275,7 +275,9 @@ function drawnBox(n: Element, stroke: boolean): Box | null {
 }
 
 let pen: CanvasRenderingContext2D | null = null;
-const canvas2d = () => (pen ??= document.createElement("canvas").getContext("2d")!);
+/** (An SVG file is an XML document: plain createElement doesn't make HTML elements there.) */
+const htmlEl = (name: string) => document.createElementNS("http://www.w3.org/1999/xhtml", name) as HTMLElement;
+const canvas2d = () => (pen ??= (htmlEl("canvas") as HTMLCanvasElement).getContext("2d")!);
 
 /** Whether a drawing covers the point, given in the space it is put down in (`inside`: in its own). */
 function covers(e: Element, x: number, y: number, inside = false): boolean {
@@ -2220,6 +2222,7 @@ export class Scripts {
 			inverse,
 			twips,
 			svgEl,
+			htmlEl,
 			colorOf,
 			noBox,
 			addBox,
@@ -2252,7 +2255,7 @@ export class Scripts {
 	/** Hides the mouse pointer, whatever an object below it asks for. */
 	private hides: HTMLStyleElement | null = null;
 	cursor(hide: boolean) {
-		if (hide) (this.hides ??= document.head.appendChild(document.createElement("style"))).textContent = `#${this.player.svg.id},#${this.player.svg.id} *{cursor:none!important}`;
+		if (hide) (this.hides ??= document.documentElement.appendChild(htmlEl("style")) as HTMLStyleElement).textContent = `#${this.player.svg.id},#${this.player.svg.id} *{cursor:none!important}`;
 		else this.hides?.remove(), (this.hides = null);
 	}
 

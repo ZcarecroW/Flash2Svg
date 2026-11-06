@@ -5,7 +5,7 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export default function media(L: any): Record<string, unknown> {
-	const { Dispatcher, DisplayObject, DisplayObjectContainer, FEvent, FLoaderInfo, FRectangle, FPoint, FSoundTransform, URLVariables, fail, ArgumentError, EOFError, svgEl, scripts: current } = L;
+	const { Dispatcher, DisplayObject, DisplayObjectContainer, FEvent, FLoaderInfo, FRectangle, FPoint, FSoundTransform, URLVariables, fail, ArgumentError, EOFError, svgEl, htmlEl, scripts: current } = L;
 	type URLRequest = any;
 	type FEvent = any;
 	type DisplayObject = any;
@@ -213,7 +213,7 @@ class FBitmapData {
 		return this._px;
 	}
 	private read(img: HTMLImageElement) {
-		const c = document.createElement("canvas");
+		const c = htmlEl("canvas") as HTMLCanvasElement;
 		c.width = this.width;
 		c.height = this.height;
 		const x = c.getContext("2d")!;
@@ -234,7 +234,7 @@ class FBitmapData {
 	_url(): string {
 		if (this._href) return this._href;
 		const px = this.live();
-		const c = document.createElement("canvas");
+		const c = htmlEl("canvas") as HTMLCanvasElement;
 		c.width = this.width;
 		c.height = this.height;
 		const x = c.getContext("2d")!;
@@ -664,7 +664,7 @@ function netStatus(code: string) {
 class NetStream extends Dispatcher {
 	client: any = {};
 	bufferTime = 0.1;
-	_el = document.createElement("video");
+	_el = htmlEl("video") as HTMLVideoElement;
 	soundTransform = new FSoundTransform();
 	constructor(_c?: NetConnection) {
 		super();
