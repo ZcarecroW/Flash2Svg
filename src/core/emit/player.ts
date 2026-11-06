@@ -20,7 +20,7 @@ import { cssMatrix, fromCorner } from "../persp.ts";
 import { playerScripts } from "./scripts.ts";
 import { frameSounds, soundTable } from "./soundtrack.ts";
 import { StaticRenderer } from "./static.ts";
-import { hasFieldExtras, outlineText, textField, textNode } from "./text.ts";
+import { inputNode, hasFieldExtras, outlineText, textField, textNode } from "./text.ts";
 import { SCROLL_RANGE_CODES } from "./triggers.ts";
 import { playhead } from "./timing.ts";
 
@@ -38,7 +38,8 @@ function actionCode(a: HandlerAction): (number | string)[] {
 /** What scripts can ask a text field: width, height, alignment, type, selectable, multiline. */
 function textExtras(t: TextElement): PTextExtras {
 	const r = t.runs[0];
-	return [round(t.width, 2), round(t.height, 2), r?.alignment ?? "left", t.textType === "input" ? "input" : "dynamic", t.selectable ? 1 : 0, t.multiline ? 1 : 0, Math.round((r?.size ?? 12) * 1.1 + (r?.lineSpacing ?? 0))];
+	// (several lines: their text, not the lines they are wrapped to)
+	return [round(t.width, 2), round(t.height, 2), r?.alignment ?? "left", t.textType === "input" ? "input" : "dynamic", (t.selectable ? 1 : 0) | (t.border ? 2 : 0), t.multiline || t.noWrap ? 1 : 0, Math.round((r?.size ?? 12) * 1.1 + (r?.lineSpacing ?? 0)), t.noWrap ? 0 : 1, ...(t.multiline || t.noWrap ? [t.text] : [])] as PTextExtras;
 }
 
 export function renderPlayer(
@@ -147,7 +148,7 @@ export function renderPlayer(
 				const raw = (n: XmlNode | null) => serialize(n!).replaceAll(' xlink:href="', ' href="');
 				const field = (n: XmlNode | null) =>
 					textField(it.element, n, ctx.precision.space(space), (fs, size) => doc.filter(fs, null, { x: 1, y: 1 }, warn, size), warn);
-				if (s.textAsOutlines || it.element.textType === "static") {
+				if (it.element.textType !== "input" && (s.textAsOutlines || it.element.textType === "static")) {
 					const a = it.art ? ctx.art(it.art) : null;
 					if (!a) return null;
 					const id = doc.artwork(a);
@@ -161,7 +162,7 @@ export function renderPlayer(
 					k: "r",
 					s: it.start,
 					e: it.end,
-					x: raw(field(textNode(it.element, ctx.precision.space(space), doc.fonts))),
+					x: raw(field((it.element.textType === "input" ? inputNode : textNode)(it.element, ctx.precision.space(space), doc.fonts))),
 					...(scripts && it.element.name ? { nm: it.element.name, tx: textExtras(it.element) } : {}),
 				};
 			}

@@ -212,6 +212,12 @@ export interface TextElement extends ElementBase {
 	runs: TextRun[];
 	multiline: boolean;
 	selectable: boolean;
+	/** Input text: "Multiline no wrap" (several lines, no wrapping). */
+	noWrap?: boolean;
+	/** Input text: the "Password" line type. */
+	password?: boolean;
+	/** Input text: the most characters the user may type. */
+	maxChars?: number;
 	acc?: AccInfo;
 	/** "Show border around text" (dynamic and input text): a white field with a black outline. */
 	border?: boolean;

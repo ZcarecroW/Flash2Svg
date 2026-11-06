@@ -43,13 +43,15 @@ failed += run("e2e-browser.ts", [...(names ? [names] : []), "--formats=smil,css,
 failed += run("e2e-browser.ts", [...(names ? [names] : []), "--formats=smil,css,player", "--steps"]);
 if (!names) failed += run("e2e-player.ts");
 if (!names) failed += run("e2e-hit.ts");
-if (!names) failed += run("e2e-as3.ts", ["f74-as3lang,f75-as3timeline,f76-as3order,f78-as3display,f80-as3scenes,f81-as3language", ...(args.includes("--skip-animate") ? ["--no-flash"] : [])]);
+if (!names) failed += run("e2e-as3.ts", ["f74-as3lang,f75-as3timeline,f76-as3order,f78-as3display,f80-as3scenes,f81-as3language,f86-input", ...(args.includes("--skip-animate") ? ["--no-flash"] : [])]);
+if (!names) failed += run("e2e-typing.ts", ["f87-typing", ...(args.includes("--skip-animate") ? ["--no-flash"] : [])]);
 if (!names) failed += run("e2e-scripts.ts");
 if (!names) failed += run("e2e-canvas.ts", args.includes("--skip-animate") ? ["--no-publish"] : []);
 if (!names) failed += run("e2e-soundtrack.ts");
 if (!names)
 	for (const b of ["firefox", "webkit"]) {
-		failed += run("e2e-as3.ts", ["f74-as3lang,f75-as3timeline,f76-as3order,f78-as3display,f80-as3scenes,f81-as3language", "--no-flash", `--browser=${b}`]);
+		failed += run("e2e-as3.ts", ["f74-as3lang,f75-as3timeline,f76-as3order,f78-as3display,f80-as3scenes,f81-as3language,f86-input", "--no-flash", `--browser=${b}`]);
+		failed += run("e2e-typing.ts", ["f87-typing", "--no-flash", `--browser=${b}`]);
 		failed += run("e2e-canvas.ts", ["--no-publish", `--browser=${b}`]);
 	}
 if (!names) failed += run("e2e-inline.ts");

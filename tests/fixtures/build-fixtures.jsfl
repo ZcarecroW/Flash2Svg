@@ -3455,6 +3455,119 @@
 		doc.selectNone();
 	});
 
+	// ---------------------------------------------------------------- f85: UI components, their API compared with Flash Player
+	build("f85-controls", function () {
+		newDoc("timeline", 560, 400, 24);
+		doc.as3StrictMode = false;
+		layer("controls");
+		var add = function (kind, name, x, y) {
+			fl.componentsPanel.addItemToDocument({ x: x, y: y }, "User Interface", kind);
+			var e = doc.selection[0];
+			e.name = name;
+			doc.selectNone();
+			return e;
+		};
+		add("Button", "ok", 20, 20);
+		add("CheckBox", "tick", 20, 60);
+		add("RadioButton", "one", 20, 100);
+		add("RadioButton", "two", 20, 130);
+		add("ComboBox", "pick", 20, 170);
+		add("List", "many", 20, 210);
+		add("TextInput", "line", 160, 20);
+		add("TextArea", "lines", 160, 60);
+		add("Label", "title", 160, 120);
+		add("NumericStepper", "num", 160, 160);
+		add("Slider", "slide", 160, 200);
+		add("ColorPicker", "shade", 160, 230);
+		add("ProgressBar", "bar", 160, 270);
+		var t = tl();
+		layer("actions");
+		t = tl();
+		t.layers[t.currentLayer].frames[0].actionScript = FLfile.read(root + "/as3/f85-controls.as");
+	});
+
+	// ---------------------------------------------------------------- f86: input text fields
+	build("f86-input", function () {
+		newDoc("timeline", 400, 340, 24);
+		doc.as3StrictMode = false;
+		layer("fields");
+		var field = function (name, rect, str, props) {
+			doc.selectNone();
+			doc.addNewText(rect, str || " ");
+			var els = tl().layers[tl().currentLayer].frames[0].elements;
+			var e = els[els.length - 1];
+			e.textType = props.type || "input";
+			e.setTextAttr("face", "Arial");
+			e.setTextAttr("size", 14);
+			e.setTextAttr("fillColor", props.color || "#003399");
+			e.setTextAttr("bold", false);
+			e.setTextAttr("italic", false);
+			e.setTextAttr("alignment", "left");
+			e.name = name;
+			e.lineType = props.lineType || "single line";
+			e.maxCharacters = props.max || 0;
+			if (!str) e.setTextString("");
+			if (props.border) e.border = true;
+			e.autoExpand = false;
+			doc.selectNone();
+			e.selected = true;
+			doc.setTextRectangle(rect);
+			doc.selectNone();
+		};
+		field("one", { left: 20, top: 20, right: 220, bottom: 44 }, "Hello", { border: true });
+		field("many", { left: 20, top: 60, right: 220, bottom: 130 }, "Line one\rLine two", { lineType: "multiline", border: true, color: "#660000" });
+		field("pass", { left: 20, top: 140, right: 220, bottom: 164 }, "", { lineType: "password", border: true });
+		field("most", { left: 20, top: 180, right: 220, bottom: 204 }, "12", { max: 5, border: true });
+		field("nowrap", { left: 20, top: 220, right: 220, bottom: 270 }, "No wrap here", { lineType: "multiline no wrap", border: true });
+		field("wide", { left: 240, top: 20, right: 380, bottom: 90 }, "A paragraph long enough to wrap in its field\rand one more", { lineType: "multiline", border: true });
+		field("shown", { left: 240, top: 110, right: 380, bottom: 180 }, "A dynamic paragraph long enough to wrap in its field\rand one more", { lineType: "multiline", type: "dynamic" });
+		layer("actions");
+		var t = tl();
+		t.layers[t.currentLayer].frames[0].actionScript = FLfile.read(root + "/as3/f86-input.as");
+	});
+
+	// ---------------------------------------------------------------- f87: typing, keys come from outside
+	build("f87-typing", function () {
+		newDoc("timeline", 400, 340, 24);
+		doc.as3StrictMode = false;
+		layer("fields");
+		var field = function (name, rect, str, props) {
+			doc.selectNone();
+			doc.addNewText(rect, str || " ");
+			var els = tl().layers[tl().currentLayer].frames[0].elements;
+			var e = els[els.length - 1];
+			e.textType = "input";
+			e.setTextAttr("face", "Arial");
+			e.setTextAttr("size", 14);
+			e.setTextAttr("fillColor", "#003399");
+			e.setTextAttr("bold", false);
+			e.setTextAttr("italic", false);
+			e.setTextAttr("alignment", "left");
+			e.name = name;
+			e.lineType = props.lineType || "single line";
+			e.maxCharacters = props.max || 0;
+			if (!str) e.setTextString("");
+			e.border = true;
+			// (with embedded fonts Flash takes only the characters that came along)
+			e.fontRenderingMode = "device";
+			e.autoExpand = false;
+			doc.selectNone();
+			e.selected = true;
+			doc.setTextRectangle(rect);
+			doc.selectNone();
+		};
+		field("one", { left: 20, top: 10, right: 220, bottom: 34 }, "Hi", {});
+		field("many", { left: 20, top: 40, right: 220, bottom: 100 }, "", { lineType: "multiline" });
+		field("most", { left: 20, top: 110, right: 220, bottom: 134 }, "12", { max: 5 });
+		field("upper", { left: 20, top: 140, right: 220, bottom: 164 }, "", {});
+		field("digits", { left: 20, top: 170, right: 220, bottom: 194 }, "", {});
+		field("block", { left: 20, top: 200, right: 220, bottom: 224 }, "", {});
+		field("pass", { left: 20, top: 230, right: 220, bottom: 254 }, "", { lineType: "password" });
+		layer("actions");
+		var t = tl();
+		t.layers[t.currentLayer].frames[0].actionScript = FLfile.read(root + "/as3/f87-typing.as");
+	});
+
 	FLfile.write(outDir + "/build-log.txt", log.join("\n"));
 	fl.closeAll(false);
 	fl.quit(false);

@@ -102,9 +102,12 @@ class FEvent {
 	stopImmediatePropagation() {
 		this._stop = 2;
 	}
-	preventDefault() {}
+	_no = false;
+	preventDefault() {
+		if (this.cancelable) this._no = true;
+	}
 	isDefaultPrevented() {
-		return false;
+		return this._no;
 	}
 	clone() {
 		return Object.assign(Object.create(Object.getPrototypeOf(this)), this);
@@ -687,7 +690,7 @@ class DisplayObject extends Dispatcher {
 	override _listening(type: string) {
 		current.hear(type, this);
 		// (as with mouse handlers from snippets: a click target is a button, also for the keyboard)
-		if (type === FMouseEvent.CLICK && this !== (current.stage as unknown)) {
+		if (type === FMouseEvent.CLICK && this !== (current.stage as unknown) && !this._node.querySelector("foreignObject")) {
 			this._node.style.cursor = "pointer";
 			if (!this._node.hasAttribute("tabindex")) this._node.setAttribute("tabindex", "0");
 			if (!this._node.hasAttribute("role")) this._node.setAttribute("role", "button");
@@ -1098,12 +1101,25 @@ class FStage extends DisplayObjectContainer {
 	scaleMode = "showAll";
 	align = "";
 	private _quality = "HIGH";
-	focus: unknown = null;
+	_focus: any = null;
 	stageFocusRect = true;
 	color = 0;
 	allowsFullScreen = false;
 	mouseEnabled = true;
 	mouseLock = false;
+	get focus() {
+		return this._focus;
+	}
+	set focus(v: any) {
+		if (v === this._focus) return;
+		const was = this._focus;
+		this._focus = v;
+		// (the page may have no keyboard yet: scripts hear of it at once all the same)
+		if (was) was.dispatchEvent(new FFocusEvent(FFocusEvent.FOCUS_OUT, true, false, v));
+		if (v) v.dispatchEvent(new FFocusEvent(FFocusEvent.FOCUS_IN, true, false, was));
+		was?._in?.blur();
+		v?._in?.focus();
+	}
 	get quality() {
 		return this._quality;
 	}
@@ -1184,16 +1200,76 @@ interface TextLine {
 }
 
 /** A text field: on a timeline (its drawing is live text), or made by a script. */
+class FTextEvent extends FEvent {
+	static LINK = "link";
+	static TEXT_INPUT = "textInput";
+	text: string;
+	constructor(type: string, bubbles = false, cancelable = false, text = "") {
+		super(type, bubbles, cancelable);
+		this.text = text;
+	}
+}
+
+class FFocusEvent extends FEvent {
+	static FOCUS_IN = "focusIn";
+	static FOCUS_OUT = "focusOut";
+	static KEY_FOCUS_CHANGE = "keyFocusChange";
+	static MOUSE_FOCUS_CHANGE = "mouseFocusChange";
+	relatedObject: unknown;
+	shiftKey = false;
+	keyCode = 0;
+	constructor(type: string, bubbles = true, cancelable = false, relatedObject: unknown = null) {
+		super(type, bubbles, cancelable);
+		this.relatedObject = relatedObject;
+	}
+}
+
+/** The keys that have a character of their own. */
+const CHAR_KEYS: Record<string, number> = { Enter: 13, Backspace: 8, Tab: 9, Escape: 27, Delete: 127 };
+
+/** Whether a character may be typed under TextField.restrict: scanned left to right, ^ flips. */
+function allowedBy(rule: string, c: string): boolean {
+	let ok = rule[0] === "^",
+		add = true;
+	for (let i = 0; i < rule.length; i++) {
+		let a = rule[i]!;
+		if (a === "^") {
+			add = !add;
+			continue;
+		}
+		if (a === "\\") a = rule[++i] ?? a;
+		let b = a;
+		if (rule[i + 1] === "-" && i + 2 < rule.length) {
+			i += 2;
+			b = rule[i]!;
+			if (b === "\\") b = rule[++i] ?? b;
+		}
+		if (c >= a && c <= b) ok = add;
+	}
+	return ok;
+}
+
+/** A control that shows HTML: what makes the box of a TextField or a component. */
+export function controlBox(node: SVGElement, w: number, h: number) {
+	const fo = svgEl("foreignObject", { width: String(w), height: String(h) });
+	node.appendChild(fo);
+	return fo;
+}
+
 class TextField extends DisplayObject {
 	override _cls = "TextField";
-	multiline = false;
-	wordWrap = false;
 	selectable = true;
-	type = "dynamic";
-	maxChars = 0;
-	displayAsPassword = false;
 	embedFonts = false;
 	restrict: string | null = null;
+	_multi = false;
+	_wrap = false;
+	_type = "dynamic";
+	_most = 0;
+	_pass = false;
+	/** Input text: the control the user types in, and the face it came with (embedded fonts have a family of their own). */
+	_in: HTMLInputElement | HTMLTextAreaElement | null = null;
+	_face: [string, string] | null = null;
+	_selected: [number, number] = [0, 0];
 	alwaysShowSelection = false;
 	antiAliasType = "normal";
 	gridFitType = "pixel";
@@ -1206,9 +1282,6 @@ class TextField extends DisplayObject {
 	thickness = 0;
 	styleSheet: unknown = null;
 	scrollH = 0;
-	selectionBeginIndex = 0;
-	selectionEndIndex = 0;
-	caretIndex = 0;
 	_def: FTextFormat;
 	_text = "";
 	/** Each character's format. */
@@ -1235,21 +1308,42 @@ class TextField extends DisplayObject {
 		this._def.kerning = false;
 		this._def.bullet = false;
 		this._def.tabStops = [];
-		const t = node && this._field();
+		const box = node?.querySelector("input,textarea") as HTMLInputElement | HTMLTextAreaElement | null;
+		const t = box ? (box.parentNode!.parentNode as SVGGElement) : node && this._field();
 		if (t) {
 			// the look of the field in Animate
-			const s = t.querySelector("[font-size]");
 			const f = this._def;
-			f.size = +(s?.getAttribute("font-size") ?? 12);
-			f.font = (s?.getAttribute("font-family") ?? "Arial").split(",")[0]!.replace(/['"]/g, "");
-			f.color = parseInt((s?.getAttribute("fill") ?? "#000000").slice(1), 16);
-			f.bold = s?.getAttribute("font-weight") === "bold";
-			f.italic = s?.getAttribute("font-style") === "italic";
+			if (box) {
+				const c = box.style;
+				const family = c.fontFamily;
+				f.font = family.split(",")[(family.startsWith('"f2s-') || family.startsWith("f2s-") || family.startsWith("'f2s-")) ? 1 : 0]!.trim().replace(/['"]/g, "");
+				this._face = [f.font, family];
+				f.size = parseFloat(c.fontSize);
+				const [r, g, b] = (c.color.match(/\d+/g) ?? []).map(Number);
+				f.color = ((r ?? 0) << 16) | ((g ?? 0) << 8) | (b ?? 0);
+				f.bold = c.fontWeight === "bold";
+				f.italic = c.fontStyle === "italic";
+				// (kept here: a control that is full says nothing of what was typed, in WebKit)
+				this._most = box.maxLength > 0 ? box.maxLength : 0;
+				box.removeAttribute("maxlength");
+				this._pass = box.type === "password";
+				this._text = box.value.replace(/\n/g, "\r");
+			} else {
+				const s = t.querySelector("[font-size]");
+				f.size = +(s?.getAttribute("font-size") ?? 12);
+				f.font = (s?.getAttribute("font-family") ?? "Arial").split(",")[0]!.replace(/['"]/g, "");
+				f.color = parseInt((s?.getAttribute("fill") ?? "#000000").slice(1), 16);
+				f.bold = s?.getAttribute("font-weight") === "bold";
+				f.italic = s?.getAttribute("font-style") === "italic";
+				this._text = [...t.children].map((l) => l.textContent).join("\r");
+			}
+			// (a field of several lines says its text, and Flash ends it with a line of its own)
+			if (extras?.[8] !== undefined) this._text = extras[8].replace(/\r\n|\n/g, "\r") + "\r";
 			f.align = extras?.[2] ?? "left";
-			this._text = [...t.children].map((l) => l.textContent).join("\r");
 			this._chars = Array.from(this._text, () => f);
+			this._selected = [this._text.length, this._text.length];
 			// the field's box is its space: the text's own matrix points inside the gutter
-			const list = t.transform.baseVal;
+			const list = (t as SVGGElement).transform.baseVal;
 			const m = list.numberOfItems ? list.consolidate()!.matrix : null;
 			const v: Mat = m ? [m.a, m.b, m.c, m.d, m.e, m.f] : ONE;
 			const g = this._gutter;
@@ -1258,14 +1352,148 @@ class TextField extends DisplayObject {
 			if (extras) {
 				this._w = extras[0] / (Math.abs(v[0]) || 1);
 				this._h = extras[1] / (Math.abs(v[3]) || 1);
-				this.type = extras[3] ?? "dynamic";
-				this.selectable = !!extras[4];
-				this.multiline = !!extras[5];
-				this.wordWrap = !!extras[5];
+				this._type = extras[3] ?? "dynamic";
+				this.selectable = !!(extras[4] & 1);
+				if (extras[4] & 2) {
+					// "Show border around text": the look it came with
+					this._bgOn = this._brOn = true;
+					const r = (this._back = node!.querySelector("rect"));
+					r?.removeAttribute("transform");
+				}
+				this._multi = !!extras[5];
+				this._wrap = !!extras[5] && extras[7] !== 0;
 				(this as any)._lh = extras[6];
+			}
+			if (box) {
+				this._in = box;
+				box.value = this._text.replace(/\r/g, "\n");
+				box.setSelectionRange(this._text.length, this._text.length);
+				this._hear(box.parentNode as Element);
 			}
 			this._lay();
 		} else this._draw();
+	}
+	get type() {
+		return this._type;
+	}
+	set type(v: string) {
+		v = String(v);
+		if (v !== "input" && v !== "dynamic") throw fail(ArgumentError, 2008, "Parameter type must be one of the accepted values.");
+		if (v === this._type) return;
+		this._type = v;
+		if (v === "input") this._box();
+		else {
+			this._in?.parentNode?.parentNode?.removeChild(this._in.parentNode);
+			this._in = null;
+		}
+		this._draw();
+	}
+	get multiline() {
+		return this._multi;
+	}
+	set multiline(v: boolean) {
+		this._multi = !!v;
+		this._box();
+	}
+	get wordWrap() {
+		return this._wrap;
+	}
+	set wordWrap(v: boolean) {
+		this._wrap = !!v;
+		this._box();
+		this._draw();
+	}
+	get maxChars() {
+		return this._most;
+	}
+	set maxChars(v: number) {
+		this._most = v;
+	}
+	get displayAsPassword() {
+		return this._pass;
+	}
+	set displayAsPassword(v: boolean) {
+		this._pass = !!v;
+		this._box();
+		this._draw();
+	}
+	get selectionBeginIndex() {
+		return this._in?.selectionStart ?? this._selected[0];
+	}
+	get selectionEndIndex() {
+		return this._in?.selectionEnd ?? this._selected[1];
+	}
+	get caretIndex() {
+		return this._in?.selectionEnd ?? this._selected[1];
+	}
+	/** Input text: the right control for what the field is now. */
+	private _box() {
+		if (this._type !== "input") return;
+		const had = this._in;
+		const area = this._multi && !this._pass;
+		const same = had && (had.localName === "textarea") === area;
+		const b = (same ? had : htmlEl(area ? "textarea" : "input")) as HTMLInputElement & HTMLTextAreaElement;
+		if (!same) {
+			b.style.cssText = "box-sizing:border-box;display:block;width:100%;height:100%;margin:0;padding:2px;border:0;outline:0;border-radius:0;background:none;resize:none;overflow:hidden";
+			b.setAttribute("spellcheck", "false");
+			b.setAttribute("autocomplete", "off");
+			if (had) had.replaceWith(b);
+			else {
+				const fo = controlBox(this._node, this._w, this._h);
+				fo.appendChild(b);
+				this._hear(fo);
+				this._field()?.remove();
+			}
+			this._in = b;
+		}
+		if (area) b.wrap = this._wrap ? "soft" : "off";
+		else b.type = this._pass ? "password" : "text";
+	}
+	/** What the user does in the control (asked of the box around it: the control itself can change). */
+	private _hear(box: Element) {
+		const s = current;
+		box.addEventListener("beforeinput", (e) =>
+			s.safely(() => {
+				const b = e as InputEvent;
+				const c = this._in!;
+				// (Enter is text where it starts a line)
+				const typed = b.data ?? b.dataTransfer?.getData("text/plain") ?? (/^insert(LineBreak|Paragraph)$/.test(b.inputType) && this._multi ? "\n" : null);
+				if (typed === null || typed === undefined || b.isComposing) return;
+				// what was typed, whatever comes of it
+				const ev = new FTextEvent(FTextEvent.TEXT_INPUT, true, true, typed);
+				this.dispatchEvent(ev);
+				if (ev.isDefaultPrevented()) return b.preventDefault();
+				const rule = this.restrict;
+				let text = typed;
+				if (rule !== null) {
+					text = "";
+					for (const ch of typed) {
+						// (a letter that isn't allowed goes in as its other case, if that is)
+						const other = ch === ch.toLowerCase() ? ch.toUpperCase() : ch.toLowerCase();
+						text += allowedBy(rule, ch) ? ch : allowedBy(rule, other) ? other : "";
+					}
+				}
+				const room = this._most ? this._most - c.value.length + (c.selectionEnd! - c.selectionStart!) : Infinity;
+				if (text.length > room) text = text.slice(0, Math.max(0, room));
+				if (text === typed) return;
+				b.preventDefault();
+				if (!text) return;
+				c.setRangeText(text, c.selectionStart!, c.selectionEnd!, "end");
+				this._typed();
+			}),
+		);
+		box.addEventListener("input", () => s.safely(() => this._typed()));
+		box.addEventListener("focusin", () => s.safely(() => void (s.stage._focus !== this && s.focused(this))));
+		box.addEventListener("focusout", (e) => s.safely(() => void (s.stage._focus === this && s.blurred(this, (e as FocusEvent).relatedTarget as Node | null))));
+		box.addEventListener("scroll", () => s.safely(() => this.dispatchEvent(new FEvent(FEvent.SCROLL, true))), true);
+	}
+	private _typed() {
+		this._text = this._in!.value.replace(/\r\n|\n/g, "\r");
+		this._html = null;
+		const f = this._def;
+		this._chars = Array.from({ length: this._text.length }, () => f);
+		this._lay();
+		this.dispatchEvent(new FEvent(FEvent.CHANGE, true));
 	}
 	_field(): SVGTextElement | null {
 		return (this._node.localName === "text" ? this._node : this._node.querySelector("text")) as SVGTextElement | null;
@@ -1350,6 +1578,12 @@ class TextField extends DisplayObject {
 	_draw() {
 		this._lay();
 		const n = this._node;
+		if (this._in) {
+			this._showIn(this._in);
+			this._backing();
+			current.touched();
+			return;
+		}
 		let t = this._field();
 		if (!t) n.appendChild((t = svgEl("text", { "xml:space": "preserve" }) as SVGTextElement));
 		t.removeAttribute("text-anchor");
@@ -1383,17 +1617,45 @@ class TextField extends DisplayObject {
 			if (y > this._h && !this._i) break;
 		}
 		t.replaceChildren(...parts);
+		this._backing();
+		current.touched();
+	}
+	/** The text and its look in the control (one look: an HTML control has no runs). */
+	private _showIn(b: HTMLInputElement | HTMLTextAreaElement) {
+		const v = this._text.replace(/\r/g, "\n");
+		if (b.value !== v) {
+			// (writing the value puts the caret at its end)
+			const from = b.selectionStart ?? 0,
+				to = b.selectionEnd ?? 0;
+			b.value = v;
+			b.setSelectionRange(from, to);
+		}
+		const f = this._chars[0] ?? this._def;
+		const c = b.style;
+		c.fontFamily = this._face?.[0] === f.font ? this._face[1] : `'${f.font}', sans-serif`;
+		c.fontSize = `${f.size}px`;
+		c.fontWeight = f.bold ? "bold" : "normal";
+		c.fontStyle = f.italic ? "italic" : "normal";
+		c.textDecoration = f.underline ? "underline" : "none";
+		c.color = colorOf(f.color ?? 0);
+		c.textAlign = f.align === "center" || f.align === "right" ? f.align : "left";
+		c.letterSpacing = f.letterSpacing ? `${f.letterSpacing}px` : "normal";
+	}
+	/** The field's background and border. */
+	private _backing() {
+		const n = this._node;
 		if (this._bgOn || this._brOn) {
 			const r = (this._back ??= n.insertBefore(svgEl("rect"), n.firstChild) as SVGElement);
-			r.setAttribute("width", String(this._w));
-			r.setAttribute("height", String(this._h));
+			r.setAttribute("x", ".5");
+			r.setAttribute("y", ".5");
+			r.setAttribute("width", String(this._w - 1));
+			r.setAttribute("height", String(this._h - 1));
 			r.setAttribute("fill", this._bgOn ? colorOf(this._bg) : "none");
 			r.setAttribute("stroke", this._brOn ? colorOf(this._br) : "none");
 		} else {
 			this._back?.remove();
 			this._back = null;
 		}
-		current.touched();
 	}
 	override _self(): Box {
 		return { l: 0, t: 0, r: this._w, b: this._h };
@@ -1410,6 +1672,9 @@ class TextField extends DisplayObject {
 		this._html = null;
 		const f = this._def;
 		this._chars = Array.from({ length: this._text.length }, () => f);
+		// (new text: the selection starts again)
+		this._selected = [0, 0];
+		if (this._in) this._in.value = "";
 		this._draw();
 	}
 	get htmlText() {
@@ -1489,8 +1754,11 @@ class TextField extends DisplayObject {
 		this.replaceText(this.selectionBeginIndex, this.selectionEndIndex, s);
 	}
 	setSelection(a: number, b: number) {
-		this.selectionBeginIndex = a;
-		this.selectionEndIndex = b;
+		const n = this._text.length;
+		a = Math.max(0, Math.min(n, a));
+		b = Math.max(0, Math.min(n, b));
+		this._selected = [Math.min(a, b), Math.max(a, b)];
+		this._in?.setSelectionRange(this._selected[0], this._selected[1]);
 	}
 	get length() {
 		return this._text.length;
@@ -1505,11 +1773,14 @@ class TextField extends DisplayObject {
 		return this._lines.reduce((h, l) => h + l.ascent + l.descent + l.leading, 0);
 	}
 	get scrollV() {
-		return this._v;
+		const l = this._lines[0];
+		return this._in && l ? 1 + Math.round(this._in.scrollTop / (l.ascent + l.descent + l.leading)) : this._v;
 	}
 	set scrollV(v: number) {
 		this._v = Math.max(1, Math.min(this.maxScrollV, +v));
-		this._draw();
+		const l = this._lines[0];
+		if (this._in) this._in.scrollTop = l ? (this._v - 1) * (l.ascent + l.descent + l.leading) : 0;
+		else this._draw();
 	}
 	get maxScrollV() {
 		let h = 0,
@@ -1539,7 +1810,7 @@ class TextField extends DisplayObject {
 	getLineText(i: number) {
 		const l = this._lines[i];
 		if (!l) throw fail(RangeError, 2006, "The supplied index is out of bounds.");
-		return this._text.slice(l.from, Math.min(this._text.length, l.to + 1));
+		return this._text.slice(l.from, this._lines[i + 1]?.from ?? this._text.length);
 	}
 	getLineLength(i: number) {
 		return this.getLineText(i).length;
@@ -2136,8 +2407,8 @@ export class Scripts {
 			MouseEvent: FMouseEvent,
 			KeyboardEvent: FKeyboardEvent,
 			TimerEvent: FTimerEvent,
-			FocusEvent: Object.assign(class extends FEvent {}, { FOCUS_IN: "focusIn", FOCUS_OUT: "focusOut", KEY_FOCUS_CHANGE: "keyFocusChange", MOUSE_FOCUS_CHANGE: "mouseFocusChange" }),
-			TextEvent: Object.assign(class extends FEvent {}, { LINK: "link", TEXT_INPUT: "textInput" }),
+			FocusEvent: FFocusEvent,
+			TextEvent: FTextEvent,
 			SecurityErrorEvent: Object.assign(class extends FEvent {}, { SECURITY_ERROR: "securityError" }),
 			AsyncErrorEvent: Object.assign(class extends FEvent {}, { ASYNC_ERROR: "asyncError" }),
 			Keyboard: KEYS,
@@ -2407,12 +2678,25 @@ export class Scripts {
 		if (o) return o;
 		const it = i.it as PInst;
 		if (i.clip) return this.objOfClip(i.clip);
-		if ((i.it as PItem).k === "r" && i.node.querySelector("text")) o = new TextField(i.node, (i.it as PRef).tx, this.base ? 2 : 0);
+		if ((i.it as PItem).k === "r" && i.node.querySelector("text,input,textarea")) o = new TextField(i.node, (i.it as PRef).tx, this.base ? 2 : 0);
 		else o = new Shape(i.node);
 		o._i = i;
 		o._parent = this.objOfClip(i.owner);
 		this.objs.set(i, o);
 		return o;
+	}
+
+	/** A control got the keyboard. */
+	focused(o: DisplayObject) {
+		const s = this.stage;
+		const was = s._focus;
+		s._focus = o;
+		o.dispatchEvent(new FFocusEvent(FFocusEvent.FOCUS_IN, true, false, was));
+	}
+	/** A control lost it, maybe to another (whose focusin follows). */
+	blurred(o: DisplayObject, to: Node | null) {
+		this.stage._focus = null;
+		o.dispatchEvent(new FFocusEvent(FFocusEvent.FOCUS_OUT, true, false, to ? this.targetOf(to) : null));
 	}
 
 	/** A new instance on stage: mouse events find it from its node. */
@@ -2639,8 +2923,8 @@ export class Scripts {
 		on("dblclick", (e: MouseEvent) => this.mouse(FMouseEvent.DOUBLE_CLICK, pick(e), e));
 		on("wheel", (e: WheelEvent) => this.mouse(FMouseEvent.MOUSE_WHEEL, pick(e), e));
 		on("keydown", (e: KeyboardEvent) => {
-			// Enter or Space on a focused instance: a click
-			if (e.key !== "Enter" && e.key !== " ") return;
+			// Enter or Space on a focused instance: a click (not in a control: it is typing)
+			if ((e.key !== "Enter" && e.key !== " ") || (e.target as Element).namespaceURI !== svg.namespaceURI) return;
 			const t = this.targetOf(e.target as Node);
 			if (t !== (this.rootObj as DisplayObject)) this.mouse(FMouseEvent.CLICK, t, e as unknown as MouseEvent);
 		});
@@ -2681,13 +2965,13 @@ export class Scripts {
 		const key = (type: string) => (e: KeyboardEvent) =>
 			this.safely(() => {
 				const ev = new FKeyboardEvent(type, true);
-				ev.target = this.stage;
 				ev.keyCode = e.keyCode || 0;
-				ev.charCode = e.key.length === 1 ? e.key.charCodeAt(0) : 0;
+				ev.charCode = e.key.length === 1 ? e.key.charCodeAt(0) : (CHAR_KEYS[e.key] ?? 0);
 				ev.ctrlKey = e.ctrlKey;
 				ev.shiftKey = e.shiftKey;
 				ev.altKey = e.altKey;
-				this.stage._fire(ev);
+				// (from what has the focus, up to the stage)
+				((this.stage._focus as DisplayObject | null) ?? this.stage).dispatchEvent(ev);
 			});
 		window.addEventListener("resize", () => this.safely(() => this.stage.dispatchEvent(new FEvent(FEvent.RESIZE))));
 		window.addEventListener("keydown", key(FKeyboardEvent.KEY_DOWN));

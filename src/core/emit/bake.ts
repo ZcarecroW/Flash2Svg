@@ -342,6 +342,8 @@ class Baker {
 			case "text":
 			case "video":
 				bl.nodes.push({ kind: item.kind, item, vis, uid: item.uid });
+				// (a <use> can't hold a foreignObject: this has to stay in place)
+				if (item.kind === "video" || (item.kind === "text" && item.element.textType === "input")) bt.animated = true;
 				return;
 			case "artSeq": {
 				// shape tweens: frames blended by a morph drawing, see morph.ts

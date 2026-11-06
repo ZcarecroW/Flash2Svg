@@ -1,0 +1,25 @@
+t abc
+Back
+t d
+Enter
+Left
+Left
+t z
+Home
+t q
+Delete
+F2
+t x
+Enter
+t y
+F2
+t 3456789
+F2
+t ab1c
+F2
+t a1b2
+F2
+t abc
+F2
+t secret
+F3

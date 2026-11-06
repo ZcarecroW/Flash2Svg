@@ -65,7 +65,7 @@ async function playerTraces(name: string, page: import("playwright-core").Page, 
 	writeFileSync(file, alone ? res.files[0]!.svg : `<!doctype html><html><body style="margin:0">${res.files[0]!.svg}</body></html>`);
 	const lines: string[] = [];
 	// (what isn't there on purpose: the browser says so too)
-	const onLog = (m: import("playwright-core").ConsoleMessage) => void (m.text().startsWith("Failed to load") || !m.text() || lines.push(m.text()));
+	const onLog = (m: import("playwright-core").ConsoleMessage) => void (/^(Failed to load|\[DOM\])/.test(m.text()) || !m.text() || lines.push(m.text()));
 	const onError = (e: Error) => void lines.push(`PAGE ERROR ${e.message}`);
 	// (the last document may still be running: nothing of it goes into this one's lines)
 	await page.goto("about:blank");

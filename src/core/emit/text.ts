@@ -21,6 +21,12 @@ interface Piece {
  * keeps its matrix, the box moves inside it (`left` in XFL, which JSFL doesn't show): the box
  * tells where it is. (Turned fields: their box says too little.)
  */
+/** The field's size inside its matrix: a stretched field's box is reported stretched. */
+export function fieldSize(t: TextElement): { w: number; h: number } {
+	const [a, b, c, d] = t.matrix;
+	return b || c || a <= 0 || d <= 0 ? { w: t.width, h: t.height } : { w: t.width / a, h: t.height / d };
+}
+
 export function fieldMatrix(t: TextElement): Mat {
 	const [a, b, c, d, , ] = t.matrix;
 	if (b || c || !t.bounds || a <= 0 || d <= 0) return t.matrix;
@@ -39,7 +45,7 @@ export function textNode(t: TextElement, digits: number, fonts?: FontSet): XmlNo
 		: [{ text: t.text, face: "sans-serif", size: 12, fillColor: "#000000", bold: false, italic: false, alignment: "left", letterSpacing: 0, lineSpacing: 2 }];
 	const first = runs[0]!;
 	const anchor = first.alignment === "center" ? "middle" : first.alignment === "right" ? "end" : "start";
-	const inner = t.width - 2 * GUTTER;
+	const inner = fieldSize(t).w - 2 * GUTTER;
 	const x = anchor === "middle" ? inner / 2 : anchor === "end" ? inner : 0;
 	const font = (r: TextRun) => fonts?.get(r.face, r.bold, r.italic);
 	const ascent = (r: TextRun) => {
@@ -134,6 +140,39 @@ export function textNode(t: TextElement, digits: number, fonts?: FontSet): XmlNo
 }
 
 /**
+ * Input text: a control the user types in, on the field's box. A single line sits at the top, as in
+ * Animate (an <input> would centre it): the rest of the box is padding, which still takes the mouse.
+ */
+export function inputNode(t: TextElement, digits: number, fonts?: FontSet): XmlNode {
+	const r: TextRun = t.runs[0] ?? { text: "", face: "sans-serif", size: 12, fillColor: "#000000", bold: false, italic: false, alignment: "left", letterSpacing: 0, lineSpacing: 2 };
+	const f = fonts?.get(r.face, r.bold, r.italic);
+	const line = f ? ((f.ascent + f.descent) * r.size) / f.upm + r.lineSpacing : r.size * 1.15 + r.lineSpacing;
+	const area = (t.multiline || !!t.noWrap) && !t.password;
+	const size = fieldSize(t);
+	const padding = area ? "2px" : `2px 2px ${fmt(Math.max(0, size.h - GUTTER - line), 2)}px`;
+	const style =
+		`box-sizing:border-box;display:block;width:100%;height:100%;margin:0;padding:${padding};border:0;outline:0;border-radius:0;background:none;resize:none;overflow:hidden;` +
+		`font:${r.italic ? "italic " : ""}${r.bold ? "bold " : ""}${fmt(r.size, 2)}px/${fmt(line, 2)}px ${fontFamily(r.face, f?.family)};color:${r.fillColor}` +
+		(r.alignment !== "left" ? `;text-align:${r.alignment === "center" ? "center" : "right"}` : "") +
+		(r.letterSpacing ? `;letter-spacing:${fmt(r.letterSpacing, 2)}px` : "");
+	const attrs = {
+		xmlns: "http://www.w3.org/1999/xhtml",
+		maxlength: t.maxChars || undefined,
+		spellcheck: "false",
+		autocomplete: "off",
+		"aria-label": t.acc?.name || undefined,
+		style,
+	};
+	const text = t.text.replace(/\r\n|\r/g, "\n");
+	const box = area
+		? el("textarea", { ...attrs, wrap: t.noWrap ? "off" : undefined }, [text])
+		: el("input", { ...attrs, type: t.password ? "password" : "text", value: text });
+	return el("g", { transform: fmtMatrix(fieldMatrix(t), digits) || undefined, "data-name": t.name || undefined }, [
+		el("foreignObject", { x: -GUTTER, y: -GUTTER, width: fmt(size.w, 2), height: fmt(size.h, 2) }, [box]),
+	]);
+}
+
+/**
  * What a text field shows besides its letters, around its node: "Show border around text" (a
  * white field with a black outline, behind the text), a link set on its text (SVG links outlines
  * only as a whole: one per field) and its filters, in the parent's orientation as a symbol's.
@@ -150,12 +189,13 @@ export function textField(
 	let out = node;
 	if (t.border) {
 		// the outline on the field's edge pixels (the matrix points inside the gutter)
+		const size = fieldSize(t);
 		const box = el("rect", {
 			transform: fmtMatrix(fieldMatrix(t), digits) || undefined,
 			x: fmt(0.5 - GUTTER, 2),
 			y: fmt(0.5 - GUTTER, 2),
-			width: fmt(t.width - 1, 2),
-			height: fmt(t.height - 1, 2),
+			width: fmt(size.w - 1, 2),
+			height: fmt(size.h - 1, 2),
 			fill: "#FFFFFF",
 			stroke: "#000000",
 		});

@@ -33,7 +33,7 @@ import { alignTracks, encodeKeyframes, groupFrames, withLegacyTiming, type MKey 
 import { PLAYER_SOUNDTRACK } from "./runtime-code.generated.ts";
 import { schedule, soundTable } from "./soundtrack.ts";
 import { StaticRenderer } from "./static.ts";
-import { outlineText, textField, textNode } from "./text.ts";
+import { inputNode, outlineText, textField, textNode } from "./text.ts";
 import { scrollCss, scrollScript, scrollScriptCss, visibleScript, type ScrollRange } from "./triggers.ts";
 import { clickLink } from "../snippets.ts";
 import { playheadFrame } from "./timing.ts";
@@ -300,11 +300,13 @@ class Writer {
 			case "text": {
 				const it = n.item as Extract<typeof n.item, { kind: "text" }>;
 				content =
-					this.opts.textAsOutlines || it.element.textType === "static"
-						? it.art
-							? outlineText(it.element, this.doc.useArt(it.art))
-							: null
-						: textNode(it.element, this.ctx.precision.space(this.space), this.doc.fonts);
+					it.element.textType === "input"
+						? inputNode(it.element, this.ctx.precision.space(this.space), this.doc.fonts)
+						: this.opts.textAsOutlines || it.element.textType === "static"
+							? it.art
+								? outlineText(it.element, this.doc.useArt(it.art))
+								: null
+							: textNode(it.element, this.ctx.precision.space(this.space), this.doc.fonts);
 				content = textField(
 					it.element,
 					content,

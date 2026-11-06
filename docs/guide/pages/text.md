@@ -31,6 +31,7 @@ Fonts whose licence forbids embedding (the font's *fsType*) and fonts that aren'
 | Filters on a text field (a drop shadow on a heading) | applied as on a symbol, in the stage's orientation |
 | A link on the text (*Properties › Options › Link* and *Target*) | the field becomes a link (one per field) |
 | *Password* input fields | a star per character — the text itself never leaves Animate |
+| Input text | in SMIL, CSS and the JS player a **real field you can type in**, with its font, colour, alignment and character limit, also with *Dynamic text as outlines* on. In a static export it shows as text |
 | *Multiline*, *Multiline no wrap*, *Single line* | wrapped at the width only for *Multiline* |
 | Instance name | `data-name="…"` for your page's scripts |
 

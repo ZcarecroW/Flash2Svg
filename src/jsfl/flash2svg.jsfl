@@ -969,6 +969,12 @@
 				bounds: boundsOf(el)
 			};
 			if (border) txt.border = true;
+			if (textType == "input") {
+				if (password) txt.password = true;
+				if (get(el, "lineType", "") == "multiline no wrap") txt.noWrap = true;
+				var most = get(el, "maxCharacters", 0);
+				if (most) txt.maxChars = most;
+			}
 			var tf = filtersOf(get(el, "filters", []));
 			if (tf.length) txt.filters = tf;
 			return txt;

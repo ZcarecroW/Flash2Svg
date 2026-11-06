@@ -48,7 +48,7 @@ const names = list
 	? list.split(",")
 	: [
 			// (documents whose scripts change the picture have no frames of Animate to compare with: e2e-as3, e2e-canvas, e2e-scripts test them)
-			...readdirSync(out).filter((d) => existsSync(join(out, d, "model", "scene.json")) && !/^f(7[4-9]|8[01])-/.test(d)),
+			...readdirSync(out).filter((d) => existsSync(join(out, d, "model", "scene.json")) && !/^f(7[4-9]|8[01567])-/.test(d)),
 			...readdirSync(guideModels)
 				.filter((d) => existsSync(join(guideModels, d, "scene.json")))
 				.map((d) => `guide:${d}`),
