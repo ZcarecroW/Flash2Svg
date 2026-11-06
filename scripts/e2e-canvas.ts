@@ -30,6 +30,7 @@ async function publish() {
 		const to = join(out, n, "canvas");
 		mkdirSync(to, { recursive: true });
 		for (const f of readdirSync(fla)) if (f.startsWith(`${n}.`) && !f.endsWith(".fla")) copyFileSync(join(fla, f), join(to, f));
+		// (components are loaded from Animate's own folder, see below)
 		if (existsSync(join(fla, "images"))) {
 			mkdirSync(join(to, "images"), { recursive: true });
 			for (const f of readdirSync(join(fla, "images"))) copyFileSync(join(fla, "images", f), join(to, "images", f));
@@ -51,7 +52,7 @@ await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
 const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 
 /** What a page logs, its scripts left alone for a moment, then with the mouse. */
-async function play(page: Page, url: string): Promise<string[]> {
+async function play(page: Page, url: string, steps?: (p: Page) => Promise<void>): Promise<string[]> {
 	const lines: string[] = [];
 	const onLog = (m: import("playwright-core").ConsoleMessage) => void (/^(Failed to load|\[object|Access to|Canvas2D)/.test(m.text()) || lines.push(m.text()));
 	const onError = (e: Error) => void lines.push(`PAGE ERROR ${e.message}`);
@@ -60,6 +61,13 @@ async function play(page: Page, url: string): Promise<string[]> {
 	page.on("pageerror", onError);
 	await page.goto(url);
 	for (let i = 0; i < 60 && !lines.includes("READY"); i++) await page.waitForTimeout(50);
+	if (steps) {
+		await steps(page);
+		await page.waitForTimeout(100);
+		page.off("console", onLog);
+		page.off("pageerror", onError);
+		return lines;
+	}
 	await page.mouse.move(300, 200);
 	await page.waitForTimeout(100);
 	await page.mouse.click(300, 200);
@@ -87,8 +95,29 @@ const browser =
 			: await chromium.launch({ channel: "msedge", headless: true, args: ["--autoplay-policy=no-user-gesture-required"] });
 const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
 await page.route("**/createjs*.js", (r) => r.fulfill({ path: createjs, contentType: "text/javascript" }));
+// (what a published document with components loads: from Animate)
+const components = join(dirname(createjs), "..", "..", "..", "..", "HTML5Components");
+await page.route("**/jquery-*.min.js", (r) => r.fulfill({ path: join(components, "lib", "jquery-3.4.1.min.js"), contentType: "text/javascript" }));
+await page.route("**/components/**", (r) => r.fulfill({ path: join(components, new URL(r.request().url()).pathname.replace(/^.*\/components\//, "")), contentType: "text/javascript" }));
+
+/** What a user does to the components. */
+async function useUi(p: Page) {
+	await p.mouse.click(70, 31);
+	await p.mouse.click(146, 31);
+	await p.mouse.click(26, 61);
+	await p.mouse.click(146, 61);
+	await p.selectOption("#cmb", "2");
+	await p.fill("#num", "5");
+	await p.locator("#num").blur();
+	await p.locator("#txt").click();
+	await p.keyboard.press("End");
+	await p.keyboard.type("ab");
+	await p.keyboard.press("Tab");
+	await p.mouse.click(70, 31);
+}
+const stepsFor: Record<string, (p: Page) => Promise<void>> = { "f89-canvasui": useUi };
 for (const name of names) {
-	const expected = await play(page, `${origin}/${name}/canvas/${name}.html`);
+	const expected = await play(page, `${origin}/${name}/canvas/${name}.html`, stepsFor[name]);
 	writeFileSync(join(out, name, "canvas-expected.txt"), expected.join("\n"));
 	const dir = join(out, name, "model");
 	const model: SceneModel = JSON.parse(readFileSync(join(dir, "scene.json"), "utf8"));
@@ -98,7 +127,7 @@ for (const name of names) {
 	writeFileSync(join(out, name, "canvas-player.html"), `<!doctype html><html><body style="margin:0">${res.files[0]!.svg}</body></html>`);
 	writeFileSync(join(out, name, "canvas-player.svg"), res.files[0]!.svg);
 	for (const form of ["html", "svg"]) {
-		const got = await play(page, `${origin}/${name}/canvas-player.${form}`);
+		const got = await play(page, `${origin}/${name}/canvas-player.${form}`, stepsFor[name]);
 		writeFileSync(join(out, name, "canvas-got.txt"), got.join("\n"));
 		let bad = 0;
 		const shown = args.includes("--all") ? 1e9 : 14;

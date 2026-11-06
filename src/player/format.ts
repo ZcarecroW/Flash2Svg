@@ -137,6 +137,8 @@ export interface PRef extends PBase {
 	nm?: string;
 	/** A text field for scripts. */
 	tx?: PTextExtras;
+	/** A UI component (scripts): its class, parameters, width and height. */
+	ct?: [string, Record<string, unknown>, number, number];
 	/** raw node markup (bitmaps, text) */
 	x: string;
 }

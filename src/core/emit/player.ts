@@ -140,8 +140,17 @@ export function renderPlayer(
 				doc.defs.push(el("g", { id }, [node]));
 				return { k: "a", s: it.start, e: it.end, r: id };
 			}
-			case "video":
-				return { k: "r", s: it.start, e: it.end, x: serialize(doc.video(it.element, true)) };
+			case "video": {
+				const c = it.element;
+				return {
+					k: "r",
+					s: it.start,
+					e: it.end,
+					x: serialize(doc.video(c, true)),
+					...(scripts && c.name ? { nm: c.name } : {}),
+					...(scripts && c.kind === "control" ? { ct: [c.control, c.params, c.width, c.height] as [string, Record<string, unknown>, number, number] } : {}),
+				};
+			}
 			case "text": {
 				// markup the runtime puts in with innerHTML: in an .svg file that is XML, where the root's
 				// xlink prefix isn't known (SVG 2's plain href is)

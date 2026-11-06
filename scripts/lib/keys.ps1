@@ -59,12 +59,15 @@ try {
 	function Key([int]$vk) {
 		# (the player's message loop turns the key into its character)
 		[void][Win]::PostMessage($target, $WM_KEYDOWN, [IntPtr]$vk, (Lparam $vk 0))
+		Start-Sleep -Milliseconds 30
 		[void][Win]::PostMessage($target, $WM_KEYUP, [IntPtr]$vk, (Lparam $vk 1))
 		Start-Sleep -Milliseconds $Gap
 	}
-	$named = @{ F2 = 0x71; F3 = 0x72; Enter = 0x0D; Back = 0x08; Tab = 0x09; Left = 0x25; Right = 0x27; Home = 0x24; End = 0x23; Delete = 0x2E }
+	$named = @{ F2 = 0x71; F3 = 0x72; Enter = 0x0D; Back = 0x08; Tab = 0x09; Left = 0x25; Right = 0x27; Up = 0x26; Down = 0x28; Home = 0x24; End = 0x23; Delete = 0x2E; Space = 0x20 }
 	foreach ($line in (Get-Content $Steps)) {
-		if (-not $line) { continue }
+		# (a step for one side: what the same thing takes there)
+		if (-not $line -or $line.StartsWith("p ")) { continue }
+		if ($line.StartsWith("f ")) { $line = $line.Substring(2) }
 		if ($line.StartsWith("t ")) {
 			foreach ($c in $line.Substring(2).ToCharArray()) {
 				$vk = [Win]::VkKeyScan($c) -band 0xFF
@@ -78,6 +81,21 @@ try {
 			[void][Win]::PostMessage($target, $WM_DOWN, [IntPtr]1, $l)
 			Start-Sleep -Milliseconds $Gap
 			[void][Win]::PostMessage($target, $WM_UP, [IntPtr]0, $l)
+			Start-Sleep -Milliseconds $Gap
+		} elseif ($line.StartsWith("drag ")) {
+			$xy = $line.Split(" ")
+			$from = [IntPtr](([int]$xy[2] -shl 16) -bor [int]$xy[1])
+			[void][Win]::PostMessage($target, $WM_MOVE, [IntPtr]0, $from)
+			Start-Sleep -Milliseconds $Gap
+			[void][Win]::PostMessage($target, $WM_DOWN, [IntPtr]1, $from)
+			Start-Sleep -Milliseconds $Gap
+			for ($i = 1; $i -le 4; $i++) {
+				$x = [int]$xy[1] + ([int]$xy[3] - [int]$xy[1]) * $i / 4
+				$y = [int]$xy[2] + ([int]$xy[4] - [int]$xy[2]) * $i / 4
+				[void][Win]::PostMessage($target, $WM_MOVE, [IntPtr]1, [IntPtr]((([int]$y) -shl 16) -bor ([int]$x)))
+				Start-Sleep -Milliseconds $Gap
+			}
+			[void][Win]::PostMessage($target, $WM_UP, [IntPtr]0, [IntPtr]((([int]$xy[4]) -shl 16) -bor [int]$xy[3]))
 			Start-Sleep -Milliseconds $Gap
 		} else {
 			Key $named[$line]

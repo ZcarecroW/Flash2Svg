@@ -124,11 +124,13 @@ export interface Keyframe {
 	elements: ElementData[];
 }
 
-export type ElementData = InstanceElement | ShapeElement | BitmapElement | TextElement | VideoElement | UnsupportedElement;
+export type ElementData = InstanceElement | ShapeElement | BitmapElement | TextElement | VideoElement | ControlElement | UnsupportedElement;
 
 /** A video component (AS3 FLVPlayback, HTML5 Canvas Video): a linked video file, placed by its bounds. */
 export interface VideoElement extends ElementBase {
 	kind: "video";
+	/** The instance name. */
+	name?: string;
 	/** as set in the component */
 	src: string;
 	/** the file copied next to scene.json (videos/…), when it was found */
@@ -139,6 +141,20 @@ export interface VideoElement extends ElementBase {
 	controls: boolean;
 	poster?: string;
 	matrix: Mat;
+}
+
+/** A UI component (Button, CheckBox, ComboBox...): a real HTML control on its box. */
+export interface ControlElement extends ElementBase {
+	kind: "control";
+	/** Button, CheckBox, ComboBox... */
+	control: string;
+	name: string;
+	/** Its parameters, as the Properties panel has them. */
+	params: Record<string, any>;
+	/** Where it stands and how it is turned: its size is `width` and `height`. */
+	matrix: Mat;
+	width: number;
+	height: number;
 }
 
 interface ElementBase {

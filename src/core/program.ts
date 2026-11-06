@@ -11,6 +11,7 @@ import { compose, decompose, nearestAngle } from "./geom.ts";
 import type {
 	AccInfo,
 	VideoElement,
+	ControlElement,
 	BitmapElement,
 	ColorTransform,
 	ElementData,
@@ -138,7 +139,7 @@ export interface TextItem extends ItemBase {
 
 export interface VideoItem extends ItemBase {
 	kind: "video";
-	element: VideoElement;
+	element: VideoElement | ControlElement;
 }
 
 export type Item = InstanceItem | ArtItem | ArtSeqItem | BitmapItem | TextItem | VideoItem;
@@ -1088,7 +1089,8 @@ function buildLayerItems(tl: TimelineData, layer: LayerData, li: number, opts: C
 					});
 					break;
 				case "video":
-					items.push({ kind: "video", uid: uid(`v${kf.index}.${slot}`), start: kf.index, end: kEnd, slot, element: e as VideoElement });
+				case "control":
+					items.push({ kind: "video", uid: uid(`v${kf.index}.${slot}`), start: kf.index, end: kEnd, slot, element: e as VideoElement | ControlElement });
 					break;
 			}
 		});

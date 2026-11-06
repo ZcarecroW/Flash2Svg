@@ -1,4 +1,5 @@
 import fl.controls.*;
+import fl.controls.dataGridClasses.DataGridColumn;
 import fl.core.UIComponent;
 import fl.data.DataProvider;
 import fl.events.*;
@@ -71,6 +72,33 @@ var made:Button = new Button(); made.label = "New"; made.move(10, 300); addChild
 trace(made.parent == this, made.label, made.width, made.height, made.enabled);
 var inp:TextInput = new TextInput(); inp.text = "typed"; addChild(inp); trace(inp.text, inp.width, inp.height);
 removeChild(made); removeChild(inp);
+
+// ---- a grid, and a picture
+grid.addColumn("Name"); grid.addColumn("Age");
+trace(grid.columns.length, grid.getColumnAt(0).dataField, grid.getColumnAt(1).headerText, grid.getColumnCount());
+var col:DataGridColumn = new DataGridColumn("City"); col.headerText = "Town"; grid.addColumn(col); trace(grid.columns.length, col.dataField, col.headerText, col.sortable, col.editable, col.visible);
+grid.dataProvider = new DataProvider([{Name: "Ann", Age: 30, City: "Rome"}, {Name: "Bob", Age: 25, City: "Oslo"}]);
+trace(grid.length, grid.selectedIndex, grid.getItemAt(1).Name); grid.selectedIndex = 1; trace(grid.selectedItem.Name, grid.selectedIndices.join());
+grid.sortItemsOn("Age", Array.NUMERIC); trace(grid.getItemAt(0).Name, grid.selectedIndex);
+trace(grid is DataGrid, grid is UIComponent, grid.width, grid.height);
+trace(loads.source, loads.autoLoad, loads.scaleContent, loads.maintainAspectRatio, loads.percentLoaded, loads.width, loads.height, loads is UILoader);
+loads.autoLoad = false; loads.source = "pic.png"; trace(loads.source, loads.autoLoad); loads.scaleContent = false; loads.maintainAspectRatio = false; trace(loads.scaleContent, loads.maintainAspectRatio);
+
+// ---- shown and hidden, sizes, styles
+ok.addEventListener(ComponentEvent.HIDE, function (e:Event):void { trace("hide", e.bubbles); });
+ok.addEventListener(ComponentEvent.SHOW, function (e:Event):void { trace("show", e.bubbles); });
+ok.addEventListener(ComponentEvent.MOVE, function (e:Event):void { trace("move", e.bubbles, ok.x, ok.y); });
+ok.addEventListener(ComponentEvent.RESIZE, function (e:Event):void { trace("resize", e.bubbles, ok.width, ok.height); });
+ok.addEventListener(ComponentEvent.LABEL_CHANGE, function (e:Event):void { trace("label", e.bubbles, ok.label); });
+ok.visible = false; ok.visible = false; ok.visible = true; ok.move(1.5, 2.5); ok.setSize(50, 20); ok.x = 7; ok.width = 60; ok.label = "Again"; ok.label = "Again";
+trace(ok.x, ok.y, ok.width, ok.height, ok.scaleX, ok.scaleY);
+ok.scaleX = 2; trace(ok.width, ok.scaleX); ok.scaleY = 2; trace(ok.height, ok.scaleY);
+ok.setStyle("textPadding", 5); trace(ok.getStyle("textPadding"), ok.getStyle("nothing")); ok.clearStyle("textPadding"); trace(ok.getStyle("textPadding"));
+trace(String(ok), String(tick), String(many), String(line), Object(ok).toString(), tick.toggle, one.toggle, tick.autoRepeat);
+try { tick.toggle = false; } catch (e:Error) { trace(e.message.substr(9)); }
+try { one.toggle = false; } catch (e:Error) { trace(e.message.substr(9)); }
+try { pick.getItemAt(99); } catch (e:Error) { trace(e is RangeError, e.message); }
+try { new DataProvider(5); } catch (e:Error) { trace(e is TypeError, e.message); }
 
 trace(ProgressBarMode.EVENT, ProgressBarMode.POLLED, ProgressBarMode.MANUAL, ProgressBarDirection.RIGHT, ProgressBarDirection.LEFT, SliderDirection.HORIZONTAL, SliderDirection.VERTICAL, ButtonLabelPlacement.RIGHT, ButtonLabelPlacement.LEFT, ButtonLabelPlacement.TOP, ButtonLabelPlacement.BOTTOM);
 trace(ComponentEvent.ENTER, ComponentEvent.SHOW, ComponentEvent.HIDE, ComponentEvent.MOVE, ComponentEvent.RESIZE, ComponentEvent.LABEL_CHANGE, ComponentEvent.BUTTON_DOWN, SliderEvent.CHANGE, SliderEvent.THUMB_DRAG, SliderEvent.THUMB_PRESS, SliderEvent.THUMB_RELEASE, ListEvent.ITEM_CLICK, ListEvent.ITEM_ROLL_OVER, ListEvent.ITEM_ROLL_OUT, ListEvent.ITEM_DOUBLE_CLICK, ColorPickerEvent.CHANGE, ColorPickerEvent.ENTER, ColorPickerEvent.ITEM_ROLL_OVER, ColorPickerEvent.ITEM_ROLL_OUT);

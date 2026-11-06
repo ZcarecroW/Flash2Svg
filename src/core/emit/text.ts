@@ -168,7 +168,8 @@ export function inputNode(t: TextElement, digits: number, fonts?: FontSet): XmlN
 		? el("textarea", { ...attrs, wrap: t.noWrap ? "off" : undefined }, [text])
 		: el("input", { ...attrs, type: t.password ? "password" : "text", value: text });
 	return el("g", { transform: fmtMatrix(fieldMatrix(t), digits) || undefined, "data-name": t.name || undefined }, [
-		el("foreignObject", { x: -GUTTER, y: -GUTTER, width: fmt(size.w, 2), height: fmt(size.h, 2) }, [box]),
+		// (tabindex: Chromium stops at a foreignObject on the way through with the Tab key)
+		el("foreignObject", { x: -GUTTER, y: -GUTTER, width: fmt(size.w, 2), height: fmt(size.h, 2), tabindex: "-1" }, [box]),
 	]);
 }
 

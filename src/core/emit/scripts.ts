@@ -7,7 +7,7 @@
 import { compileScripts, type ScriptUnit } from "../as3/emit.ts";
 import { parseScript, type Expr, type Stmt } from "../as3/parser.ts";
 import type { Context } from "../context.ts";
-import type { TimelineData } from "../model.ts";
+import type { ElementData, TimelineData } from "../model.ts";
 import { parseActions } from "../program.ts";
 import { splitScript } from "../snippets.ts";
 import { PLAYER_PARTS } from "./runtime-code.generated.ts";
@@ -16,6 +16,8 @@ const ACTIONS = new Set(["stop", "play", "gotoAndPlay", "gotoAndStop"]);
 
 /** What frame scripts say when they need a part of the runtime. */
 const MEDIA = /\$f\.(Bitmap|BitmapData|ByteArray|Sound|SoundChannel|SoundMixer|Video|URLLoader|NetConnection|NetStream|SharedObject|Tween|TweenEvent|None|Regular|Strong|Back|Bounce|Elastic|Loader|ProLoader|ProgressEvent|IOErrorEvent|HTTPStatusEvent|NetStatusEvent)\b|graphics\.beginBitmapFill/;
+const INPUT = /\$f\.TextFieldType\b|"input"/;
+const CONTROLS = /\$f\.(Button|CheckBox|RadioButton|RadioButtonGroup|ComboBox|List|TextInput|TextArea|Label|NumericStepper|Slider|ColorPicker|ProgressBar|UILoader|DataGrid|DataGridColumn|DataProvider|UIComponent|ComponentEvent|ListEvent|SliderEvent|ColorPickerEvent|DataChangeEvent|DataChangeType|ProgressBarMode|ProgressBarDirection|SliderDirection|ButtonLabelPlacement|ScrollPolicy|StyleManager|LabelButton)\b/;
 const FILTERS = /\$f\.(BlurFilter|GlowFilter|DropShadowFilter|BevelFilter|ColorMatrixFilter|BitmapFilterQuality|BitmapFilterType)\b|createjs\.\w*Filter/;
 
 /** A statement the action lists can say. */
@@ -88,6 +90,15 @@ function unitsOf(tl: TimelineData | undefined, written = false): ScriptUnit[] {
 			else byFrame.set(kf.index, [code]);
 		}
 	return [...byFrame].sort((a, b) => a[0] - b[0]).map(([frame, list]) => ({ frame, code: list.join("\n") }));
+}
+
+/** Whether a document has such an element on stage. */
+function elementOf(ctx: Context, is: (e: ElementData) => boolean): boolean {
+	for (const t of Object.values(ctx.model.timelines))
+		for (const l of t.layers)
+			for (const k of l.keyframes)
+				for (const e of k.elements) if (is(e)) return true;
+	return false;
 }
 
 /**
@@ -180,7 +191,14 @@ export function playerScripts(ctx: Context, playerId: string, warn: (m: string) 
 	const any = js.includes("getDefinitionByName");
 	if (canvas || any || MEDIA.test(js) || Object.keys(bitmaps).length || Object.keys(classes).some((n) => ctx.model.sounds[classes[n]!])) list.push("media");
 	if (any || FILTERS.test(js)) list.push("filters");
-	if (canvas) list.push("createjs");
+	if (canvas) {
+		list.push("createjs");
+		if (/\$\(|\bjQuery\b/.test(js)) list.push("query");
+	} else {
+		const controls = CONTROLS.test(js) || elementOf(ctx, (e) => e.kind === "control");
+		if (controls || INPUT.test(js) || elementOf(ctx, (e) => e.kind === "text" && e.textType === "input")) list.push("input");
+		if (controls) list.push("controls");
+	}
 	const parts = list.map((p) => `${PLAYER_PARTS[p as keyof typeof PLAYER_PARTS]};((window.__f2s[${JSON.stringify(playerId)}].$p=window.__f2s[${JSON.stringify(playerId)}].$p||[]).push(__f2sPart.default));`);
 	return { timelines, js, classes, bitmaps, parts };
 }
@@ -196,5 +214,5 @@ function canvasScripts(units: ScriptUnit[], name: string, warn: (m: string) => v
 			warn(`${name}, frame ${u.frame + 1}: this script can't run (${(e as Error).message})`);
 		}
 	}
-	return `function($t,$f,$r){var createjs=$f.createjs,cjs=createjs,stage=$f.stage,exportRoot=$f.root,canvas=$f.canvas,lib=$f.lib,playSound=$f.playSound;return{${frames.join(",")}}}`;
+	return `function($t,$f,$r){var createjs=$f.createjs,cjs=createjs,stage=$f.stage,exportRoot=$f.root,canvas=$f.canvas,lib=$f.lib,playSound=$f.playSound,$=$f.$,jQuery=$f.$;return{${frames.join(",")}}}`;
 }

@@ -1174,7 +1174,7 @@ class LottieWriter {
 				return it.art ? this.art(it.art, vis, mode) : [];
 			}
 			case "video":
-				this.warn("Videos aren't exported to Lottie (Lottie has no video layer)");
+				this.warn((n.item as Extract<typeof n.item, { kind: "video" }>).element.kind === "control" ? "UI components aren't exported to Lottie (it shows no HTML)" : "Videos aren't exported to Lottie (Lottie has no video layer)");
 				return [];
 			case "bitmap": {
 				const it = n.item as Extract<typeof n.item, { kind: "bitmap" }>;

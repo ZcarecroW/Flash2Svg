@@ -8,7 +8,8 @@ import type { Context } from "../context.ts";
 import { fmt, fmtMatrix } from "../geom.ts";
 import { imageMime } from "../mime.ts";
 import { fontKey, type EmbeddedFont } from "../fonts.ts";
-import type { AccInfo, FilterData, Mat, VideoElement } from "../model.ts";
+import type { AccInfo, ControlElement, FilterData, Mat, VideoElement } from "../model.ts";
+import { controlNode } from "./controls.ts";
 import type { FontSet } from "./text.ts";
 import { cdata, clone, el, serialize, walk, type XmlNode } from "../xml.ts";
 import { buildFilters, colorMatrix, matrixString, type ColorMatrixValues } from "./filters.ts";
@@ -75,7 +76,12 @@ export class OutputDoc {
 	 * next to the output. Autoplay needs `muted` in browsers, so a playing video is muted; `play`
 	 * false (still frames): no autoplay.
 	 */
-	video(e: VideoElement, play: boolean): XmlNode {
+	video(e: VideoElement | ControlElement, play: boolean): XmlNode {
+		if (e.kind === "control") {
+			const file = e.params.file as string | undefined;
+			if (file && !this.assets.some((a) => a.path === file)) this.assets.push({ path: file, source: file });
+			return controlNode(e, 2, this.ctx.model.doc.type !== "Flash");
+		}
 		if (e.file && !this.assets.some((a) => a.path === e.file)) this.assets.push({ path: e.file, source: e.file });
 		const b = e.bounds;
 		const autoplay = play && e.autoplay;
@@ -86,6 +92,8 @@ export class OutputDoc {
 				"video",
 				{
 					xmlns: "http://www.w3.org/1999/xhtml",
+					// (HTML5 Canvas: scripts find it by its instance name)
+					id: this.ctx.model.doc.type !== "Flash" ? e.name : undefined,
 					src: e.file ?? e.src,
 					poster: e.poster,
 					autoplay: flag(autoplay, "autoplay"),

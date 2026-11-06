@@ -16,8 +16,9 @@ import { findAnimate, runJsfl } from "./lib/animate.mjs";
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
-const names = (args.find((a) => !a.startsWith("--")) ?? "f87-typing").split(",");
+const names = (args.find((a) => !a.startsWith("--")) ?? "f87-typing,f88-clicks").split(",");
 const noFlash = args.includes("--no-flash");
+const engine = args.find((a) => a.startsWith("--browser="))?.slice(10) ?? "msedge";
 const out = join(repo, "tests", "out");
 const uri = (p: string) => "file:///" + p.replace(/\\/g, "/").replace(/^([A-Za-z]):/, "$1|");
 const stepsOf = (name: string) => join(repo, "tests", "fixtures", `${name.split("-")[0]}-keys.txt`);
@@ -55,7 +56,7 @@ function flashTraces(name: string): string[] {
 	return upToEnd(text.split(/\r?\n/).filter((l) => l && !l.startsWith("Warning:")));
 }
 
-const KEYS: Record<string, string> = { Back: "Backspace", Left: "ArrowLeft", Right: "ArrowRight", Up: "ArrowUp", Down: "ArrowDown" };
+const KEYS: Record<string, string> = { Back: "Backspace", Left: "ArrowLeft", Right: "ArrowRight", Up: "ArrowUp", Down: "ArrowDown", Space: " " };
 
 async function playerTraces(name: string, page: import("playwright-core").Page, alone: boolean): Promise<string[]> {
 	const dir = join(out, name, "model");
@@ -73,14 +74,64 @@ async function playerTraces(name: string, page: import("playwright-core").Page, 
 	await page.goto(`${origin}/${name}/${alone ? "typing.svg" : "typing.html"}`);
 	await page.waitForTimeout(400);
 	await page.bringToFront();
-	for (const step of readFileSync(stepsOf(name), "utf8").split(/\r?\n/)) {
-		if (!step) continue;
+	for (let step of readFileSync(stepsOf(name), "utf8").split(/\r?\n/)) {
+		// (a step for one side: what the same thing takes there)
+		if (!step || step.startsWith("f ")) continue;
+		if (step.startsWith("p ")) step = step.slice(2);
 		if (step.startsWith("t ")) await page.keyboard.type(step.slice(2), { delay: 5 });
+		else if (step.startsWith("row ")) {
+			// (a list's rows are as high as the browser makes them)
+			const [, id, i] = step.split(" ");
+			const at = await page.evaluate(([id, i]) => {
+				const r = document.querySelectorAll(`[data-name="${id}"] option`)[+i!]!.getBoundingClientRect();
+				return [r.left + 20, r.top + r.height / 2] as const;
+			}, [id, i]);
+			await page.mouse.click(at[0], at[1]);
+		} else if (step.startsWith("press ")) {
+			// (a control with a popup of its own: the press and what it opens are gone again)
+			const [, x, y] = step.split(" ");
+			await page.mouse.move(+x!, +y!);
+			await page.evaluate(([x, y]) => {
+				const t = document.elementFromPoint(+x!, +y!)!;
+				const at = { bubbles: true, clientX: +x!, clientY: +y!, button: 0, buttons: 1 };
+				t.dispatchEvent(new PointerEvent("pointerdown", at));
+				t.dispatchEvent(new PointerEvent("pointerup", { ...at, buttons: 0 }));
+				(t as HTMLElement).focus();
+			}, [x, y]);
+		} else if (step.startsWith("select ")) {
+			const [, id, i] = step.split(" ");
+			await page.evaluate(([id, i]) => {
+				const s = document.querySelector(`[data-name="${id}"] select`) as HTMLSelectElement;
+				s.selectedIndex = +i!;
+				s.dispatchEvent(new Event("input", { bubbles: true }));
+				s.dispatchEvent(new Event("change", { bubbles: true }));
+			}, [id, i]);
+		} else if (step.startsWith("value ")) {
+			const [, id, v] = step.split(" ");
+			await page.evaluate(([id, v]) => {
+				const s = document.querySelector(`[data-name="${id}"] input`) as HTMLInputElement;
+				s.value = v!;
+				s.dispatchEvent(new Event("input", { bubbles: true }));
+				s.dispatchEvent(new Event("change", { bubbles: true }));
+			}, [id, v]);
+		}
 		else if (step.startsWith("click ")) {
 			const [, x, y] = step.split(" ");
 			await page.mouse.move(+x!, +y!);
 			await page.mouse.down();
 			await page.mouse.up();
+		} else if (step.startsWith("drag ")) {
+			const [, a, b, c, d] = step.split(" ");
+			await page.mouse.move(+a!, +b!);
+			await page.mouse.down();
+			await page.mouse.move(+c!, +d!, { steps: 4 });
+			await page.mouse.up();
+		} else if (step === "Tab" && engine === "webkit") {
+			// (WebKit's Tab goes to text fields only, unless the browser is set otherwise)
+			await page.evaluate(() => {
+				const all = [...document.querySelectorAll("button,input,select,textarea")] as HTMLElement[];
+				all[all.indexOf(document.activeElement as HTMLElement) + 1]?.focus();
+			});
 		} else await page.keyboard.press(KEYS[step] ?? step);
 		await page.waitForTimeout(15);
 	}
@@ -103,7 +154,6 @@ const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`
 
 if (!noFlash) await publish();
 let failures = 0;
-const engine = args.find((a) => a.startsWith("--browser="))?.slice(10) ?? "msedge";
 const browser =
 	engine === "firefox"
 		? await firefox.launch({ channel: "moz-firefox", headless: true, firefoxUserPrefs: { "security.sandbox.content.level": 0 }, env: { ...process.env, MOZ_DISABLE_CONTENT_SANDBOX: "1" } })
@@ -131,6 +181,36 @@ for (const name of names) {
 		}
 		console.log(`${bad ? "FAIL" : "ok  "} ${name}${alone ? " (as an SVG file)" : ""}: ${expected.length} lines from Flash Player, ${bad} differ (${engine})`);
 		if (bad) failures++;
+	}
+}
+// ---- without a script: the controls of SMIL and CSS output are the browser's own
+if (names.includes("f88-clicks") && !args.includes("--flash-only")) {
+	const dir = join(out, "f88-clicks", "model");
+	const model: SceneModel = JSON.parse(readFileSync(join(dir, "scene.json"), "utf8"));
+	const files = { readText: (r: string) => readFileSync(join(dir, r), "utf8"), readBinary: (r: string) => readFileSync(join(dir, r)) };
+	for (const format of ["smil", "css"] as const) {
+		const res = compileScene(model, files, { format, includeBackground: true });
+		for (const form of ["inline", "object"]) {
+			const name = `controls-${format}`;
+			writeFileSync(join(out, "f88-clicks", `${name}.svg`), res.files[0]!.svg);
+			writeFileSync(join(out, "f88-clicks", `${name}.html`), `<!doctype html><html><body style="margin:0">${form === "inline" ? res.files[0]!.svg : `<object data="${name}.svg" type="image/svg+xml" style="display:block;width:400px;height:400px"></object>`}</body></html>`);
+			await page.goto(`${origin}/f88-clicks/${name}.html`);
+			await page.waitForTimeout(300);
+			await page.mouse.click(30, 60);
+			await page.mouse.click(30, 90);
+			await page.mouse.click(60, 230);
+			await page.keyboard.press("End");
+			await page.keyboard.type("ab");
+			await page.waitForTimeout(50);
+			const frame = page.frames()[page.frames().length - 1]!;
+			const state = await frame.evaluate(() => {
+				const of = (n: string, s: string) => document.querySelector(`[data-name="${n}"] ${s}`) as (HTMLInputElement & HTMLSelectElement) | null;
+				return [of("tick", "input")?.checked, of("one", "input")?.checked, of("line", "input")?.value, of("pick", "select")?.options.length, of("many", "select")?.options.length].join(" ");
+			});
+			const good = state === "true true Hiab 3 3";
+			console.log(`${good ? "ok  " : "FAIL"} ${format} ${form}: ${state} (${engine})`);
+			if (!good) failures++;
+		}
 	}
 }
 await browser.close();

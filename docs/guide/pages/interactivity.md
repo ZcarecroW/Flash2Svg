@@ -89,6 +89,23 @@ Plain `stop()`, `play()` and frame jumps, simple mouse handlers and counted loop
 
 **In other formats:** SMIL, CSS and Lottie follow plain frame jumps and warn that the rest needs the JS player.
 
+## Forms and components
+
+**Input text** and Animate's **UI components** become real HTML controls in SMIL, CSS and the JS player, so forms and quizzes work without any code: you can type, tick, choose and tab through them, screen readers know them, and browsers fill and spell-check them as usual.
+
+| Component | Becomes | |
+|---|---|---|
+| Button, CheckBox, RadioButton | `<button>`, `<input>` with its label | label, selected, toggle, group, label placement |
+| ComboBox, List | `<select>` (editable: an input with suggestions) | the items of the Properties panel, prompt, several at once |
+| TextInput, TextArea, Label | `<input>`, `<textarea>`, text | password, limit, read-only, word wrap |
+| NumericStepper, Slider | number field, range slider | minimum, maximum, step, snap, direction |
+| ColorPicker, ProgressBar | colour field, `<progress>` | |
+| DataGrid, UILoader | table, picture | |
+
+In the **JS player**, frame scripts use them through `fl.controls` as in Flash Player: `ok.label`, `pick.dataProvider`, `one.group.selection`, `slide.value`, `new Button()`, `ComponentEvent.ENTER`, with the same events in the same order. A field's `restrict`, `maxChars`, `stage.focus` and `TextEvent.TEXT_INPUT` work too.
+
+In **HTML5 Canvas** documents the components are what Animate publishes, found by their instance names: Animate's snippets work as they are (`$("#dom_overlay_container").on("click", "#ok", ...)`, `$("#name").val()`).
+
 ## Links
 
 Links set on text (*Properties › Options › Link*) make the text field a link in every SVG format, and *Go to Web Page* snippets link their button. Links work inline and in an `<object>`; in an `<img>` nothing is clickable.

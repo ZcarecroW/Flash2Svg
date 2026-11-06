@@ -3480,6 +3480,8 @@
 		add("Slider", "slide", 160, 200);
 		add("ColorPicker", "shade", 160, 230);
 		add("ProgressBar", "bar", 160, 270);
+		add("DataGrid", "grid", 420, 60);
+		add("UILoader", "loads", 420, 200);
 		var t = tl();
 		layer("actions");
 		t = tl();
@@ -3566,6 +3568,75 @@
 		layer("actions");
 		var t = tl();
 		t.layers[t.currentLayer].frames[0].actionScript = FLfile.read(root + "/as3/f87-typing.as");
+	});
+
+	// ---------------------------------------------------------------- f88: UI components under the mouse and the keyboard
+	build("f88-clicks", function () {
+		newDoc("timeline", 400, 400, 24);
+		doc.as3StrictMode = false;
+		layer("controls");
+		var add = function (kind, name, x, y, params, w, h) {
+			fl.componentsPanel.addItemToDocument({ x: x, y: y }, "User Interface", kind);
+			var e = doc.selection[0];
+			e.name = name;
+			if (w) e.width = w;
+			if (h) e.height = h;
+			e.x = x;
+			e.y = y;
+			for (var i = 0; params && i < e.parameters.length; i++) {
+				var q = e.parameters[i];
+				if (params[q.name] !== undefined) q.value = params[q.name];
+			}
+			doc.selectNone();
+		};
+		var fruit = [{ label: "Apple", data: "1" }, { label: "Pear", data: "2" }, { label: "Plum", data: "3" }];
+		add("Button", "ok", 20, 20);
+		add("Button", "tog", 130, 20, { toggle: true, label: "Toggle" });
+		add("CheckBox", "tick", 20, 50);
+		add("RadioButton", "one", 20, 80, { value: "first" });
+		add("RadioButton", "two", 130, 80, { value: "second" });
+		add("ComboBox", "pick", 20, 110, { dataProvider: fruit });
+		add("List", "many", 140, 110, { dataProvider: fruit });
+		add("TextInput", "line", 20, 220, { text: "Hi" });
+		add("TextArea", "lines", 140, 220, { text: "Top" }, 100, 50);
+		add("NumericStepper", "num", 20, 250, { value: 3 });
+		add("Slider", "slide", 20, 300, { maximum: 100, value: 20 }, 120);
+		add("Slider", "live", 200, 300, { maximum: 100, value: 50, liveDragging: true }, 120);
+		add("ColorPicker", "shade", 20, 330, { selectedColor: "#FF0000" });
+		layer("actions");
+		var t = tl();
+		t.layers[t.currentLayer].frames[0].actionScript = FLfile.read(root + "/as3/f88-clicks.as");
+	});
+
+	// ---------------------------------------------------------------- f89: UI components of an HTML5 Canvas document
+	build("f89-canvasui", function () {
+		newDoc("htmlcanvas", 400, 300, 24);
+		layer("controls");
+		var add = function (kind, name, x, y, params) {
+			fl.componentsPanel.addItemToDocument({ x: x, y: y }, "User Interface", kind);
+			var e = doc.selection[0];
+			e.name = name;
+			e.x = x;
+			e.y = y;
+			for (var i = 0; params && i < e.parameters.length; i++) {
+				var q = e.parameters[i];
+				if (params[q.name] !== undefined) q.value = params[q.name];
+			}
+			doc.selectNone();
+		};
+		var fruit = [{ label: "Apple", data: "1" }, { label: "Pear", data: "2" }, { label: "Plum", data: "3" }];
+		add("Button", "btn", 20, 20, { label: "Go" });
+		add("CheckBox", "chk", 140, 20, { label: "Tick", value: "yes" });
+		add("RadioButton", "rad1", 20, 50, { label: "One", value: "first", name: "group" });
+		add("RadioButton", "rad2", 140, 50, { label: "Two", value: "second", name: "group" });
+		add("ComboBox", "cmb", 20, 80, { items: fruit });
+		add("List", "lst", 140, 80, { items: [{ "": "One" }, { "": "Two" }] });
+		add("TextInput", "txt", 20, 110, { value: "Hello" });
+		add("NumericStepper", "num", 20, 140, { value: 3, min: 0, max: 9 });
+		add("Label", "lab", 20, 170, { label: "A label" });
+		layer("actions");
+		var t = tl();
+		t.layers[t.currentLayer].frames[0].actionScript = FLfile.read(root + "/as3/f89-ui.js");
 	});
 
 	FLfile.write(outDir + "/build-log.txt", log.join("\n"));

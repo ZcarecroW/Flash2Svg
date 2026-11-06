@@ -1,0 +1,42 @@
+click 60 30
+Space
+Enter
+Tab
+Space
+click 170 30
+click 170 30
+click 30 60
+click 30 60
+click 30 90
+click 140 90
+click 30 90
+f click 60 120
+f click 60 160
+p press 60 120
+p select pick 1
+F2
+f click 180 140
+p row many 1
+F2
+click 60 230
+t ab
+Enter
+click 180 235
+t cd
+Enter
+t e
+click 40 261
+Up
+Up
+Down
+F2
+drag 44 301 104 301
+drag 260 301 292 301
+click 110 301
+F2
+f click 32 340
+f click 60 380
+p press 32 340
+p value shade #9900cc
+F2
+F3

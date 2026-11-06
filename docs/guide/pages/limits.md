@@ -45,6 +45,7 @@ Most of the time is Animate handing over the drawings (the progress bar says "Ex
 
 ## Known limits
 
+- **UI components** export as real HTML controls, except TileList, ScrollPane and UIScrollBar (warned), and they keep the browser's own popups: a ComboBox opens the browser's list, a ColorPicker the browser's colour dialog, and skins made in Animate aren't used. Lottie shows no HTML. Inside an `<img>` they show but can't be used. jQuery in HTML5 Canvas scripts is the part Animate's snippets use, not all of it, and the jQuery UI components aren't exported.
 - **Frame scripts** run in the JS player only (see [Interactivity](interactivity.md#frame-scripts)). The other formats follow `stop()`, `play()`, `gotoAndPlay()` / `gotoAndStop()` with frame numbers or labels and pass counters, and warn about the rest.
 - **Movie clips with loops of very different lengths** (say 7, 11 and 13 frames in a 600-frame scene) can't all come round within one SMIL/CSS loop: SMIL and CSS repeat after the common period they find, so some clips jump when the animation repeats (warned). The JS player is exact.
 - **Shape tweens** in CSS output are drawn frame by frame. Animate draws a shape tween's keyframe a little differently from the start of its morph; where they differ by more than a quarter pixel, the keyframe stays a drawing of its own. A shape that splits into several looks different in Animate's preview than in its SVG export; the export follows the SVG export.

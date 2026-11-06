@@ -417,6 +417,8 @@
 		for (var i = 0; i < items.length; i++) {
 			var item = items[i];
 			var cls = String(get(item, "linkageClassName", "") || "");
+			// (components are the player's own classes)
+			if (item.itemType == "component") continue;
 			if (!cls) continue;
 			var name = cls.substr(cls.lastIndexOf(".") + 1);
 			if (text.indexOf(name) < 0) continue;
@@ -830,6 +832,7 @@
 		var on = function (v) { return v === true || v === "true"; };
 		var d = {
 			kind: "video",
+			name: get(el, "name", "") || undefined,
 			src: src,
 			autoplay: on(p.autoplay),
 			// FLVPlayback has no loop; its skin (controls) shows unless set to none
@@ -852,12 +855,84 @@
 		return d;
 	}
 
+	/** A parameter's value: a list says what is chosen, a collection is its items. */
+	function paramValue(q) {
+		var t = q.valueType;
+		if (t == "List") return q.value[q.listIndex].value;
+		if (t == "Boolean") return q.value === true || q.value === "true";
+		if (t == "Number") return Number(q.value);
+		if (t != "Collection") return q.value;
+		var v = q.value, out = [];
+		for (var i = 0; v && i < v.length; i++) {
+			var it = {};
+			for (var k in v[i]) it[k] = v[i][k];
+			out.push(it);
+		}
+		return out;
+	}
+
+	var CONTROLS = { Button: 1, CheckBox: 1, ColorPicker: 1, ComboBox: 1, CSS: 1, DataGrid: 1, Image: 1, Label: 1, List: 1, NumericStepper: 1, ProgressBar: 1, RadioButton: 1, Slider: 1, TextArea: 1, TextInput: 1, UILoader: 1 };
+
+	/** A UI component: what it is and its parameters. */
+	function controlOf(el) {
+		var item = el.libraryItem;
+		if (!item || item.itemType != "component") return null;
+		var kind = String(item.name).replace(/^.*\//, "");
+		if (!CONTROLS[kind]) {
+			warn("The component " + kind + " isn't exported: it has no HTML control");
+			return null;
+		}
+		var ps = get(el, "parameters", null), params = {};
+		for (var i = 0; ps && i < ps.length; i++) {
+			if (ps[i].name == "__ComponentType__") continue;
+			try { params[ps[i].name] = paramValue(ps[i]); } catch (e) {}
+		}
+		// its size, with its turn taken away (components have no scale at runtime)
+		var turn = get(el, "rotation", 0), width, height;
+		if (turn && !isNaN(turn)) {
+			el.rotation = 0;
+			width = el.width;
+			height = el.height;
+			el.rotation = turn;
+		} else {
+			width = el.width;
+			height = el.height;
+		}
+		var m = mat(el.matrix);
+		var sx = Math.sqrt(m[0] * m[0] + m[1] * m[1]) || 1, sy = Math.sqrt(m[2] * m[2] + m[3] * m[3]) || 1;
+		var d = {
+			kind: "control",
+			control: kind,
+			name: get(el, "name", "") || "",
+			params: params,
+			matrix: [m[0] / sx, m[1] / sx, m[2] / sy, m[3] / sy, m[4], m[5]],
+			width: round(width),
+			height: round(height),
+			bounds: boundsOf(el)
+		};
+		// a file of the document's goes next to the export, a style sheet into it
+		var src = kind == "Image" ? params.src : kind == "CSS" ? params.href : null;
+		if (src && !/^[a-z]+:/i.test(src)) {
+			var from = (job.srcDoc.pathURI || "").replace(/\/[^\/]*$/, "") + "/" + String(src).replace(/\\/g, "/");
+			if (!FLfile.exists(from)) warn("The file " + src + " was not found next to the document: it stays linked as it is");
+			else if (kind == "CSS") params.css = FLfile.read(from);
+			else {
+				FLfile.createFolder(job.outDir + "/videos");
+				var name = from.replace(/^.*\//, "");
+				if (FLfile.copy(from, job.outDir + "/videos/" + name) || FLfile.exists(job.outDir + "/videos/" + name)) params.file = "videos/" + name;
+			}
+		}
+		return d;
+	}
+
 	function readElement(tlId, el) {
 		var type = el.elementType;
 		if (type == "instance") {
 			var it = el.instanceType;
 			var video = videoOf(el);
 			if (video) return video;
+			var control = controlOf(el);
+			if (control) return control;
 			if (it == "symbol" && el.libraryItem) {
 				var symId = "sym:" + el.libraryItem.name;
 				// the camera's own frame graphic is never drawn
