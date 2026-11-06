@@ -389,7 +389,7 @@ export function renderPlayer(
 	const events = s.begin === "visible" || s.begin === "scroll" || Object.values(P.tl).some((t) => t.ev);
 	const build = (Object.keys(P.snd).length ? 1 : 0) + (morphs ? 2 : 0);
 	if (scripts) {
-		doc.scripts.push(scripts.js);
+		doc.scripts.push(scripts.js, ...scripts.parts);
 		doc.scripts.push(PLAYER_RUNTIMES[8 + build]!);
 	} else doc.scripts.push(PLAYER_RUNTIMES[build + (events ? 4 : 0)]!);
 	return { svg: doc.toString(svg, { pretty: s.pretty }), assets: doc.assets, drawingBytes: doc.drawingBytes };

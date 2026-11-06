@@ -132,8 +132,10 @@ interface CTransform {
 	ry: number;
 }
 
-export function installCreateJS(L: any): Record<string, unknown> {
-	const { DisplayObject, DisplayObjectContainer, Sprite, MovieClip, Shape, TextField, Bitmap, FBitmapData, FGraphics, FPoint, FRectangle, FMatrix, Dispatcher, mul, svgEl, colorOf, scripts: s } = L;
+export default function createJS(L: any): Record<string, unknown> {
+	const { DisplayObject, DisplayObjectContainer, Sprite, MovieClip, Shape, TextField, FGraphics, FPoint, FRectangle, FMatrix, Dispatcher, mul, svgEl, colorOf, scripts: s } = L;
+	const Bitmap = L.Bitmap ?? class {};
+	const FBitmapData = L.BitmapData;
 	const removeOne = DisplayObjectContainer.prototype.removeChild;
 	const define = (o: object, props: Record<string, PropertyDescriptor>) => {
 		for (const k in props) Object.defineProperty(o, k, { configurable: true, ...props[k] });

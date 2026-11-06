@@ -9,28 +9,16 @@
  */
 import type { Clip, Inst, Player } from "./runtime.ts";
 import type { PInst, PItem, PRef, PScene, PTextExtras, PTimeline, PTrack } from "./format.ts";
-import { installCreateJS } from "./createjs.ts";
-import { buildFilters } from "../core/emit/filters.ts";
-import type { FilterData } from "../core/model.ts";
-import type { XmlNode } from "../core/xml.ts";
 import {
 	ArgumentError,
 	asFlashError,
-	BevelFilter,
-	BlurFilter,
-	ColorMatrixFilter,
-	DropShadowFilter,
-	EASINGS,
 	EOFError,
 	fail,
-	FByteArray,
 	FColorTransform,
-	FFilter,
 	FMatrix,
 	FPoint,
 	FRectangle,
 	FTextFormat,
-	GlowFilter,
 	inverse,
 	IOError,
 	mul,
@@ -329,24 +317,6 @@ function covers(e: Element, x: number, y: number, inside = false): boolean {
 
 const BLENDS: Record<string, string> = { hardlight: "hard-light", add: "plus-lighter", subtract: "difference", invert: "difference", layer: "", alpha: "", erase: "", shader: "" };
 
-/** A filter of the API as the core's FilterData. */
-function filterData(f: any): FilterData {
-	const hex = (c: number, a: number) => colorOf(c) + Math.round(a * 255).toString(16).padStart(2, "0");
-	const d: FilterData = { ...f, name: f._t, enabled: true, quality: ["low", "low", "medium", "high"][Math.min(3, f.quality ?? 1)], strength: (f.strength ?? 1) * 100 };
-	if (f.color !== undefined) d.color = hex(f.color, f.alpha);
-	if (f.highlightColor !== undefined) {
-		d.highlightColor = hex(f.highlightColor, f.highlightAlpha);
-		d.shadowColor = hex(f.shadowColor, f.shadowAlpha);
-	}
-	return d;
-}
-
-function toDom(n: XmlNode): SVGElement {
-	const e = svgEl(n.name, n.attrs);
-	for (const c of n.children) e.appendChild(typeof c === "string" ? document.createTextNode(c) : toDom(c));
-	return e;
-}
-
 class DisplayObject extends Dispatcher {
 	/** The timeline instance, if it is one. */
 	_i: Inst | null = null;
@@ -360,7 +330,7 @@ class DisplayObject extends Dispatcher {
 	_name: string | null = null;
 	_g: FGraphics | null = null;
 	_ct: FColorTransform | null = null;
-	_fl: FFilter[] = [];
+	_fl: { clone(): any }[] = [];
 	_fx: SVGElement | null = null;
 	_vis = true;
 	_mask: DisplayObject | null = null;
@@ -585,7 +555,7 @@ class DisplayObject extends Dispatcher {
 	get filters() {
 		return this._fl.map((f) => f.clone());
 	}
-	set filters(v: FFilter[]) {
+	set filters(v: { clone(): any }[]) {
 		this._fl = (v ?? []).map((f) => f.clone());
 		this._paint();
 	}
@@ -597,20 +567,8 @@ class DisplayObject extends Dispatcher {
 		if (cm) cm.setAttribute("values", (this._ct ?? new FColorTransform())._values());
 		const prims: SVGElement[] = [];
 		if (ct && !cm) prims.push(svgEl("feColorMatrix", { type: "matrix", values: ct._values() }));
-		let reach = 0;
-		for (const f of this._fl) {
-			if (f._t === "colorMatrix") {
-				const v = (f as ColorMatrixFilter).matrix.map((x, i) => (i % 5 === 4 ? x / 255 : x));
-				prims.push(svgEl("feColorMatrix", { type: "matrix", values: v.join(" ") }));
-			}
-		}
-		const rest = this._fl.filter((f) => f._t !== "colorMatrix");
-		if (rest.length) {
-			const w = this._world();
-			const built = buildFilters(rest.map(filterData), { x: Math.hypot(w[0], w[1]), y: Math.hypot(w[2], w[3]) }, () => {});
-			prims.push(...built.primitives.map(toDom));
-			reach = Math.max(built.margin.x, built.margin.y);
-		}
+		// (the filters come with their part, in documents whose scripts use them)
+		const reach = this._fl.length ? current.filterPrims!(this._fl, this._world(), prims) : 0;
 		if (!prims.length) {
 			this._fx?.remove();
 			this._fx = null;
@@ -1766,7 +1724,7 @@ class FGraphics {
 		this.fill = `url(#${id})`;
 		this.fo = 1;
 	}
-	beginBitmapFill(bd: FBitmapData, matrix: FMatrix | null = null, repeat = true, smooth = false) {
+	beginBitmapFill(bd: any, matrix: FMatrix | null = null, repeat = true, smooth = false) {
 		this.flush();
 		const id = `${current.player.svg.id}_p${current.uid++}`;
 		const p = svgEl("pattern", { id, patternUnits: "userSpaceOnUse", width: String(repeat ? bd.width : 32768), height: String(repeat ? bd.height : 32768) });
@@ -1902,227 +1860,6 @@ class FGraphics {
 	}
 }
 
-/** Pixels: the numbers are the truth, a canvas turns them into a picture when one is shown. */
-class FBitmapData {
-	readonly width: number;
-	readonly height: number;
-	readonly transparent: boolean;
-	/** ARGB of each pixel; none yet for a picture not read. */
-	_px: Uint32Array | null;
-	/** A picture to start from, and where it is shown. */
-	_href: string | null = null;
-	_shown = new Set<Bitmap>();
-	_gone = false;
-	constructor(w: number, h: number, transparent = true, fill = 0xffffffff) {
-		w = Math.trunc(w);
-		h = Math.trunc(h);
-		if (!(w > 0 && h > 0 && w <= 8191 && h <= 8191 && w * h <= 16777215)) throw fail(ArgumentError, 2015, "Invalid BitmapData.");
-		this.width = w;
-		this.height = h;
-		this.transparent = transparent;
-		this._px = new Uint32Array(w * h).fill(transparent ? fill >>> 0 : (fill | 0xff000000) >>> 0);
-	}
-	static _picture(href: string, w: number, h: number, transparent: boolean, proto: object) {
-		const b = Object.create(proto) as FBitmapData;
-		Object.assign(b, { width: w, height: h, transparent, _px: null, _href: href, _shown: new Set(), _gone: false });
-		return b;
-	}
-	private live(): Uint32Array {
-		if (this._gone) throw fail(ArgumentError, 2015, "Invalid BitmapData.");
-		if (!this._px) {
-			const px = new Uint32Array(this.width * this.height);
-			this._px = px;
-			const img = new Image();
-			img.crossOrigin = "anonymous";
-			img.src = this._href!;
-			// (a picture that isn't decoded yet reads as empty: browsers have no way to wait for it here)
-			if (img.complete && img.naturalWidth) this.read(img);
-			else img.onload = () => this.read(img);
-		}
-		return this._px;
-	}
-	private read(img: HTMLImageElement) {
-		const c = document.createElement("canvas");
-		c.width = this.width;
-		c.height = this.height;
-		const x = c.getContext("2d")!;
-		x.drawImage(img, 0, 0);
-		const d = x.getImageData(0, 0, this.width, this.height).data;
-		const px = this._px!;
-		for (let i = 0; i < px.length; i++) px[i] = ((d[i * 4 + 3]! << 24) | (d[i * 4]! << 16) | (d[i * 4 + 1]! << 8) | d[i * 4 + 2]!) >>> 0;
-	}
-	get rect() {
-		return new FRectangle(0, 0, this.width, this.height);
-	}
-	private changed() {
-		this._href = null;
-		current.bitmaps.add(this);
-		current.touched();
-	}
-	/** Where the picture is: a file or a data URL of the pixels. */
-	_url(): string {
-		if (this._href) return this._href;
-		const px = this.live();
-		const c = document.createElement("canvas");
-		c.width = this.width;
-		c.height = this.height;
-		const x = c.getContext("2d")!;
-		const img = x.createImageData(this.width, this.height);
-		for (let i = 0; i < px.length; i++) {
-			const p = px[i]!;
-			img.data[i * 4] = (p >> 16) & 255;
-			img.data[i * 4 + 1] = (p >> 8) & 255;
-			img.data[i * 4 + 2] = p & 255;
-			img.data[i * 4 + 3] = p >>> 24;
-		}
-		x.putImageData(img, 0, 0);
-		return (this._href = c.toDataURL());
-	}
-	/** Shows the pixels as they are now. */
-	_show() {
-		const u = this._url();
-		for (const b of this._shown) b._image.setAttribute("href", u);
-	}
-	getPixel32(x: number, y: number) {
-		const px = this.live();
-		return x >= 0 && y >= 0 && x < this.width && y < this.height ? px[y * this.width + x]! : 0;
-	}
-	getPixel(x: number, y: number) {
-		return this.getPixel32(x, y) & 0xffffff;
-	}
-	setPixel32(x: number, y: number, c: number) {
-		const px = this.live();
-		if (x < 0 || y < 0 || x >= this.width || y >= this.height) return;
-		px[y * this.width + x] = this.transparent ? c >>> 0 : (c | 0xff000000) >>> 0;
-		this.changed();
-	}
-	setPixel(x: number, y: number, c: number) {
-		const a = this.getPixel32(x, y) & 0xff000000;
-		this.setPixel32(x, y, (a | (c & 0xffffff)) >>> 0);
-	}
-	fillRect(r: FRectangle, c: number) {
-		const px = this.live();
-		const v = this.transparent ? c >>> 0 : (c | 0xff000000) >>> 0;
-		const x0 = Math.max(0, r.x),
-			y0 = Math.max(0, r.y),
-			x1 = Math.min(this.width, r.right),
-			y1 = Math.min(this.height, r.bottom);
-		for (let y = y0; y < y1; y++) px.fill(v, y * this.width + x0, y * this.width + x1);
-		this.changed();
-	}
-	copyPixels(from: FBitmapData, r: FRectangle, to: FPoint) {
-		const px = this.live(),
-			src = from.live();
-		for (let y = 0; y < r.height; y++)
-			for (let x = 0; x < r.width; x++) {
-				const sx = r.x + x,
-					sy = r.y + y,
-					dx = to.x + x,
-					dy = to.y + y;
-				if (sx >= 0 && sy >= 0 && sx < from.width && sy < from.height && dx >= 0 && dy >= 0 && dx < this.width && dy < this.height) px[dy * this.width + dx] = src[sy * from.width + sx]!;
-			}
-		this.changed();
-	}
-	/** Only of pixels: a browser can't read back what it draws of a display object at once. */
-	draw(src: FBitmapData | Bitmap) {
-		const b = src instanceof Bitmap ? src.bitmapData : src;
-		if (b instanceof FBitmapData) this.copyPixels(b, b.rect, new FPoint());
-	}
-	scroll(dx: number, dy: number) {
-		const copy = this.clone();
-		this.copyPixels(copy, copy.rect, new FPoint(dx, dy));
-	}
-	colorTransform(r: FRectangle, c: FColorTransform) {
-		const px = this.live();
-		const clamp = (v: number) => Math.max(0, Math.min(255, Math.trunc(v)));
-		for (let y = Math.max(0, r.y); y < Math.min(this.height, r.bottom); y++)
-			for (let x = Math.max(0, r.x); x < Math.min(this.width, r.right); x++) {
-				const p = px[y * this.width + x]!;
-				const a = clamp((p >>> 24) * c.alphaMultiplier + c.alphaOffset),
-					rr = clamp(((p >> 16) & 255) * c.redMultiplier + c.redOffset),
-					g = clamp(((p >> 8) & 255) * c.greenMultiplier + c.greenOffset),
-					b = clamp((p & 255) * c.blueMultiplier + c.blueOffset);
-				px[y * this.width + x] = ((a << 24) | (rr << 16) | (g << 8) | b) >>> 0;
-			}
-		this.changed();
-	}
-	noise(seed: number, low = 0, high = 255) {
-		const px = this.live();
-		let s = seed >>> 0 || 1;
-		const next = () => (s = Math.imul(s, 1103515245) + 12345) >>> 16;
-		for (let i = 0; i < px.length; i++) {
-			const v = () => low + (next() % (high - low + 1));
-			px[i] = ((255 << 24) | (v() << 16) | (v() << 8) | v()) >>> 0;
-		}
-		this.changed();
-	}
-	getVector(r: FRectangle) {
-		const out: number[] = [];
-		for (let y = r.y; y < r.bottom; y++) for (let x = r.x; x < r.right; x++) out.push(this.getPixel32(x, y));
-		return out;
-	}
-	setVector(r: FRectangle, v: number[]) {
-		let i = 0;
-		for (let y = r.y; y < r.bottom; y++) for (let x = r.x; x < r.right; x++) this.setPixel32(x, y, v[i++]!);
-	}
-	lock() {}
-	unlock() {}
-	clone() {
-		const px = this.live();
-		const b = new FBitmapData(this.width, this.height, this.transparent, 0);
-		b._px!.set(px);
-		return b;
-	}
-	["dispose"]() {
-		this._gone = true;
-		this._px = null;
-		this._href = null;
-	}
-}
-
-class Bitmap extends DisplayObject {
-	override _cls = "Bitmap";
-	pixelSnapping: string;
-	_image: SVGElement;
-	private _bd: FBitmapData | null = null;
-	private _smooth = false;
-	constructor(bd: FBitmapData | null = null, snapping = "auto", smoothing = false) {
-		super();
-		this.pixelSnapping = snapping;
-		this._image = this._node.appendChild(svgEl("image"));
-		this.smoothing = smoothing;
-		this.bitmapData = bd;
-	}
-	get smoothing() {
-		return this._smooth;
-	}
-	set smoothing(v: boolean) {
-		this._smooth = v;
-		this._image.style.imageRendering = v ? "" : "pixelated";
-	}
-	get bitmapData() {
-		return this._bd;
-	}
-	set bitmapData(b: FBitmapData | null) {
-		this._bd?._shown.delete(this);
-		this._bd = b;
-		if (b) {
-			b._shown.add(this);
-			this._image.setAttribute("href", b._url());
-			this._image.setAttribute("width", String(b.width));
-			this._image.setAttribute("height", String(b.height));
-		} else this._image.removeAttribute("href");
-		current.touched();
-	}
-	override _self(): Box | null {
-		return this._bd ? { l: 0, t: 0, r: this._bd.width, b: this._bd.height } : null;
-	}
-	override _covers(x: number, y: number) {
-		const b = this._boxIn(this._world(), false);
-		return !!b && x >= b.l && x <= b.r && y >= b.t && y <= b.b;
-	}
-}
-
 class FTimer extends Dispatcher {
 	delay: number;
 	repeatCount: number;
@@ -2173,142 +1910,6 @@ class FSoundTransform {
 	}
 }
 
-class FSoundChannel extends Dispatcher {
-	/** The voice playing: what the player's mixer gives. */
-	_v: any = null;
-	_at = 0;
-	_st = new FSoundTransform();
-	leftPeak = 0;
-	rightPeak = 0;
-	get position() {
-		return this._v ? Math.max(0, this._v.pos()) * 1000 : this._at;
-	}
-	get soundTransform() {
-		return this._st._copy();
-	}
-	set soundTransform(t: FSoundTransform) {
-		this._st = t._copy();
-		const v = this._v;
-		if (v) {
-			v.vol = t.volume;
-			v.pan = t.pan;
-			if (v.fx) {
-				v.fx[0].gain.value = t.volume;
-				v.fx[1].pan.value = t.pan;
-			}
-		}
-	}
-	stop() {
-		const v = this._v;
-		if (!v) return;
-		this._at = this.position;
-		this._v = null;
-		v.ended = null;
-		v.stop();
-	}
-}
-
-class FSound extends Dispatcher {
-	_id = "";
-	_el: HTMLAudioElement | null = null;
-	url: string | null = null;
-	id3 = {};
-	isBuffering = false;
-	bytesLoaded = 0;
-	bytesTotal = 0;
-	constructor(req?: URLRequest) {
-		super();
-		if (req) this.load(req);
-	}
-	load(req: URLRequest) {
-		this.url = req.url;
-		const a = (this._el = new Audio(req.url));
-		a.preload = "auto";
-		a.onloadedmetadata = () => current.safely(() => this.dispatchEvent(new FEvent(FEvent.COMPLETE)));
-		a.onerror = () => current.safely(() => this.dispatchEvent(ioError(FIOErrorEvent.IO_ERROR, 2032, `Stream Error. URL: ${req.url}`)));
-	}
-	play(start = 0, loops = 0, transform: FSoundTransform | null = null) {
-		const c = new FSoundChannel();
-		const m = current.player.mixer;
-		if (this._id && m) {
-			const v = m.voice([0, this._id, 0, Math.max(1, loops + 1), 0], start / 1000) as any;
-			c._v = v;
-			const stop = v.stop;
-			// the voice ends by itself: the channel says so
-			v.ended = () => current.safely(() => c.dispatchEvent(new FEvent(FEvent.SOUND_COMPLETE)));
-			v.stop = function () {
-				stop.call(v);
-				const e = v.ended;
-				v.ended = null;
-				e?.();
-			};
-		} else if (this._el) {
-			const a = this._el.cloneNode() as HTMLAudioElement;
-			a.currentTime = start / 1000;
-			a.loop = loops > 0;
-			void a.play().catch(() => {});
-			a.onended = () => current.safely(() => c.dispatchEvent(new FEvent(FEvent.SOUND_COMPLETE)));
-			c._v = { stop: () => a.pause(), pos: () => a.currentTime };
-		}
-		if (transform) c.soundTransform = transform;
-		return c;
-	}
-	close() {
-		this._el?.pause();
-	}
-	get length() {
-		const s = this._id ? current.P.snd[this._id] : null;
-		return (Array.isArray(s) ? s[1] : (this._el?.duration ?? 0)) * 1000;
-	}
-}
-
-/** The soundMixer of a player: all it plays. */
-const soundMixer = {
-	["stopAll"]: () => current.player.mixer?.stopAll(),
-	bufferTime: 0,
-	areSoundsInaccessible: () => false,
-	computeSpectrum: () => {},
-	_t: new FSoundTransform(),
-	get soundTransform() {
-		return this._t._copy();
-	},
-	set soundTransform(t: FSoundTransform) {
-		this._t = t._copy();
-		const out = (current.player.mixer as any)?.out;
-		if (out) out.gain.value = t.volume;
-	},
-};
-
-class FIOErrorEvent extends FEvent {
-	static IO_ERROR = "ioError";
-	text = "";
-	errorID = 0;
-}
-
-class FProgressEvent extends FEvent {
-	static PROGRESS = "progress";
-	static SOCKET_DATA = "socketData";
-	bytesLoaded = 0;
-	bytesTotal = 0;
-}
-
-class FNetStatusEvent extends FEvent {
-	static NET_STATUS = "netStatus";
-	info: unknown = null;
-}
-
-class FHTTPStatusEvent extends FEvent {
-	static HTTP_STATUS = "httpStatus";
-	status = 0;
-}
-
-function ioError(type: string, id: number, text: string) {
-	const e = new FIOErrorEvent(type);
-	e.errorID = id;
-	e.text = `Error #${id}: ${text}`;
-	return e;
-}
-
 class FLoaderInfo extends Dispatcher {
 	url: string | null = null;
 	width = 0;
@@ -2317,7 +1918,7 @@ class FLoaderInfo extends Dispatcher {
 	bytesTotal = 0;
 	contentType: string | null = null;
 	content: DisplayObject | null = null;
-	loader: FLoader | null = null;
+	loader: DisplayObject | null = null;
 	parameters: Record<string, string> = {};
 	actionScriptVersion = 3;
 	swfVersion = 40;
@@ -2328,361 +1929,6 @@ class FLoaderInfo extends Dispatcher {
 		return current.rate;
 	}
 }
-
-const MIME: Record<string, string> = { png: "image/png", gif: "image/gif", jpg: "image/jpeg", jpeg: "image/jpeg", svg: "image/svg+xml", webp: "image/webp" };
-
-class FLoader extends DisplayObjectContainer {
-	override _cls = "Loader";
-	contentLoaderInfo = new FLoaderInfo();
-	content: DisplayObject | null = null;
-	load(req: URLRequest) {
-		const info = this.contentLoaderInfo;
-		info.url = req.url;
-		info.loader = this;
-		const img = new Image();
-		const say = (e: FEvent) => current.safely(() => info.dispatchEvent(e));
-		queueMicrotask(() => say(new FEvent(FEvent.OPEN)));
-		img.onload = () => {
-			const w = img.naturalWidth,
-				h = img.naturalHeight;
-			const b = new Bitmap(FBitmapData._picture(req.url, w, h, true, FBitmapData.prototype));
-			current.safely(() => {
-				this.addChild(b);
-				this.content = info.content = b;
-				info.width = w;
-				info.height = h;
-				info.contentType = MIME[(/\.(\w+)(?:[?#]|$)/.exec(req.url)?.[1] ?? "").toLowerCase()] ?? null;
-				info.dispatchEvent(new FEvent(FEvent.INIT));
-				info.dispatchEvent(new FEvent(FEvent.COMPLETE));
-			});
-		};
-		img.onerror = () => say(ioError(FIOErrorEvent.IO_ERROR, 2035, `URL Not Found. URL: ${req.url}`));
-		img.src = req.url;
-	}
-	unload() {
-		const c = this.content;
-		if (!c) return;
-		this.removeChild(c);
-		this.content = this.contentLoaderInfo.content = null;
-		this.contentLoaderInfo.dispatchEvent(new FEvent(FEvent.UNLOAD));
-	}
-	unloadAndStop() {
-		this.unload();
-	}
-	close() {}
-}
-
-class URLLoader extends Dispatcher {
-	data: unknown = undefined;
-	dataFormat = "text";
-	bytesLoaded = 0;
-	bytesTotal = 0;
-	private ask: AbortController | null = null;
-	constructor(req?: URLRequest) {
-		super();
-		if (req) this.load(req);
-	}
-	load(req: URLRequest) {
-		const say = (e: FEvent) => current.safely(() => this.dispatchEvent(e));
-		this.ask = new AbortController();
-		const init: RequestInit = { method: req.method, signal: this.ask.signal };
-		let url = req.url;
-		if (req.data !== null && req.data !== undefined) {
-			const body = req.data instanceof FByteArray ? Uint8Array.from(req.data) : String(req.data);
-			if (req.method === "POST") {
-				init.body = body;
-				init.headers = { "content-type": req.contentType ?? "application/x-www-form-urlencoded", ...Object.fromEntries(req.requestHeaders.map((h) => [h.name, h.value])) };
-			} else url += (url.includes("?") ? "&" : "?") + body;
-		}
-		queueMicrotask(() => say(new FEvent(FEvent.OPEN)));
-		const failed = () => say(ioError(FIOErrorEvent.IO_ERROR, 2032, `Stream Error. URL: ${req.url}`));
-		fetch(url, init).then(
-			async (r) => {
-				const status = new FHTTPStatusEvent(FHTTPStatusEvent.HTTP_STATUS);
-				status.status = r.status;
-				say(status);
-				if (!r.ok) return failed();
-				const bytes = new Uint8Array(await r.arrayBuffer());
-				this.bytesLoaded = this.bytesTotal = bytes.length;
-				const p = new FProgressEvent(FProgressEvent.PROGRESS);
-				p.bytesLoaded = p.bytesTotal = bytes.length;
-				say(p);
-				if (this.dataFormat === "binary") {
-					const b = new FByteArray();
-					for (const x of bytes) b.push(x);
-					this.data = b;
-				} else {
-					const text = new TextDecoder().decode(bytes);
-					this.data = this.dataFormat === "variables" ? new URLVariables(text) : text;
-				}
-				say(new FEvent(FEvent.COMPLETE));
-			},
-			(e: Error) => {
-				if (e.name !== "AbortError") failed();
-			},
-		);
-	}
-	close() {
-		this.ask?.abort();
-	}
-}
-
-class NetConnection extends Dispatcher {
-	connected = false;
-	client: unknown = this;
-	connect() {
-		this.connected = true;
-		queueMicrotask(() => current.safely(() => this.dispatchEvent(netStatus("NetConnection.Connect.Success"))));
-	}
-	close() {
-		this.connected = false;
-	}
-}
-
-function netStatus(code: string) {
-	const e = new FNetStatusEvent(FNetStatusEvent.NET_STATUS);
-	e.info = { code, level: "status" };
-	return e;
-}
-
-/** A stream of a video a browser can play: a <video> element. */
-class NetStream extends Dispatcher {
-	client: any = {};
-	bufferTime = 0.1;
-	_el = document.createElement("video");
-	soundTransform = new FSoundTransform();
-	constructor(_c?: NetConnection) {
-		super();
-		const v = this._el;
-		v.playsInline = true;
-		const say = (code: string) => current.safely(() => this.dispatchEvent(netStatus(code)));
-		v.onplaying = () => say("NetStream.Play.Start");
-		v.onended = () => say("NetStream.Play.Stop");
-		v.onerror = () => say("NetStream.Play.StreamNotFound");
-		v.onloadedmetadata = () => current.safely(() => this.client?.onMetaData?.({ duration: v.duration, width: v.videoWidth, height: v.videoHeight }));
-	}
-	play(url: string) {
-		this._el.src = url;
-		void this._el.play().catch(() => {});
-	}
-	pause() {
-		this._el.pause();
-	}
-	resume() {
-		void this._el.play().catch(() => {});
-	}
-	togglePause() {
-		if (this._el.paused) this.resume();
-		else this.pause();
-	}
-	seek(t: number) {
-		this._el.currentTime = t;
-	}
-	close() {
-		this._el.pause();
-		this._el.removeAttribute("src");
-	}
-	get ["time"]() {
-		return this._el.currentTime;
-	}
-	get bytesLoaded() {
-		return this._el.buffered.length ? 1 : 0;
-	}
-	get bytesTotal() {
-		return 1;
-	}
-}
-
-class Video extends DisplayObject {
-	override _cls = "Video";
-	smoothing = false;
-	deblocking = 0;
-	private box: SVGElement;
-	private w: number;
-	private h: number;
-	private ns: NetStream | null = null;
-	constructor(w = 320, h = 240) {
-		super();
-		this.w = w;
-		this.h = h;
-		this.box = this._node.appendChild(svgEl("foreignObject", { width: String(w), height: String(h) }));
-	}
-	attachNetStream(s: NetStream | null) {
-		this.ns = s;
-		if (!s) return this.box.replaceChildren();
-		s._el.style.cssText = "width:100%;height:100%;display:block";
-		this.box.replaceChildren(s._el);
-	}
-	clear() {
-		this.box.replaceChildren();
-	}
-	get videoWidth() {
-		return this.ns?._el.videoWidth ?? 0;
-	}
-	get videoHeight() {
-		return this.ns?._el.videoHeight ?? 0;
-	}
-	override _self(): Box {
-		return { l: 0, t: 0, r: this.w, b: this.h };
-	}
-}
-
-class FTweenEvent extends FEvent {
-	static MOTION_START = "motionStart";
-	static MOTION_STOP = "motionStop";
-	static MOTION_RESUME = "motionResume";
-	static MOTION_FINISH = "motionFinish";
-	static MOTION_CHANGE = "motionChange";
-	static MOTION_LOOP = "motionLoop";
-	["time"] = 0;
-	position = 0;
-}
-
-/** fl.transitions.Tween: one property of an object over time, frame by frame. */
-class FTween extends Dispatcher {
-	obj: any;
-	prop: string;
-	func: (t: number, b: number, c: number, d: number) => number;
-	begin: number;
-	finish: number;
-	duration: number;
-	useSeconds: boolean;
-	looping = false;
-	isPlaying = false;
-	FPS: number;
-	private at = 0;
-	private started = 0;
-	private change = 0;
-	private beat = () => this.tick();
-	constructor(obj: any, prop: string, func: (t: number, b: number, c: number, d: number) => number, begin: number, finish: number, duration: number, useSeconds = false) {
-		super();
-		this.obj = obj;
-		this.prop = prop;
-		this.func = func ?? ((t, b, c, d) => (c * t) / d + b);
-		this.begin = begin;
-		this.finish = finish;
-		this.change = finish - begin;
-		this.duration = duration <= 0 ? 0.001 : duration;
-		this.useSeconds = useSeconds;
-		this.FPS = current.rate;
-		this.start();
-	}
-	private now() {
-		return this.useSeconds ? performance.now() / 1000 : current.ticks;
-	}
-	private send(type: string) {
-		const e = new FTweenEvent(type);
-		e["time"] = this.at;
-		e.position = this.position;
-		this.dispatchEvent(e);
-	}
-	get position() {
-		return this.func(Math.min(this.at, this.duration), this.begin, this.change, this.duration);
-	}
-	set position(v: number) {
-		this.obj[this.prop] = v;
-	}
-	get ["time"]() {
-		return this.at;
-	}
-	set ["time"](t: number) {
-		this.at = t;
-		this.started = this.now() - t;
-		this.obj[this.prop] = this.position;
-	}
-	private run() {
-		this.isPlaying = true;
-		current.stage.addEventListener(FEvent.ENTER_FRAME, this.beat);
-	}
-	private rest() {
-		this.isPlaying = false;
-		current.stage.removeEventListener(FEvent.ENTER_FRAME, this.beat);
-	}
-	private tick() {
-		this["time"] = this.now() - this.started;
-		if (this.at >= this.duration) {
-			if (this.looping) {
-				this["time"] = 0;
-				this.send(FTweenEvent.MOTION_LOOP);
-			} else {
-				this.at = this.duration;
-				this.obj[this.prop] = this.finish;
-				this.rest();
-				this.send(FTweenEvent.MOTION_FINISH);
-				return;
-			}
-		}
-		this.send(FTweenEvent.MOTION_CHANGE);
-	}
-	start() {
-		this["time"] = 0;
-		this.run();
-		this.send(FTweenEvent.MOTION_START);
-	}
-	stop() {
-		this.rest();
-		this.send(FTweenEvent.MOTION_STOP);
-	}
-	resume() {
-		this.started = this.now() - this.at;
-		this.run();
-		this.send(FTweenEvent.MOTION_RESUME);
-	}
-	rewind(t = 0) {
-		this["time"] = t;
-	}
-	fforward() {
-		this["time"] = this.duration;
-	}
-	nextFrame() {
-		this["time"] = this.at + 1;
-	}
-	prevFrame() {
-		this["time"] = this.at - 1;
-	}
-	yoyo() {
-		this.continueTo(this.begin, this.at);
-	}
-	continueTo(finish: number, duration: number) {
-		this.begin = this.position;
-		this.finish = finish;
-		this.change = finish - this.begin;
-		this.duration = duration <= 0 ? 0.001 : duration;
-		this.start();
-	}
-}
-
-/** flash.net.SharedObject: in the browser's local storage. */
-const sharedObject = {
-	getLocal(name: string) {
-		const key = `f2s-so:${location.pathname}:${name}`;
-		let data: Record<string, unknown> = {};
-		try {
-			data = JSON.parse(localStorage.getItem(key) ?? "{}");
-		} catch {}
-		return {
-			data,
-			get size() {
-				return JSON.stringify(data).length;
-			},
-			flush() {
-				try {
-					localStorage.setItem(key, JSON.stringify(data));
-					return "flushed";
-				} catch {
-					return "pending";
-				}
-			},
-			clear() {
-				this.data = data = {};
-				try {
-					localStorage.removeItem(key);
-				} catch {}
-			},
-			close() {},
-		};
-	},
-};
 
 // ------------------------------------------------------------------ helpers
 
@@ -2795,11 +2041,13 @@ export class Scripts {
 	ver = 0;
 	/** Objects with a script's mask, and pixels changed: shown once per frame. */
 	masked = new Set<DisplayObject>();
-	bitmaps = new Set<FBitmapData>();
+	bitmaps = new Set<any>();
 	/** Frames per second, as scripts set it; frames gone by. */
 	rate: number;
 	ticks = 0;
 	info = new FLoaderInfo();
+	/** Draws filters as SVG primitives, into `out`; says how far they reach (with the filters' part). */
+	filterPrims: ((list: any[], world: Mat, out: SVGElement[]) => number) | null = null;
 	/** The classes of library items (their linkage). */
 	private made = new Map<string, unknown>();
 
@@ -2856,13 +2104,12 @@ export class Scripts {
 			MovieClip,
 			Shape,
 			SimpleButton,
-			Bitmap,
-			BitmapData: FBitmapData,
 			FrameLabel: FFrameLabel,
 			Scene: FScene,
 			LoaderInfo: FLoaderInfo,
 			Stage: FStage,
 			Graphics: FGraphics,
+			Dictionary: Object,
 			StageAlign: { TOP_LEFT: "TL", TOP: "T", LEFT: "L", RIGHT: "R", BOTTOM: "B", TOP_RIGHT: "TR", BOTTOM_LEFT: "BL", BOTTOM_RIGHT: "BR" },
 			StageScaleMode: { NO_SCALE: "noScale", SHOW_ALL: "showAll", EXACT_FIT: "exactFit", NO_BORDER: "noBorder" },
 			StageDisplayState: { NORMAL: "normal", FULL_SCREEN: "fullScreen", FULL_SCREEN_INTERACTIVE: "fullScreenInteractive" },
@@ -2882,10 +2129,6 @@ export class Scripts {
 			TimerEvent: FTimerEvent,
 			FocusEvent: Object.assign(class extends FEvent {}, { FOCUS_IN: "focusIn", FOCUS_OUT: "focusOut", KEY_FOCUS_CHANGE: "keyFocusChange", MOUSE_FOCUS_CHANGE: "mouseFocusChange" }),
 			TextEvent: Object.assign(class extends FEvent {}, { LINK: "link", TEXT_INPUT: "textInput" }),
-			ProgressEvent: FProgressEvent,
-			IOErrorEvent: FIOErrorEvent,
-			HTTPStatusEvent: FHTTPStatusEvent,
-			NetStatusEvent: FNetStatusEvent,
 			SecurityErrorEvent: Object.assign(class extends FEvent {}, { SECURITY_ERROR: "securityError" }),
 			AsyncErrorEvent: Object.assign(class extends FEvent {}, { ASYNC_ERROR: "asyncError" }),
 			Keyboard: KEYS,
@@ -2902,20 +2145,12 @@ export class Scripts {
 			TextFormatAlign: { LEFT: "left", CENTER: "center", RIGHT: "right", JUSTIFY: "justify", START: "start", END: "end" },
 			AntiAliasType: { NORMAL: "normal", ADVANCED: "advanced" },
 			GridFitType: { NONE: "none", PIXEL: "pixel", SUBPIXEL: "subpixel" },
-			Sound: FSound,
-			SoundChannel: FSoundChannel,
 			SoundTransform: FSoundTransform,
-			SoundMixer: soundMixer,
-			Video,
 			URLRequest,
 			URLVariables,
-			URLLoader,
 			URLRequestMethod: { GET: "GET", POST: "POST", PUT: "PUT", DELETE: "DELETE", HEAD: "HEAD", OPTIONS: "OPTIONS" },
 			URLLoaderDataFormat: { TEXT: "text", BINARY: "binary", VARIABLES: "variables" },
 			sendToURL: (r: URLRequest) => void fetch(r.url, { method: r.method, mode: "no-cors" }).catch(() => {}),
-			NetConnection,
-			NetStream,
-			SharedObject: sharedObject,
 			ExternalInterface: {
 				available: true,
 				marshallExceptions: false,
@@ -2925,27 +2160,13 @@ export class Scripts {
 			},
 			Security: { allowDomain() {}, allowInsecureDomain() {}, loadPolicyFile() {}, sandboxType: "remote" },
 			System: { setClipboard: (s: string) => void navigator.clipboard?.writeText(s).catch(() => {}), gc() {}, totalMemory: 0, useCodePage: false },
-			Tween: FTween,
-			TweenEvent: FTweenEvent,
-			...EASINGS,
 			Point: FPoint,
 			Rectangle: FRectangle,
 			Matrix: FMatrix,
 			ColorTransform: FColorTransform,
 			Transform: FTransform,
 			Vector: Array,
-			Dictionary: Object,
-			ByteArray: FByteArray,
 			Capabilities: { playerType: "SVG", version: "WEB 32,0,0,0", os: navigator.platform, language: navigator.language, screenResolutionX: screen.width, screenResolutionY: screen.height },
-			BlurFilter,
-			GlowFilter,
-			DropShadowFilter,
-			BevelFilter,
-			ColorMatrixFilter,
-			BitmapFilterQuality: { LOW: 1, MEDIUM: 2, HIGH: 3 },
-			BitmapFilterType: { INNER: "inner", OUTER: "outer", FULL: "full" },
-			Loader: FLoader,
-			ProLoader: FLoader,
 			stage: this.stage,
 			get root() {
 				return self.rootObj;
@@ -2974,37 +2195,46 @@ export class Scripts {
 			const tl = this.P.tl[this.P.cl[n]!];
 			if (tl) this.classNames.set(tl, n);
 		}
-		if (!this.base)
-			Object.assign(
-				this.api,
-				installCreateJS({
-					DisplayObject,
-					DisplayObjectContainer,
-					Sprite,
-					MovieClip,
-					Shape,
-					TextField,
-					Bitmap,
-					FBitmapData,
-					FGraphics,
-					FPoint,
-					FRectangle,
-					FMatrix,
-					Dispatcher,
-					mul,
-					inverse,
-					svgEl,
-					colorOf,
-					noBox,
-					addBox,
-					alphaNow,
-					free,
-					run,
-					stagePoint,
-					canvasMatrix: (f: (x: Frozen) => Mat) => (canvasMatrix = f),
-					scripts: this,
-				}),
-			);
+		// the parts of the API this document's scripts use came along with them
+		const L = {
+			DisplayObject,
+			DisplayObjectContainer,
+			Sprite,
+			MovieClip,
+			Shape,
+			TextField,
+			FGraphics,
+			FPoint,
+			FRectangle,
+			FMatrix,
+			FColorTransform,
+			FSoundTransform,
+			FLoaderInfo,
+			URLVariables,
+			Dispatcher,
+			FEvent,
+			fail,
+			ArgumentError,
+			EOFError,
+			mul,
+			inverse,
+			twips,
+			svgEl,
+			colorOf,
+			noBox,
+			addBox,
+			alphaNow,
+			free,
+			run,
+			stagePoint,
+			canvasMatrix: (f: (x: Frozen) => Mat) => (canvasMatrix = f),
+			scripts: this,
+		} as Record<string, unknown>;
+		for (const p of (code as unknown as { $p?: ((l: unknown) => Record<string, unknown>)[] }).$p ?? []) {
+			const made = p(L);
+			Object.assign(L, made);
+			Object.assign(this.api, made);
+		}
 		this.listen();
 	}
 
@@ -3046,7 +2276,7 @@ export class Scripts {
 		if (typeof v === "number") return Number.isInteger(v) && Math.abs(v) < 2 ** 31 ? "int" : "Number";
 		if (typeof v === "string") return "String";
 		if (typeof v === "boolean") return "Boolean";
-		if (Array.isArray(v) && !(v instanceof FByteArray)) return "Array";
+		if (Array.isArray(v) && (v as any).position === undefined) return "Array";
 		if (v._cls) return of(v._cls);
 		const name = nameOf(c);
 		if (name) return of(name);
@@ -3070,25 +2300,26 @@ export class Scripts {
 		const self = this;
 		const pic = this.P.bd?.[name];
 		const key = this.P.cl?.[name] as string;
+		const Pixels = this.api.BitmapData as any;
 		if (pic && !this.base) {
 			// (in a Canvas document a library bitmap is a display object)
-			c = class extends Bitmap {
+			c = class extends (this.api.Bitmap as any) {
 				constructor() {
-					super(FBitmapData._picture(pic![0], pic![1], pic![2], !!pic![3], FBitmapData.prototype));
+					super(Pixels._picture(pic![0], pic![1], pic![2], !!pic![3], Pixels.prototype));
 				}
 			};
 		} else if (pic) {
-			const K: any = class extends FBitmapData {
+			const K: any = class extends Pixels {
 				constructor() {
 					super(1, 1);
-					return FBitmapData._picture(pic![0], pic![1], pic![2], !!pic![3], K.prototype);
+					return Pixels._picture(pic![0], pic![1], pic![2], !!pic![3], K.prototype);
 				}
 			};
 			c = K;
 		} else if (key === undefined) return undefined;
 		else if (this.P.snd[key] !== undefined) {
 			const s = this.P.snd[key];
-			c = class extends FSound {
+			c = class extends (this.api.Sound as any) {
 				constructor() {
 					super();
 					this._id = key;

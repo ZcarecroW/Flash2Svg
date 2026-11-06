@@ -10,8 +10,13 @@ import type { Context } from "../context.ts";
 import type { TimelineData } from "../model.ts";
 import { parseActions } from "../program.ts";
 import { splitScript } from "../snippets.ts";
+import { PLAYER_PARTS } from "./runtime-code.generated.ts";
 
 const ACTIONS = new Set(["stop", "play", "gotoAndPlay", "gotoAndStop"]);
+
+/** What frame scripts say when they need a part of the runtime. */
+const MEDIA = /\$f\.(Bitmap|BitmapData|ByteArray|Sound|SoundChannel|SoundMixer|Video|URLLoader|NetConnection|NetStream|SharedObject|Tween|TweenEvent|None|Regular|Strong|Back|Bounce|Elastic|Loader|ProLoader|ProgressEvent|IOErrorEvent|HTTPStatusEvent|NetStatusEvent)\b|graphics\.beginBitmapFill/;
+const FILTERS = /\$f\.(BlurFilter|GlowFilter|DropShadowFilter|BevelFilter|ColorMatrixFilter|BitmapFilterQuality|BitmapFilterType)\b|createjs\.\w*Filter/;
 
 /** A statement the action lists can say. */
 function isAction(s: Stmt): boolean {
@@ -126,6 +131,8 @@ export interface PlayerScripts {
 	classes: Record<string, string>;
 	/** Library bitmaps the scripts use: name -> bitmap id. */
 	bitmaps: Record<string, string>;
+	/** The parts of the runtime they need, as the code to run before it. */
+	parts: string[];
 }
 
 /** The scripts of a document that have to run; null when the action lists say it all. */
@@ -169,7 +176,13 @@ export function playerScripts(ctx: Context, playerId: string, warn: (m: string) 
 	// (getDefinitionByName: any name in the library may be asked for)
 	if (js.includes("getDefinitionByName")) for (const n in linkage) use(n);
 	for (const n of missing) warn(`Frame scripts use ${n}, which the player doesn't have and the library doesn't export for ActionScript`);
-	return { timelines, js, classes, bitmaps };
+	const list = [];
+	const any = js.includes("getDefinitionByName");
+	if (canvas || any || MEDIA.test(js) || Object.keys(bitmaps).length || Object.keys(classes).some((n) => ctx.model.sounds[classes[n]!])) list.push("media");
+	if (any || FILTERS.test(js)) list.push("filters");
+	if (canvas) list.push("createjs");
+	const parts = list.map((p) => `${PLAYER_PARTS[p as keyof typeof PLAYER_PARTS]};((window.__f2s[${JSON.stringify(playerId)}].$p=window.__f2s[${JSON.stringify(playerId)}].$p||[]).push(__f2sPart.default));`);
+	return { timelines, js, classes, bitmaps, parts };
 }
 
 /** HTML5 Canvas: frame scripts are JavaScript with `this` the timeline, each frame on its own. */
