@@ -149,6 +149,7 @@ export function renderPlayer(
 					x: serialize(doc.video(c, true)),
 					...(scripts && c.name ? { nm: c.name } : {}),
 					...(scripts && c.kind === "control" ? { ct: [c.control, c.params, c.width, c.height] as [string, Record<string, unknown>, number, number] } : {}),
+					...(scripts && c.kind === "video" && ctx.model.doc.type === "Flash" ? { ct: ["FLVPlayback", { source: c.src, autoRewind: c.autoRewind }, c.bounds.width, c.bounds.height] as [string, Record<string, unknown>, number, number] } : {}),
 				};
 			}
 			case "text": {

@@ -352,6 +352,16 @@
 			{/each}
 		</div>
 		<p class="hint">{formats.find((f) => f.id === panel.export.format)?.hint}</p>
+		{#if panel.export.format === "mp4" || panel.export.format === "webm"}
+			<div class="line">
+				<label class="row">
+					<span>Video bit rate</span>
+					<input type="number" min="0" max="100000" step="100" bind:value={panel.export.videoBitrate} />
+					<span class="unit">{panel.export.videoBitrate ? "kbps" : "automatic"}</span>
+				</label>
+				<Info topic="videoBitrate" />
+			</div>
+		{/if}
 		<div class="line">
 			<label class="row">
 				<span>File</span>

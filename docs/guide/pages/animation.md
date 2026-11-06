@@ -81,4 +81,4 @@ Other conditions always run (warned), and a jump to a label that doesn't exist i
 - **Advanced layers** with layer effects: a colour effect, filters and a blend mode on a whole layer.
 - **9-slice scaling** of movie clips: corners keep their size, also in tweens (rotated instances scale normally, as in Flash).
 - **3D** (rotation X/Y, translation in Z, 3D motion tweens, view angle, vanishing point) exports in real perspective in SMIL, CSS and the JS player. Lottie has no perspective: there it comes out flat, as close as flat can be.
-- **Video components** (FLVPlayback, HTML5 Canvas *Video*) become an HTML `<video>` over their place, the file copied next to the SVG.
+- **Video components** (FLVPlayback, HTML5 Canvas *Video*) become an HTML `<video>` over their place, the file copied next to the SVG. Browsers don't play FLV: give the component an MP4 or WebM. In the JS player, scripts drive them as in Flash (`vid.play()`, `vid.seek(5)`, cue points).

@@ -838,11 +838,13 @@
 			// FLVPlayback has no loop; its skin (controls) shows unless set to none
 			loop: on(p.loop),
 			muted: on(p.muted) || p.volume === 0 || p.volume === "0",
-			controls: p.controls !== undefined ? on(p.controls) : true,
+			controls: p.controls !== undefined ? on(p.controls) : p.skin !== undefined ? !!p.skin && p.skin != "None" : true,
 			matrix: mat(el.matrix),
 			bounds: boundsOf(el)
 		};
 		if (p.poster) d.poster = String(p.poster);
+		if (/\.flv$/i.test(src)) warn("The video " + src + " is an FLV file: browsers don't play those. Give the component an MP4 or WebM");
+		if (p.autorewind !== undefined) d.autoRewind = on(p.autorewind);
 		if (src && !/^[a-z]+:/i.test(src)) {
 			var dir = (job.srcDoc.pathURI || "").replace(/\/[^\/]*$/, "");
 			var from = dir + "/" + src.replace(/\\/g, "/");

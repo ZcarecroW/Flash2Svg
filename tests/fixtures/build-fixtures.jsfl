@@ -3639,6 +3639,23 @@
 		t.layers[t.currentLayer].frames[0].actionScript = FLfile.read(root + "/as3/f89-ui.js");
 	});
 
+	// ---------------------------------------------------------------- f90: the video component in scripts
+	build("f90-video", function () {
+		newDoc("timeline", 400, 300, 24);
+		doc.as3StrictMode = false;
+		FLfile.copy(root + "/assets/clip.mp4", outDir + "/clip.mp4");
+		layer("video");
+		var v = videoComponent(["FLVPlayback 2.5", "FLVPlayback"], 40, 40, { source: "clip.mp4", autoPlay: false, skin: "" });
+		v.name = "vid";
+		v.width = 240;
+		v.height = 180;
+		v.x = 40;
+		v.y = 40;
+		layer("actions");
+		var t = tl();
+		t.layers[t.currentLayer].frames[0].actionScript = FLfile.read(root + "/as3/f90-video.as");
+	});
+
 	FLfile.write(outDir + "/build-log.txt", log.join("\n"));
 	fl.closeAll(false);
 	fl.quit(false);

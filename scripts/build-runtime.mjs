@@ -156,7 +156,7 @@ export async function buildRuntime() {
 	const scripted = [];
 	for (let i = 0; i < 4; i++) scripted.push(await build(!!(i & 1), !!(i & 2), true, true));
 	const parts = {};
-	for (const name of ["media", "filters", "createjs", "query", "input", "controls"]) {
+	for (const name of ["media", "filters", "createjs", "query", "input", "controls", "flv"]) {
 		const r = await esbuild.build({
 			entryPoints: [join(repo, `src/player/parts/${name}.ts`)],
 			bundle: true,

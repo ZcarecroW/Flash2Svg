@@ -128,6 +128,11 @@ export const HELP = {
 		text: "Sounds play in the JS player, and in SMIL and CSS where a script can run (not in <img>). MP3 plays everywhere; Opus sounds as good at about half the bit rate and plays in all current browsers (Safari from 18.4).",
 		guide: "images-sounds.html#sounds",
 	},
+	videoBitrate: {
+		label: "Video bit rate",
+		text: "How much the video may use a second. Leave it at 0 for enough to keep flat colours and edges clean at this size; a lower number gives a smaller file. Social media encode again: there 8000 to 12000 for full HD is plenty.",
+		guide: "formats.html#mp4-and-webm",
+	},
 	lottieSounds: {
 		label: "Sounds in Lottie JSON",
 		text: "Writes the sounds into Lottie JSON as audio layers. Only lottie-web plays them, and only on a page with Howler; every other player leaves them, and the file is bigger by the sounds.",

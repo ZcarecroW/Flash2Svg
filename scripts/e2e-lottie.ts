@@ -76,7 +76,7 @@ const guideDemos = join(repo, "docs", "guide", "demos");
 const names = list
 	? list.split(",")
 	: [
-			...readdirSync(out).filter((d) => existsSync(join(out, d, "model", "scene.json")) && !VIDEO.has(d) && !/^f(7[4-9]|8[0156789])-/.test(d)),
+			...readdirSync(out).filter((d) => existsSync(join(out, d, "model", "scene.json")) && !VIDEO.has(d) && !/^f(7[4-9]|8[0156789]|90)-/.test(d)),
 			...readdirSync(join(guideDemos, "models"))
 				.filter((d) => existsSync(join(guideDemos, "models", d, "scene.json")))
 				.map((d) => `guide:${d}`),

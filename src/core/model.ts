@@ -131,6 +131,8 @@ export interface VideoElement extends ElementBase {
 	kind: "video";
 	/** The instance name. */
 	name?: string;
+	/** FLVPlayback's "autoRewind". */
+	autoRewind?: boolean;
 	/** as set in the component */
 	src: string;
 	/** the file copied next to scene.json (videos/…), when it was found */

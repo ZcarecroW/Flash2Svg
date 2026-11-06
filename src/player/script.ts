@@ -2553,7 +2553,7 @@ export class Scripts {
 		const ct = (i.it as PRef).ct;
 		if (ct) {
 			const Control = (this.api as any)[ct[0]];
-			if (this.base) o = new Control(i.node, ct);
+			if (this.base) o = Control ? new Control(i.node, ct) : new Shape(i.node);
 			else {
 				// (HTML5 Canvas: scripts work on the elements, with jQuery; the instance stands at its middle)
 				const box = i.node.firstElementChild as SVGGElement;

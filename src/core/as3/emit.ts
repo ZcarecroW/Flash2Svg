@@ -45,6 +45,12 @@ const GLOBALS = new Set([
 
 /** What `$f` gives: the part of the Flash API the runtime has (see src/player/script.ts). */
 export const FLASH_API = new Set([
+	"FLVPlayback",
+	"VideoEvent",
+	"MetadataEvent",
+	"VideoState",
+	"VideoScaleMode",
+	"CuePointType",
 	"Button",
 	"LabelButton",
 	"CheckBox",

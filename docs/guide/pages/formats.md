@@ -1,6 +1,6 @@
 ---
 title: Choosing a format
-description: SMIL, CSS, the JS player, Automatic, still frames, GIF and WebP, Lottie and .lottie — what each format can do, where it plays and how big it gets.
+description: SMIL, CSS, the JS player, Automatic, still frames, GIF, WebP and APNG, MP4 and WebM, Lottie and .lottie — what each format can do, where it plays and how big it gets.
 ---
 
 # Choosing a format
@@ -18,7 +18,8 @@ The same timeline can be written in nine ways. They differ in where they play, w
 | **JS player** | first frame only | everything: buttons, code snippets, sounds, `play()` / `gotoAndPlay()` | interactive pieces, sound, banners with logic |
 | **Automatic** | as chosen | as chosen | when you don't want to decide |
 | **Frames** | yes (still) | – | design tools, sprite sheets, print |
-| **GIF** / **WebP** | yes | – | e-mail and places without SVG animation |
+| **GIF** / **WebP** / **APNG** | yes | – | e-mail and places without SVG animation |
+| **MP4** / **WebM** | – | – | video players, social media |
 | **Lottie** / **.lottie** | – | through the player's API | iOS, Android, Flutter, React Native, lottie-web |
 
 ## SMIL
@@ -50,6 +51,12 @@ One still SVG per frame (`hero_1.svg`, `hero_2.svg`, …), or one for *Current f
 ## GIF and WebP
 
 Animated pictures for places where SVG doesn't animate: e-mail clients, chat apps, old CMSes. **GIF** has 256 colours per frame and plays everywhere. **WebP** keeps full colour and transparency and is usually much smaller; current mail clients and browsers show it — lossless for flat drawings (exact, and smaller than lossy there), lossy at the image quality for gradients and photos, chosen by the export. Both hold the first pass of the animation as the SVG formats play it — movie clips that keep running on a one-frame timeline or after a `stop()` included — at most 1500 frames, and repeat it from the start (a part that plays once before a loop comes again; warned). Above 50 frames a second a GIF leaves out a picture now and then (browsers would show very short frames for a tenth of a second), keeping its length.
+
+**APNG** is lossless with transparency and plays in every browser; it is the biggest of the three.
+
+## MP4 and WebM
+
+Video files, from the panel (they use the video encoders of Animate's browser, so the command line has none). **MP4** is H.264 where that encoder is there, else AV1 or VP9; **WebM** is VP9. Both carry the document's sounds, mixed to one track, and show the frames as the other raster formats do, at the document's frame rate. See-through parts come out on the stage colour: video has no alpha. *Video bit rate* (0 = enough for clean edges at this size) trades size for detail.
 
 ## Lottie and .lottie
 

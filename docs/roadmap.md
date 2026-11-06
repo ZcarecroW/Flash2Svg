@@ -187,7 +187,7 @@ the AS3 that Animate users actually write is.
 | Asset Warp | ✅ | as Animate's warped bitmaps (f71–f73) |
 | Flexi bones, envelope deformer; warps with "Auto convert vector to bitmap" off | ❓ | go the same way; no test document yet |
 | Sounds | ✅ player / ⬜ SMIL, CSS, Lottie | |
-| Video components / video in the timeline | ✅ / ⬜ | |
+| Video components / video in the timeline | ✅ / ⬜ | embedded FLV: warned, see package 16 |
 | Buttons (states, Hit frame), links, start triggers, scroll | ✅ | e2e-hit: a real mouse in three engines; Lottie: its art is the hit area |
 | Frame scripts | ✅ | run in the JS player (package 12); SMIL, CSS and Lottie keep `stop`/`play`/`goto`/counters (warned) |
 | Code snippets | 🟡 | mouse events, timeline navigation, visibility, web pages; not: drag and drop, keyboard, `ENTER_FRAME`, timers, random, text, sounds, fades, load/unload |
@@ -207,7 +207,7 @@ the AS3 that Animate users actually write is.
 | 13 | Remaining appearance: camera colour effects, stroke scale *Horizontal*/*Vertical*, 3D with real perspective where the format allows (measure: CSS 3D, Lottie 3D layers), *Export as bitmap* | fidelity | medium | ✅ (see below) |
 | 14 | Sounds outside the player: SMIL/CSS with a few lines of script (inline, `<object>`), Lottie audio layers where players support them | sound everywhere a script runs | medium | ✅ (`src/player/soundtrack.ts`; audio layers on request: only lottie-web with Howler plays them) |
 | 15 | Input text and UI components as real HTML controls (`<foreignObject>`), working in the player | forms, quizzes | medium | ✅ (`src/player/control-markup.ts`, `parts/controls.ts`; `scripts/e2e-typing.ts` posts real keys and clicks to Flash Player's window; TileList, ScrollPane, UIScrollBar warned) |
-| 16 | Video: MP4/WebM export through WebCodecs in the panel, APNG; video embedded in the timeline if Animate can hand over its frames | social media, lossless with alpha | medium | ⬜ |
+| 16 | Video: MP4/WebM export through WebCodecs in the panel, APNG; video embedded in the timeline if Animate can hand over its frames | social media, lossless with alpha | medium | ✅ MP4, WebM with sound (`src/core/video.ts`, `mux.ts`), APNG, FLVPlayback in scripts (`parts/flv.ts`). Embedded video stays warned: only FLV can be embedded, browsers can't play it, Animate hands over no frames |
 
 **8. Motion along paths** (2026-11-01): classic tweens on motion guides follow the guide's curve
 in SMIL (`animateMotion`), CSS (`offset-path`) and Lottie (spatial tangents); 42–59 % smaller,

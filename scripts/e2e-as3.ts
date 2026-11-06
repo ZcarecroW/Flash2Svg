@@ -66,7 +66,8 @@ async function playerTraces(name: string, page: import("playwright-core").Page, 
 	const lines: string[] = [];
 	// (what isn't there on purpose: the browser says so too)
 	const onLog = (m: import("playwright-core").ConsoleMessage) => void (/^(Failed to load|\[DOM\])/.test(m.text()) || !m.text() || lines.push(m.text()));
-	const onError = (e: Error) => void lines.push(`PAGE ERROR ${e.message}`);
+	// (WebKit's own media controls trip in an XML document)
+	const onError = (e: Error) => void (/style\.width/.test(e.message) || lines.push(`PAGE ERROR ${e.message}`));
 	// (the last document may still be running: nothing of it goes into this one's lines)
 	await page.goto("about:blank");
 	page.on("console", onLog);
@@ -85,6 +86,11 @@ function loadable(name: string) {
 	writeFileSync(join(dir, "note.txt"), "A note");
 	writeFileSync(join(dir, "vars.txt"), "a=1&b=two%20words");
 	copyFileSync(join(repo, "tests", "fixtures", "assets", "icon.png"), join(dir, "pic.png"));
+	copyFileSync(join(repo, "tests", "fixtures", "assets", "clip.mp4"), join(dir, "clip.mp4"));
+	if (existsSync(join(dir, "model", "videos"))) {
+		mkdirSync(join(dir, "videos"), { recursive: true });
+		copyFileSync(join(repo, "tests", "fixtures", "assets", "clip.mp4"), join(dir, "videos", "clip.mp4"));
+	}
 }
 
 // (a page's scripts can't load from file:)
@@ -94,7 +100,16 @@ const server = createServer((req, res) => {
 		res.writeHead(404).end();
 		return;
 	}
-	res.writeHead(200, { "content-type": file.endsWith(".html") ? "text/html; charset=utf-8" : file.endsWith(".svg") ? "image/svg+xml" : file.endsWith(".png") ? "image/png" : "text/plain" }).end(readFileSync(file));
+	// (a video seeks in ranges)
+	const range = /bytes=(\d+)-(\d*)/.exec(req.headers.range ?? "");
+	if (range) {
+		const body = readFileSync(file);
+		const from = +range[1]!,
+			to = range[2] ? +range[2] : body.length - 1;
+		res.writeHead(206, { "content-type": "video/mp4", "content-range": `bytes ${from}-${to}/${body.length}`, "accept-ranges": "bytes", "content-length": to - from + 1 }).end(body.subarray(from, to + 1));
+		return;
+	}
+	res.writeHead(200, { "accept-ranges": "bytes", "content-type": file.endsWith(".mp4") ? "video/mp4" : file.endsWith(".html") ? "text/html; charset=utf-8" : file.endsWith(".svg") ? "image/svg+xml" : file.endsWith(".png") ? "image/png" : "text/plain" }).end(readFileSync(file));
 });
 await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
 const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;

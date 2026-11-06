@@ -165,6 +165,9 @@ const jobs = [
 		expect: { files: 1, ext: ".gif", parts: ["images"] },
 	},
 	{ fla: fla("f04-nested"), output: join(out, "nested.webp"), settings: { format: "webp" }, expect: { files: 1, ext: ".webp", parts: ["images"] } },
+	{ fla: fla("f04-nested"), output: join(out, "nested.png"), settings: { format: "apng" }, expect: { files: 1, ext: ".png", parts: ["images"] } },
+	{ fla: fla("f02-eases"), output: join(out, "eases.mp4"), settings: { format: "mp4" }, expect: { files: 1, ext: ".mp4", parts: ["images"] } },
+	{ fla: fla("f16-sound"), output: join(out, "sound.webm"), settings: { format: "webm" }, expect: { files: 1, ext: ".webm", parts: ["images"] } },
 	// Lottie: the file name follows the format (.svg chosen, .json / .lottie written); bitmaps embedded,
 	// linked next to the JSON, or inside the archive
 	{
