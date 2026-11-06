@@ -193,7 +193,7 @@ the AS3 that Animate users actually write is.
 | Code snippets | 🟡 | mouse events, timeline navigation, visibility, web pages; not: drag and drop, keyboard, `ENTER_FRAME`, timers, random, text, sounds, fades, load/unload |
 | ActionScript in general (variables, conditions, loops, Math, properties) / Canvas JavaScript | ✅ | package 12; 392 lines identical to Flash Player, 57 to CreateJS |
 | Document class, classes in `.as` files | ⬜ | warned; would need the parser to learn `package` and `class` |
-| UI components (Button, CheckBox, ComboBox, … ; Canvas jQuery UI components) | ⬜ | |
+| UI components (Button, CheckBox, ComboBox, … ; Canvas components) | ✅ | real HTML controls; TileList, ScrollPane, UIScrollBar and the jQuery UI components warned |
 | *Export as bitmap* / *cache as bitmap* on instances | ✅ | drawn as vectors: measured the same (f84: 0.00 %) |
 
 ### Packages, in the suggested order
