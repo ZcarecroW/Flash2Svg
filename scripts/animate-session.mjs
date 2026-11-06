@@ -62,7 +62,7 @@ function checkAlive(after) {
 }
 
 /** Runs a script in the running Animate (or starts it) and waits until it has run. */
-async function run(script, timeoutMs = 120000) {
+async function run(script, timeoutMs = 120000, keep = false) {
 	const syntax = jsflSyntaxError(script);
 	if (syntax) throw new Error(`Syntax error: ${syntax}`);
 	const id = Date.now().toString(36);
@@ -121,7 +121,8 @@ switch (cmd) {
 		await run(args[0], 180000);
 		break;
 	case "run":
-		await run(args[0]);
+		// --keep: the Output panel stays as it is (traces of a running Test Movie)
+		await run(args[0], 120000, args.includes("--keep"));
 		break;
 	case "stage": {
 		const stage = JSON.parse(ui(["-Do", "stage", "-Marker", "FF00FF"]));
@@ -148,7 +149,7 @@ switch (cmd) {
 		const f = join(dir, "stop.jsfl");
 		writeFileSync(f, "fl.closeAll(false);\nfl.quit(false);\n");
 		spawn(findAnimate(), [f], { stdio: "ignore", detached: true, cwd: tmpdir() }).unref();
-		for (let i = 0; i < 80 && animatePid(); i++) await sleep(150);
+		for (let i = 0; i < 30 && animatePid(); i++) await sleep(150);
 		if (animatePid()) {
 			// (seen after long sessions: quitting hangs; everything is saved by then)
 			spawnSync("taskkill", ["/IM", "Animate.exe", "/T", "/F"], { stdio: "ignore" });

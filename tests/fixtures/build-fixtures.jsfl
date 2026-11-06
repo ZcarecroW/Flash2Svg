@@ -2881,6 +2881,302 @@
 		}
 	});
 
+	// ---------------------------------------------------------------- scripts: compared with Flash Player (scripts/e2e-as3.ts)
+	/** The script of a document ends by quitting the player: the traces are then complete. */
+	var QUIT = 'import flash.system.fscommand;\ntrace("END");\nfscommand("quit");\n';
+
+	build("f74-as3lang", function () {
+		newDoc("timeline", 300, 200, 24);
+		// (what strict mode refuses is part of what is tested)
+		doc.as3StrictMode = false;
+		rect(10, 10, 100, 60, "#3366CC");
+		var t = tl();
+		t.layers[0].frames[0].actionScript = [
+			'import flash.utils.getQualifiedClassName;',
+			'trace(1 + 2 * 3, 7 / 2, 7 % 3, 2 << 3, -7 >> 1, -7 >>> 28, 5 & 3, 5 | 3, 5 ^ 3, ~5);',
+			'var i:int = 7 / 2; trace(i);',
+			'var u:uint = -1; trace(u);',
+			'var n:Number; trace(n);',
+			'var b:Boolean; trace(b);',
+			'var s:String; trace(s);',
+			'var o:Object; trace(o);',
+			'var a:*; trace(a);',
+			'var v:int; trace(v);',
+			'i = 2.9; trace(i);',
+			'i += 1.5; trace(i);',
+			'i = 2147483647; i++; trace(i);',
+			'u = 0; u--; trace(u);',
+			'trace(int(3.9), int(-3.9), uint(3.9), int("12"), int("x"), Number("1.5"), Number("x"), String(12), Boolean(0), Boolean("a"));',
+			'trace(1 / 0, -1 / 0, 0 / 0, isNaN(0 / 0), isFinite(1 / 0));',
+			'trace(0.1 + 0.2, 1e21, 1.5e-7, 100000000000000000000, 255 .toString(16), (3.14159).toFixed(2));',
+			'trace("a" + 1, 1 + "a", "a" + null, "a" + undefined, "5" * 2, "5" - 2, true + 1, null + 1);',
+			'trace("hello".charAt(1), "hello".charCodeAt(1), "hello".indexOf("l"), "hello".lastIndexOf("l"), "hello".substr(1, 3), "hello".substring(1, 3), "hello".slice(-2));',
+			'trace("a,b".split(","), "AbC".toLowerCase(), "AbC".toUpperCase(), "x".concat("y", 1), "hello".replace("l", "L"), "hello".replace(/l/g, "L"), "hello".length);',
+			'trace(String.fromCharCode(65, 66), "abc".search(/c/), "a1b2".match(/[0-9]/g));',
+			'var list:Array = [3, 1, 2];',
+			'trace(list, list.length, list.join("-"), list.indexOf(2), list.concat([9]), list.slice(1), list.reverse());',
+			'list.push(4); list.unshift(0); trace(list.pop(), list.shift(), list);',
+			'list.splice(1, 1, 7, 8); trace(list);',
+			'list = [10, 9, 1]; list.sort(); trace(list);',
+			'list.sort(Array.NUMERIC); trace(list);',
+			'list.sort(Array.NUMERIC | Array.DESCENDING); trace(list);',
+			'list.sort(function (x:int, y:int):int { return y - x; }); trace(list);',
+			'var recs:Array = [{k: 2, n: "b"}, {k: 1, n: "a"}]; recs.sortOn("k"); trace(recs[0].n);',
+			'recs.sortOn("k", Array.NUMERIC | Array.DESCENDING); trace(recs[0].n);',
+			'trace([1, 2, 3].map(function (x:*, i:int, l:Array):* { return x * 2; }), [1, 2, 3].filter(function (x:*, i:int, l:Array):Boolean { return x > 1; }), [1, 2].every(function (x:*, i:int, l:Array):Boolean { return x > 0; }), [1, 2].some(function (x:*, i:int, l:Array):Boolean { return x > 1; }));',
+			'var obj:Object = {a: 1, b: "x"}; obj.c = 3; delete obj.a; trace(obj.b, obj["c"], obj.a, "b" in obj, obj.hasOwnProperty("c"));',
+			'var keys:Array = []; for (var k:String in obj) keys.push(k); keys.sort(); trace(keys);',
+			'var vals:Array = []; for each (var val:* in {x: 1}) vals.push(val); trace(vals);',
+			'for (var j:int = 0, m:int = 3; j < m; j++) { if (j == 1) continue; trace(j); }',
+			'var w:int = 0; do { w++; } while (w < 3); trace(w);',
+			'outer: for (var p:int = 0; p < 3; p++) { for (var q:int = 0; q < 3; q++) { if (q == 1) continue outer; if (p == 2) break outer; trace(p, q); } }',
+			'switch ("b") { case "a": trace("A"); case "b": trace("B"); case "c": trace("C"); break; default: trace("D"); }',
+			'try { throw new Error("boom"); } catch (e:Error) { trace(e.message, e.name); } finally { trace("fin"); }',
+			'try { var nul:Object = null; nul.x = 1; } catch (e2:Error) { trace("caught"); }',
+			'function add(x:int, y:int = 2, ...rest):int { return x + y + rest.length; }',
+			'trace(add(1), add(1, 1), add(1, 1, 5, 6));',
+			'function half(x:int):int { return x / 2; } trace(half(5));',
+			'function str(x:String = "d"):String { return x + "!"; } trace(str(), str("e"));',
+			'var count:Function = function ():Function { var c:int = 0; return function ():int { return ++c; }; }(); count(); trace(count());',
+			'function hoisted():int { return later(); function later():int { return 9; } } trace(hoisted());',
+			'trace(typeof 1, typeof "a", typeof true, typeof null, typeof undefined, typeof {}, typeof [], typeof add);',
+			'trace(1 is int, 1.5 is int, 1.5 is Number, "a" is String, [] is Array, {} is Object, null is Object, this is MovieClip, this is Sprite);',
+			'trace(("a" as String), (1 as String), (this as Sprite) == this);',
+			'trace(Math.floor(1.5), Math.ceil(1.2), Math.round(2.5), Math.round(-2.5), Math.abs(-1), Math.max(1, 2, 3), Math.min(1, 2), Math.pow(2, 8), Math.sqrt(16), Math.PI);',
+			'trace(parseInt("12px"), parseInt("ff", 16), parseFloat("1.5x"), encodeURIComponent("a b"), decodeURIComponent("a%20b"), escape("a b"));',
+			'var d:Date = new Date(2020, 0, 15, 12, 30, 0); trace(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getDay());',
+			'var vec:Vector.<int> = new Vector.<int>(); vec.push(1); vec.push(2); trace(vec, vec.length);',
+			'var vv:Vector.<String> = new <String>["a", "b"]; trace(vv.join("+"));',
+			'var t1:Boolean = true && false || !false; trace(t1, 1 && 2, 0 || 3, null || "x", 1 == "1", 1 === 1, null == undefined, 0 == false);',
+			'var c2:int = 3; c2 <<= 2; c2 |= 1; c2 ^= 2; c2 %= 7; trace(c2);',
+			'var tern:String = c2 > 1 ? "big" : "small"; trace(tern);',
+			'var r1:RegExp = /(\\d+)-(\\d+)/; var m1:Array = "10-20".match(r1); trace(m1[1], m1[2]);',
+			'trace(new Array(3).length, new Array(1, 2).length, new Object() is Object);',
+			'trace(this.currentFrame, totalFrames, stage.stageWidth, stage.stageHeight, stage.frameRate);',
+			QUIT
+		].join("\n");
+	});
+
+	build("f75-as3timeline", function () {
+		newDoc("timeline", 400, 300, 24);
+		symbol("kid", "movie clip", function () {
+			var k = tl();
+			rect(-10, -10, 10, 10, "#CC6633");
+			k.insertFrames(9, false, 1);
+			k.insertKeyframe(4);
+			k.layers[0].frames[0].actionScript = 'trace("kid frame", currentFrame, name, parent.name == "", parent is MovieClip);';
+			k.layers[0].frames[4].actionScript = 'trace("kid frame 5", currentFrame);';
+		});
+		symbol("holder", "movie clip", function () {
+			var h = tl();
+			h.layers[0].name = "inner";
+			h.currentLayer = 0;
+			var e = place("kid", 30, 0, 0);
+			e.name = "inner";
+			h.insertFrames(5, false, 1);
+			h.layers[0].frames[0].actionScript = 'trace("holder frame", currentFrame, numChildren, inner == null ? "none" : inner.name);';
+		});
+		lib.setItemProperty && 0;
+		lib.selectItem("kid");
+		lib.setItemProperty("linkageExportForAS", true);
+		lib.setItemProperty("linkageClassName", "Kid");
+		layer("hold");
+		var e = place("holder", 100, 100, 0);
+		e.name = "box";
+		layer("mover");
+		classicTween("kid", 200, 50, 11, function (el) { el.x = 310; el.alpha = 0; });
+		var t = tl();
+		t.layers[t.currentLayer].frames[0].elements[0].name = "mover";
+		t.layers[t.currentLayer].frames[11].elements[0].name = "mover";
+		layer("actions");
+		var ai = t.currentLayer;
+		var kf = function (f, code, label) {
+			t.currentLayer = ai;
+			t.setSelectedLayers(ai);
+			if (f > 0) t.insertKeyframe(f);
+			var fr = t.layers[ai].frames[f];
+			fr.actionScript = code;
+			if (label) fr.name = label;
+		};
+		kf(0, [
+			'trace("root 1", currentFrame, totalFrames, currentLabel, currentFrameLabel, numChildren);',
+			'var log:int = 0;',
+			'trace(box.name, box.x, box.y, box.parent == this, box.root == root, box.stage == stage, root == this);',
+			'trace(box.inner, box.getChildAt(0) == box.inner, box.numChildren, box.getChildByName("inner") == box.inner);',
+			'for (var i:int = 0; i < numChildren; i++) trace(i, getChildAt(i).name);',
+			'addEventListener(Event.ENTER_FRAME, tick);',
+			'function tick(e:Event):void { log++; if (log < 5) trace("enter", currentFrame, e.target == this, e.currentTarget == this, e.type); }',
+			'box.custom = 5; trace(box.custom);',
+			'var mine:Kid = new Kid();',
+			'trace("made", mine.name != null, mine.parent, mine.stage, mine.currentFrame);',
+			'mine.addEventListener(Event.ADDED_TO_STAGE, function (e:Event):void { trace("added", e.target == mine, mine.stage == stage); });',
+			'addChild(mine); mine.x = 50; mine.name = "dyn";',
+			'trace(numChildren, getChildIndex(mine), getChildByName("dyn") == mine);',
+			'stop();',
+			'gotoAndPlay("two");',
+			'trace("after goto", currentFrame);'
+		].join("\n"));
+		kf(3, ['trace("root 4 label", currentFrame, currentLabel, currentFrameLabel);', 'trace("mover", Math.round(mover.x), Math.round(mover.alpha * 100));'].join("\n"), "two");
+		kf(6, [
+			'trace("root 7", Math.round(mover.x), box.alpha);',
+			'mover.x = 5; trace(mover.x);',
+			'box.rotation = 90; trace(box.rotation); box.scaleX = 2; trace(box.scaleX); box.alpha = 0.5; trace(box.alpha); box.visible = false; trace(box.visible); box.visible = true;',
+			'gotoAndStop(9);',
+			'trace("after gotoAndStop", currentFrame);'
+		].join("\n"));
+		kf(8, ['trace("root 9", currentFrame, mover.x);', 'gotoAndPlay(11);'].join("\n"));
+		kf(10, ['trace("root 11", currentFrame, mover.x);', 'removeChild(mine); trace(numChildren, mine.parent, mine.stage);', 'removeEventListener(Event.ENTER_FRAME, tick);'].join("\n"));
+		kf(13, ['trace("root 14", currentFrame);', 'prevFrame();', 'trace(currentFrame);', 'nextFrame();', 'trace(currentFrame);', 'stop();', 'var again:Timer = new Timer(10, 2);', 'var ticks:int = 0;', 'again.addEventListener(TimerEvent.TIMER, function (e:TimerEvent):void { ticks++; trace("timer", ticks, again.currentCount, again.running); });', 'again.addEventListener(TimerEvent.TIMER_COMPLETE, function (e:TimerEvent):void { trace("timer done", again.running); finish(); });', 'again.start();', 'function finish():void {', QUIT, '}'].join("\n"));
+		extendAll(20);
+	});
+
+	build("f76-as3order", function () {
+		newDoc("timeline", 400, 300, 24);
+		symbol("leaf", "movie clip", function () {
+			var k = tl();
+			rect(-10, -10, 10, 10, "#33AA33");
+			k.insertFrames(5, false, 1);
+			k.layers[0].frames[0].actionScript = 'trace(name, "leaf 1", currentFrame);';
+			k.insertKeyframe(2);
+			k.layers[0].frames[2].actionScript = 'trace(name, "leaf 3", currentFrame);';
+			k.insertKeyframe(3);
+			k.layers[0].frames[3].actionScript = 'trace(name, "leaf 4 stop", currentFrame); stop();';
+		});
+		layer("low");
+		var a = place("leaf", 50, 50, 0);
+		a.name = "low";
+		layer("high");
+		var b = place("leaf", 100, 50, 0);
+		b.name = "high";
+		var t = tl();
+		var hi = t.currentLayer;
+		layer("late");
+		var li = t.currentLayer;
+		t.insertBlankKeyframe(2);
+		t.currentFrame = 2;
+		var c = place("leaf", 150, 50, 2);
+		c.name = "late";
+		t.insertBlankKeyframe(5);
+		layer("scriptB");
+		var bi = t.currentLayer;
+		t.layers[bi].frames[0].actionScript = 'trace("script layer B");';
+		layer("scriptA");
+		var ai = t.currentLayer;
+		var kf = function (f, code) {
+			t.currentLayer = ai;
+			t.setSelectedLayers(ai);
+			if (f > 0) t.insertKeyframe(f);
+			t.layers[ai].frames[f].actionScript = code;
+		};
+		extendAll(1);
+		kf(0, [
+			'trace("script layer A", late);',
+			'import flash.events.EventDispatcher;',
+			'addEventListener(Event.ENTER_FRAME, function (e:Event):void { trace("enter root", currentFrame); });',
+			'low.addEventListener(Event.ENTER_FRAME, function (e:Event):void { trace("enter low", low.currentFrame); });',
+			'stage.addEventListener(Event.ENTER_FRAME, function (e:Event):void { trace("enter stage"); });',
+			'addEventListener(Event.EXIT_FRAME, function (e:Event):void { trace("exit root", currentFrame); });',
+			'addEventListener(Event.FRAME_CONSTRUCTED, function (e:Event):void { trace("constructed", currentFrame); });',
+			'var d:Sprite = new Sprite();',
+			'var outer:Sprite = new Sprite(); outer.addChild(d); addChild(outer);',
+			'addEventListener("bubble", function (e:Event):void { trace("bubble root", e.target == d, e.currentTarget == root, e.eventPhase); });',
+			'outer.addEventListener("bubble", function (e:Event):void { trace("bubble outer", e.eventPhase); });',
+			'outer.addEventListener("bubble", function (e:Event):void { trace("capture outer", e.eventPhase); }, true);',
+			'd.addEventListener("bubble", function (e:Event):void { trace("bubble d", e.eventPhase); });',
+			'd.dispatchEvent(new Event("bubble", true));',
+			'd.dispatchEvent(new Event("nobubble", false));',
+			'outer.addEventListener("stop", function (e:Event):void { trace("stopped outer 1"); e.stopPropagation(); });',
+			'outer.addEventListener("stop", function (e:Event):void { trace("stopped outer 2"); });',
+			'addEventListener("stop", function (e:Event):void { trace("never"); });',
+			'd.dispatchEvent(new Event("stop", true));',
+			'outer.addEventListener("imm", function (e:Event):void { trace("imm 1"); e.stopImmediatePropagation(); });',
+			'outer.addEventListener("imm", function (e:Event):void { trace("never 2"); });',
+			'd.dispatchEvent(new Event("imm", true));',
+			'var once:Function = function (e:Event):void { trace("once"); e.currentTarget.removeEventListener("o", once); };',
+			'outer.addEventListener("o", once); outer.dispatchEvent(new Event("o")); outer.dispatchEvent(new Event("o"));',
+			'outer.addEventListener("p", function (e:Event):void { trace("low prio"); }, false, 0); outer.addEventListener("p", function (e:Event):void { trace("high prio"); }, false, 5); outer.dispatchEvent(new Event("p"));',
+			'trace(outer.hasEventListener("p"), outer.hasEventListener("zz"), d.willTrigger("p"));',
+			'd.addEventListener(Event.REMOVED_FROM_STAGE, function (e:Event):void { trace("removed", e.target == d, d.stage == stage); });',
+			'd.addEventListener(Event.REMOVED, function (e:Event):void { trace("removed ev", d.parent == outer); });',
+			'outer.removeChild(d); trace(d.parent, d.stage);',
+			'outer.addEventListener(Event.ADDED, function (e:Event):void { trace("added ev", e.target == d, d.parent == outer); });',
+			'outer.addChild(d);',
+			'trace(getChildIndex(outer), numChildren);',
+			'var s2:Sprite = new Sprite(); addChildAt(s2, 0); trace(getChildIndex(s2), getChildAt(0) == s2, getChildIndex(low));',
+			'swapChildren(s2, outer); trace(getChildIndex(s2), getChildIndex(outer));',
+			'setChildIndex(outer, numChildren - 1); trace(getChildIndex(outer), getChildIndex(s2));',
+			'low.gotoAndStop(2); trace("goto other", low.currentFrame);',
+			'gotoAndStop(2);',
+			'trace("own goto", currentFrame);',
+			'stop(); play(); trace("frame 1 end");'
+		].join("\n"));
+		kf(1, ['trace("frame 2", late, low.currentFrame, high.currentFrame);', 'gotoAndStop(2); trace("same frame", currentFrame);', 'gotoAndPlay(3); trace("last goto counts", currentFrame);', 'stop();'].join("\n"));
+		kf(2, ['trace("frame 3", late != null, late.currentFrame, numChildren);', 'late.gotoAndPlay(3); trace(late.currentFrame);'].join("\n"));
+		kf(4, ['trace("frame 5");', 'high.gotoAndStop(5); trace(high.currentFrame); high.play();', 'var n5:int = 0;', 'addEventListener(Event.ENTER_FRAME, five);', 'function five(e:Event):void { if (++n5 == 2) { removeEventListener(Event.ENTER_FRAME, five); gotoAndStop(7); trace("first handler goto", currentFrame); trace("after", currentFrame); } }', 'stop();'].join("\n"));
+		kf(6, ['trace("frame 7", currentFrame, late);', 'var s3:Sprite = new Sprite();', 'addEventListener(Event.ENTER_FRAME, tock);', 'var left:int = 3;', 'function tock(e:Event):void { trace("tock", currentFrame, left); if (--left == 0) { removeEventListener(Event.ENTER_FRAME, tock); gotoAndStop(9); trace("handler goto", currentFrame); } }'].join("\n"));
+		kf(8, ['trace("frame 9");', QUIT].join("\n"));
+		extendAll(10);
+	});
+
+	// ---------------------------------------------------------------- f77: a small game, played by scripts/e2e-scripts.ts with a real mouse and keyboard
+	build("f77-game", function () {
+		newDoc("timeline", 400, 300, 24);
+		symbol("disc", "movie clip", function () { oval(-20, -20, 20, 20, "#CC3366"); });
+		symbol("crate", "movie clip", function () { rect(-20, -20, 20, 20, "#3366CC"); });
+		symbol("star", "movie clip", function () {
+			oval(-8, -8, 8, 8, "#FFCC00");
+			var s = tl();
+			s.layers[0].frames[0].actionScript = 'trace("star made");';
+		});
+		lib.selectItem("star");
+		lib.setItemProperty("linkageExportForAS", true);
+		lib.setItemProperty("linkageClassName", "Star");
+		symbol("btn", "button", function () {
+			var b = tl();
+			var c = ["#33AA33", "#55CC55", "#118811"];
+			for (var i = 0; i < 4; i++) {
+				if (i > 0) b.insertBlankKeyframe(i);
+				b.currentFrame = i;
+				rect(-40, -15, 40, 15, c[Math.min(i, 2)]);
+			}
+		});
+		layer("things");
+		var d = place("disc", 80, 80, 0);
+		d.name = "ball";
+		var c = place("crate", 200, 80, 0);
+		c.name = "box";
+		var b = place("btn", 320, 80, 0);
+		b.name = "go";
+		layer("text");
+		doc.addNewText({ left: 20, top: 250, right: 220, bottom: 280 });
+		doc.setElementProperty("textType", "dynamic");
+		doc.setTextString("Score 0");
+		var tf = doc.selection[0] || tl().layers[tl().currentLayer].frames[0].elements[0];
+		tf.name = "label";
+		doc.selectNone();
+		layer("actions");
+		var t = tl();
+		t.layers[t.currentLayer].frames[0].actionScript = [
+			'var score:int = 0;',
+			'ball.addEventListener(MouseEvent.MOUSE_DOWN, function (e:MouseEvent):void { trace("down", e.target == ball, Math.round(e.stageX), Math.round(e.stageY)); ball.startDrag(); });',
+			'stage.addEventListener(MouseEvent.MOUSE_UP, function (e:MouseEvent):void { ball.stopDrag(); trace("dropped", Math.round(ball.x), Math.round(ball.y), ball.hitTestObject(box)); });',
+			'go.addEventListener(MouseEvent.CLICK, function (e:MouseEvent):void { score += 10; label.text = "Score " + score; trace("score", score, label.text); });',
+			'stage.addEventListener(KeyboardEvent.KEY_DOWN, function (e:KeyboardEvent):void { if (e.keyCode == Keyboard.RIGHT) box.x += 10; if (e.keyCode == Keyboard.LEFT) box.x -= 10; if (e.keyCode == Keyboard.SPACE) spawn(); trace("key", e.keyCode, box.x); });',
+			'box.addEventListener(MouseEvent.ROLL_OVER, function (e:MouseEvent):void { box.alpha = 0.5; trace("over", box.alpha); });',
+			'box.addEventListener(MouseEvent.ROLL_OUT, function (e:MouseEvent):void { box.alpha = 1; trace("out", box.alpha); });',
+			'var turning:Boolean = false;',
+			'box.addEventListener(MouseEvent.CLICK, function (e:MouseEvent):void { turning = !turning; trace("turning", turning); });',
+			'addEventListener(Event.ENTER_FRAME, function (e:Event):void { if (turning) box.rotation += 15; });',
+			'function spawn():void { var s:Star = new Star(); s.x = 40 + numChildren * 30; s.y = 200; addChild(s); trace("spawned", numChildren); s.addEventListener(MouseEvent.CLICK, function (e:MouseEvent):void { removeChild(s); trace("popped", numChildren); }); }',
+			'var clock:Timer = new Timer(100);',
+			'var seconds:int = 0;',
+			'clock.addEventListener(TimerEvent.TIMER, function (e:TimerEvent):void { seconds++; if (seconds == 3) { clock.stop(); trace("clock", seconds); } });',
+			'clock.start();',
+			'trace("ready");',
+			'stop();'
+		].join("\n");
+	});
+
 	FLfile.write(outDir + "/build-log.txt", log.join("\n"));
 	fl.closeAll(false);
 	fl.quit(false);

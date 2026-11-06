@@ -1,0 +1,447 @@
+/**
+ * Frame scripts of a timeline to JavaScript for the JS player's script runtime (src/player/script.ts).
+ *
+ * All frame scripts of a timeline are one class in AS3: functions and variables declared at the top
+ * level of any frame are the timeline's members, there from the start. So every name is looked up
+ * here: a local stays a local, a member or anything else unknown (properties of the timeline, its
+ * instances by name) goes to `$t`, the timeline's object; classes go to `$f`, the Flash API.
+ * Assignments to variables of a number type convert as in AS3.
+ */
+import { parseScript, ScriptError, type Expr, type FuncDecl, type Stmt, type VarDecl } from "./parser.ts";
+
+/** Names that stay what they are in JavaScript. */
+const GLOBALS = new Set([
+	"Math",
+	"JSON",
+	"Date",
+	"RegExp",
+	"Object",
+	"Array",
+	"Function",
+	"Error",
+	"String",
+	"Number",
+	"Boolean",
+	"parseInt",
+	"parseFloat",
+	"isNaN",
+	"isFinite",
+	"encodeURI",
+	"encodeURIComponent",
+	"decodeURI",
+	"decodeURIComponent",
+	"escape",
+	"unescape",
+	"undefined",
+	"NaN",
+	"Infinity",
+]);
+
+/** What `$f` gives: the part of the Flash API the runtime has (see src/player/script.ts). */
+export const FLASH_API = new Set([
+	"trace",
+	"navigateToURL",
+	"getTimer",
+	"setTimeout",
+	"clearTimeout",
+	"setInterval",
+	"clearInterval",
+	"getDefinitionByName",
+	"fscommand",
+	"MovieClip",
+	"Sprite",
+	"Shape",
+	"Bitmap",
+	"BitmapData",
+	"DisplayObject",
+	"DisplayObjectContainer",
+	"InteractiveObject",
+	"SimpleButton",
+	"Stage",
+	"StageAlign",
+	"StageScaleMode",
+	"StageDisplayState",
+	"Graphics",
+	"Event",
+	"MouseEvent",
+	"KeyboardEvent",
+	"TimerEvent",
+	"FocusEvent",
+	"TextEvent",
+	"Keyboard",
+	"Mouse",
+	"Timer",
+	"TextField",
+	"TextFormat",
+	"TextFieldAutoSize",
+	"TextFieldType",
+	"Sound",
+	"SoundChannel",
+	"SoundTransform",
+	"SoundMixer",
+	"URLRequest",
+	"Point",
+	"Rectangle",
+	"Matrix",
+	"ColorTransform",
+	"Transform",
+	"Vector",
+	"Dictionary",
+	"ByteArray",
+	"Capabilities",
+	"BlurFilter",
+	"GlowFilter",
+	"DropShadowFilter",
+]);
+
+/** JavaScript's reserved words that are plain names in AS3. */
+const JS_RESERVED = new Set(["await", "let", "yield", "async", "of", "enum", "implements", "private", "public", "protected", "static", "arguments", "eval", "with", "debugger", "export", "extends", "class", "super"]);
+
+const safe = (n: string) => (JS_RESERVED.has(n) ? `$_${n}` : n);
+
+interface Scope {
+	vars: Map<string, string>;
+	up: Scope | null;
+}
+
+export interface ScriptUnit {
+	/** 0-based frame. */
+	frame: number;
+	code: string;
+}
+
+export interface CompiledScripts {
+	/** JavaScript: an expression, function($t, $f, $r) returning the frame functions by frame. */
+	js: string;
+	/** Scripts that can't be compiled, and why; their frames do nothing. */
+	failed: { frame: number; line: number; message: string }[];
+	/** Flash API names used that the runtime doesn't have. */
+	unknown: string[];
+}
+
+/** Collects what a statement list declares at function level (var hoists out of blocks). */
+function hoist(body: Stmt[], out: Map<string, string>, fns: FuncDecl[] | null) {
+	const walk = (s: Stmt | null | undefined) => {
+		if (!s) return;
+		switch (s.k) {
+			case "var":
+				for (const d of s.decls) if (!out.has(d.name) || d.type !== "*") out.set(d.name, d.type);
+				break;
+			case "func":
+				out.set(s.f.name, "Function");
+				fns?.push(s.f);
+				break;
+			case "block":
+				s.body.forEach(walk);
+				break;
+			case "if":
+				walk(s.a);
+				walk(s.b);
+				break;
+			case "for":
+				walk(s.init);
+				walk(s.body);
+				break;
+			case "forin":
+				if (s.decl) out.set(s.decl.name, s.decl.type);
+				walk(s.body);
+				break;
+			case "while":
+			case "do":
+			case "label":
+				walk(s.body);
+				break;
+			case "switch":
+				for (const c of s.cases) c.body.forEach(walk);
+				break;
+			case "try":
+				s.body.forEach(walk);
+				s.handler?.forEach(walk);
+				s.final?.forEach(walk);
+				break;
+		}
+	};
+	body.forEach(walk);
+}
+
+const INT = new Set(["int", "uint"]);
+
+/** A variable's default in AS3. */
+function defaultOf(type: string): string {
+	if (INT.has(type)) return "0";
+	if (type === "Number") return "NaN";
+	if (type === "Boolean") return "false";
+	if (type === "*") return "undefined";
+	return "null";
+}
+
+class Emitter {
+	unknown = new Set<string>();
+	private scope: Scope | null = null;
+	/** The timeline's members and their types. */
+	private members: Map<string, string>;
+	constructor(members: Map<string, string>) {
+		this.members = members;
+	}
+	private ret = "*";
+
+	private lookup(name: string): string | undefined {
+		for (let s = this.scope; s; s = s.up) {
+			const t = s.vars.get(name);
+			if (t !== undefined) return t;
+		}
+		return undefined;
+	}
+
+	private ref(name: string): string {
+		if (this.lookup(name) !== undefined) return safe(name);
+		if (name === "trace") return "$f.trace";
+		if (this.members.has(name)) return `$t.${safe(name) === name ? name : `["${name}"]`}`;
+		if (GLOBALS.has(name)) return name;
+		if (name === "Vector") return "Array";
+		if (FLASH_API.has(name)) return `$f.${name}`;
+		// a class of the library (linkage), or what the timeline has
+		if (/^[A-Z]/.test(name)) return `$r.cls("${name}",$t)`;
+		return `$t.${name}`;
+	}
+
+	/** The value converted to a variable's type. */
+	private coerce(type: string, js: string, x?: Expr): string {
+		switch (type) {
+			case "int":
+				return x?.k === "num" && /^\d+$/.test(x.v) ? js : `(${js}|0)`;
+			case "uint":
+				return x?.k === "num" && /^\d+$/.test(x.v) ? js : `(${js}>>>0)`;
+			case "Number":
+				return x?.k === "num" ? js : `+(${js})`;
+			case "Boolean":
+				return x?.k === "lit" ? js : `!!(${js})`;
+			case "String":
+				return x?.k === "str" ? js : `$r.str(${js})`;
+			default:
+				return js;
+		}
+	}
+
+	private typeOfTarget(a: Expr): string {
+		if (a.k !== "id") return "*";
+		return this.lookup(a.name) ?? this.members.get(a.name) ?? "*";
+	}
+
+	expr(x: Expr): string {
+		switch (x.k) {
+			case "num":
+				return x.v;
+			case "str":
+				return JSON.stringify(x.v);
+			case "regex":
+				return x.v;
+			case "lit":
+				return x.v;
+			case "id":
+				return this.ref(x.name);
+			case "this":
+				return "$t";
+			case "array":
+				return `[${x.items.map((i) => this.expr(i)).join(",")}]`;
+			case "object":
+				return `{${x.props.map(([k, v]) => `${JSON.stringify(k)}:${this.expr(v)}`).join(",")}}`;
+			case "func":
+				return this.func(x.f, true);
+			case "unary":
+				if (x.op === "delete" || x.op === "typeof" || x.op === "void") return `(${x.op} ${this.expr(x.x)})`;
+				return `(${x.op}${this.expr(x.x)})`;
+			case "update": {
+				const js = this.expr(x.x);
+				const t = this.typeOfTarget(x.x);
+				// (overflow wraps; postfix gives the old value)
+				if (INT.has(t)) {
+					const wrap = t === "uint" ? ">>>0" : "|0";
+					const step = x.op === "++" ? "+1" : "-1";
+					const old = x.prefix ? "" : `,(${js}${x.op === "++" ? "-1" : "+1"})${wrap}`;
+					return `(${js}=(${js}${step})${wrap}${old})`;
+				}
+				return x.prefix ? `(${x.op}${js})` : `(${js}${x.op})`;
+			}
+			case "bin":
+				return this.binary(x);
+			case "assign": {
+				const a = this.expr(x.a);
+				const b = this.expr(x.b);
+				const t = this.typeOfTarget(x.a);
+				if (x.op === "=") return `(${a}=${this.coerce(t, b, x.b)})`;
+				if (t === "*" || (t !== "int" && t !== "uint" && t !== "Number" && t !== "String" && t !== "Boolean")) {
+					if (x.op === "&&=" || x.op === "||=") return `(${a}=${a}${x.op.slice(0, 2)}${b})`;
+					return `(${a}${x.op}${b})`;
+				}
+				return `(${a}=${this.coerce(t, `${a}${x.op.slice(0, -1)}(${b})`)})`;
+			}
+			case "cond":
+				return `(${this.expr(x.c)}?${this.expr(x.a)}:${this.expr(x.b)})`;
+			case "member":
+				return this.member(x.o, x.name);
+			case "index":
+				return `${this.expr(x.o)}[${this.expr(x.i)}]`;
+			case "call":
+				return this.call(x.f, x.args);
+			case "new":
+				return `new (${this.expr(x.f)})(${x.args.map((a) => this.expr(a)).join(",")})`;
+			case "seq":
+				return `(${x.items.map((i) => this.expr(i)).join(",")})`;
+		}
+	}
+
+	private member(o: Expr, name: string): string {
+		// constants of AS3's Array
+		if (o.k === "id" && o.name === "Array" && this.lookup("Array") === undefined) {
+			const c: Record<string, number> = { CASEINSENSITIVE: 1, DESCENDING: 2, UNIQUESORT: 4, RETURNINDEXEDARRAY: 8, NUMERIC: 16 };
+			if (name in c) return String(c[name]);
+		}
+		const n = /^[A-Za-z_$][\w$]*$/.test(name) ? `.${name}` : `[${JSON.stringify(name)}]`;
+		const of = this.expr(o);
+		return o.k === "num" ? `(${of})${n}` : `${of}${n}`;
+	}
+
+	private binary(x: Extract<Expr, { k: "bin" }>): string {
+		const a = this.expr(x.a);
+		if (x.op === "as" || x.op === "is") {
+			const type = x.b.k === "id" ? x.b.name : x.b.k === "member" ? x.b.name : "*";
+			const cls = type === "int" || type === "uint" || type === "Number" || type === "String" || type === "Boolean" ? `"${type}"` : this.expr(x.b);
+			return `$r.${x.op}(${a},${cls})`;
+		}
+		return `(${a}${x.op === "instanceof" || x.op === "in" ? ` ${x.op} ` : x.op}${this.expr(x.b)})`;
+	}
+
+	private call(f: Expr, args: Expr[]): string {
+		const list = args.map((a) => this.expr(a)).join(",");
+		if (f.k === "id" && this.lookup(f.name) === undefined && !this.members.has(f.name)) {
+			// conversions
+			if (f.name === "int") return `(${list}|0)`;
+			if (f.name === "uint") return `(${list}>>>0)`;
+			if (f.name === "String" && args.length === 1) return `$r.text(${list})`;
+			// a cast: Class(x)
+			if (args.length === 1 && /^[A-Z]/.test(f.name) && !GLOBALS.has(f.name)) return `(${list})`;
+			if (f.name === "Vector" && args.length === 1) return `(${list})`;
+		}
+		if (f.k === "member" && (f.name === "sort" || f.name === "sortOn")) return `$r.${f.name}(${this.expr(f.o)}${list ? `,${list}` : ""})`;
+		return `${this.expr(f)}(${list})`;
+	}
+
+	/** A function with its own scope. Named functions are members or locals, see `decl`. */
+	func(f: FuncDecl, asExpression: boolean): string {
+		const vars = new Map<string, string>();
+		for (const p of f.params) vars.set(p.name, p.rest ? "Array" : p.type);
+		const inner: FuncDecl[] = [];
+		hoist(f.body, vars, inner);
+		if (asExpression && f.name) vars.set(f.name, "Function");
+		const saved = this.scope;
+		const savedRet = this.ret;
+		this.scope = { vars, up: saved };
+		this.ret = f.ret;
+		const params = f.params.map((p) => (p.rest ? `...${safe(p.name)}` : p.init ? `${safe(p.name)}=${this.expr(p.init)}` : safe(p.name))).join(",");
+		const head = f.params
+			.filter((p) => !p.rest && (p.type === "int" || p.type === "uint"))
+			.map((p) => `${safe(p.name)}=${this.coerce(p.type, safe(p.name))};`)
+			.join("");
+		const paramNames = new Set(f.params.map((p) => p.name));
+		const locals = [...vars].filter(([n]) => !paramNames.has(n) && n !== f.name).map(([n, t]) => (t === "Function" ? null : `${safe(n)}=${defaultOf(t)}`));
+		const decl = locals.filter(Boolean).length ? `var ${locals.filter(Boolean).join(",")};` : "";
+		// functions in functions: there from the start, as declarations are
+		const hoisted = inner.map((g) => `function ${safe(g.name)}${this.func(g, false).replace(/^function/, "")}`).join("");
+		const body = f.body.map((s) => this.stmt(s, false)).join("");
+		this.scope = saved;
+		this.ret = savedRet;
+		return `function${asExpression && f.name ? ` ${safe(f.name)}` : ""}(${params}){${head}${decl}${hoisted}${body}}`;
+	}
+
+	private varInit(d: VarDecl, top: boolean): string {
+		const js = d.init ? this.coerce(d.type, this.expr(d.init), d.init) : null;
+		if (top) return js === null ? `$t.${d.name}=$t.${d.name};` : `$t.${d.name}=${js};`;
+		return js === null ? "" : `${safe(d.name)}=${js};`;
+	}
+
+	/** `top`: at the top level of a frame, where declarations are the timeline's members. */
+	stmt(s: Stmt, top: boolean): string {
+		const body = (b: Stmt) => this.stmt(b, top);
+		switch (s.k) {
+			case "empty":
+			case "func":
+				return "";
+			case "block":
+				return `{${s.body.map(body).join("")}}`;
+			case "var":
+				return s.decls.map((d) => this.varInit(d, top)).join("");
+			case "expr":
+				return `${this.expr(s.x)};`;
+			case "if":
+				return `if(${this.expr(s.c)})${this.branch(s.a, top)}${s.b ? `else ${this.branch(s.b, top)}` : ""}`;
+			case "while":
+				return `while(${this.expr(s.c)})${this.branch(s.body, top)}`;
+			case "do":
+				return `do ${this.branch(s.body, top)}while(${this.expr(s.c)});`;
+			case "for": {
+				const init = s.init ? (s.init.k === "var" ? s.init.decls.map((d) => this.varInit(d, top)).join("").replace(/;$/, "").replace(/;/g, ",") : this.expr((s.init as { x: Expr }).x)) : "";
+				return `for(${init};${s.c ? this.expr(s.c) : ""};${s.u ? this.expr(s.u) : ""})${this.branch(s.body, top)}`;
+			}
+			case "forin": {
+				const target = s.decl ? (top ? `$t.${s.decl.name}` : safe(s.decl.name)) : this.expr(s.left!);
+				const o = this.expr(s.o);
+				return s.each ? `for(${target} of $r.vals(${o}))${this.branch(s.body, top)}` : `for(${target} in ${o})${this.branch(s.body, top)}`;
+			}
+			case "switch":
+				return `switch(${this.expr(s.c)}){${s.cases.map((c) => `${c.test ? `case ${this.expr(c.test)}:` : "default:"}${c.body.map(body).join("")}`).join("")}}`;
+			case "break":
+			case "continue":
+				return `${s.k}${s.label ? ` ${s.label}` : ""};`;
+			case "return":
+				return `return${s.x ? ` ${this.coerce(this.ret, this.expr(s.x), s.x)}` : ""};`;
+			case "throw":
+				return `throw ${this.expr(s.x)};`;
+			case "label":
+				return `${s.name}:${this.stmt(s.body, top)}`;
+			case "try": {
+				let out = `try{${s.body.map(body).join("")}}`;
+				if (s.handler) {
+					const saved = this.scope;
+					this.scope = { vars: new Map([[s.param, "*"]]), up: saved };
+					out += `catch(${safe(s.param)}){${s.handler.map(body).join("")}}`;
+					this.scope = saved;
+				}
+				if (s.final) out += `finally{${s.final.map(body).join("")}}`;
+				return out;
+			}
+		}
+	}
+
+	private branch(s: Stmt, top: boolean): string {
+		return s.k === "block" || s.k === "empty" ? this.stmt(s, top) || ";" : `{${this.stmt(s, top)}}`;
+	}
+}
+
+/**
+ * Compiles a timeline's frame scripts. A script that can't be parsed is left out and reported;
+ * the others still run.
+ */
+export function compileScripts(units: ScriptUnit[]): CompiledScripts {
+	const failed: CompiledScripts["failed"] = [];
+	const parsed: { frame: number; body: Stmt[] }[] = [];
+	for (const u of units) {
+		try {
+			parsed.push({ frame: u.frame, body: parseScript(u.code) });
+		} catch (e) {
+			if (!(e instanceof ScriptError)) throw e;
+			failed.push({ frame: u.frame, line: e.line, message: e.message });
+		}
+	}
+	const members = new Map<string, string>();
+	const fns: FuncDecl[] = [];
+	for (const p of parsed) hoist(p.body, members, fns);
+	const em = new Emitter(members);
+	let out = "function($t,$f,$r){";
+	for (const [name, type] of members) if (type !== "Function") out += `$t.${name}=${defaultOf(type)};`;
+	for (const f of fns) out += `$t.${f.name}=${em.func(f, false)};`;
+	out += "return{";
+	out += parsed.map((p) => `${p.frame}:function(){${p.body.map((s) => em.stmt(s, true)).join("")}}`).join(",");
+	out += "}}";
+	return { js: out, failed, unknown: [...em.unknown] };
+}

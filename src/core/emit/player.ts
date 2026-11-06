@@ -16,6 +16,7 @@ import { accAttrs, filterNode, OutputDoc, svgRoot } from "./document.ts";
 import { filterRuns } from "./filteranim.ts";
 import { blendHides, blendSubtract, blendWhite, cssBlendMode } from "./filters.ts";
 import { PLAYER_RUNTIMES } from "./runtime-code.generated.ts";
+import { playerScripts } from "./scripts.ts";
 import { StaticRenderer } from "./static.ts";
 import { hasFieldExtras, outlineText, textField, textNode } from "./text.ts";
 import { SCROLL_RANGE_CODES } from "./triggers.ts";
@@ -148,7 +149,7 @@ export function renderPlayer(
 					const labelled = outlineText(it.element, el("use", {}));
 					return { k: "a", s: it.start, e: it.end, r: id, ...(labelled.name === "g" ? { ac: labelled.attrs as Record<string, string> } : {}) };
 				}
-				return { k: "r", s: it.start, e: it.end, x: raw(field(textNode(it.element, ctx.precision.space(space), doc.fonts))) };
+				return { k: "r", s: it.start, e: it.end, x: raw(field(textNode(it.element, ctx.precision.space(space), doc.fonts))), ...(it.element.name ? { nm: it.element.name } : {}) };
 			}
 			case "instance":
 				return instance(it);
@@ -208,10 +209,13 @@ export function renderPlayer(
 		return p;
 	};
 
+	const scripts = playerScripts(ctx, svgId, warn);
 	const timeline = (prog: Program): PTimeline => {
 		const t: PTimeline = { n: prog.frameCount, ly: [] };
 		if (prog.labels.length) t.lb = Object.fromEntries(prog.labels.map((l) => [l.name, l.frame]));
-		const acts = Object.entries(prog.actions);
+		// (its scripts run: they do what the lists of actions and mouse handlers would say)
+		const run = !!scripts?.timelines.has(prog.source ?? prog.id);
+		const acts = run ? [] : Object.entries(prog.actions);
 		if (acts.length) {
 			t.ac = {};
 			for (const [f, list] of acts) {
@@ -223,7 +227,7 @@ export function renderPlayer(
 				});
 			}
 		}
-		if (prog.interactions?.length) t.ev = prog.interactions.map((i): PListener => [i.frame, i.on, EVENT_CODES[i.event], ...i.actions.map(actionCode)]);
+		if (!run && prog.interactions?.length) t.ev = prog.interactions.map((i): PListener => [i.frame, i.on, EVENT_CODES[i.event], ...i.actions.map(actionCode)]);
 		if (prog.inShapeAlpha) t.ia = 1;
 		if (prog.view) {
 			const d = ctx.precision.view(prog.id);
@@ -348,12 +352,20 @@ export function renderPlayer(
 	});
 	if (s.includeBackground) svg.children.push(el("rect", { width: fmt(d.width, 2), height: fmt(d.height, 2), fill: d.backgroundColor }));
 	svg.children.push(poster);
+	if (scripts) {
+		if (Object.keys(scripts.classes).length) P.cl = scripts.classes;
+		if (d.type !== "Flash") P.zb = 1;
+	}
 	svg.children.push(el("script", { type: "application/json" }, [cdata(JSON.stringify(P).replace(/</g, "\\u003c"))]));
 	// the runtime with morphs also animates filters (shape tweens, filters with changing numbers)
 	const morphs = Object.values(P.tl).some((t) => t.ly.some((l) => l.it.some((i) => (i.k === "q" && i.mp) || (i.k === "i" && i.fa))));
 	// mouse handlers and the start triggers share a build
 	const events = s.begin === "visible" || s.begin === "scroll" || Object.values(P.tl).some((t) => t.ev);
-	doc.scripts.push(PLAYER_RUNTIMES[(Object.keys(P.snd).length ? 1 : 0) + (morphs ? 2 : 0) + (events ? 4 : 0)]!);
+	const build = (Object.keys(P.snd).length ? 1 : 0) + (morphs ? 2 : 0);
+	if (scripts) {
+		doc.scripts.push(scripts.js);
+		doc.scripts.push(PLAYER_RUNTIMES[8 + build]!);
+	} else doc.scripts.push(PLAYER_RUNTIMES[build + (events ? 4 : 0)]!);
 	return { svg: doc.toString(svg, { pretty: s.pretty }), assets: doc.assets, drawingBytes: doc.drawingBytes };
 }
 

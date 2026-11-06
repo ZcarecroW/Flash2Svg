@@ -30,6 +30,10 @@ export interface PProgram {
 	on?: number;
 	/** the poster frame (root, 0-based; default 0): shown still when the system asks for reduced motion */
 	pf?: number;
+	/** scripts: library classes (linkage): name -> timeline or sound id */
+	cl?: Record<string, string>;
+	/** scripts: frames count from 0 (HTML5 Canvas) */
+	zb?: 1;
 }
 
 export interface PTimeline {
@@ -111,6 +115,8 @@ export interface PArt extends PBase {
 }
 export interface PRef extends PBase {
 	k: "r";
+	/** instance name (text fields, for scripts) */
+	nm?: string;
 	/** raw node markup (bitmaps, text) */
 	x: string;
 }

@@ -28,6 +28,8 @@ export interface SceneModel {
 	 */
 	sceneOrder?: string[];
 	timelines: Record<string, TimelineData>;
+	/** Library symbols scripts make by class name (their linkage): name -> timeline id. */
+	linkage?: Record<string, string>;
 	/** Shape/text artwork rendered through Animate's SVG exporter, keyed by atlas id. */
 	atlas: Record<string, AtlasItem>;
 	bitmaps: Record<string, BitmapData>;

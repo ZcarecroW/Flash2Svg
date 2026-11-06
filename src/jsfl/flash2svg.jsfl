@@ -385,6 +385,10 @@
 			job.queue.unshift(nextTimeline);
 			return;
 		}
+		if (queueLinked()) {
+			job.queue.unshift(nextTimeline);
+			return;
+		}
 		// All timelines read: build the atlas
 		job.phase = "atlas";
 		job.message = "Collecting artwork";
@@ -396,6 +400,31 @@
 		job.atlasFrame = 0;
 		job.atlasIndex = 0;
 		job.queue.push(nextAtlasJob);
+	}
+
+	/**
+	 * Symbols scripts make by their class name (linkage): no instance of them need be on stage. Read
+	 * when a script names them. Returns whether there are new ones (their scripts may name others).
+	 */
+	function queueLinked() {
+		var text = job.scriptText;
+		if (!text) return false;
+		var items = job.lib.items, more = false;
+		for (var i = 0; i < items.length; i++) {
+			var item = items[i];
+			var cls = String(get(item, "linkageClassName", "") || "");
+			if (!cls) continue;
+			var name = cls.substr(cls.lastIndexOf(".") + 1);
+			if (text.indexOf(name) < 0) continue;
+			if (item.itemType == "sound" || !item.timeline) continue;
+			var id = "sym:" + item.name;
+			(job.model.linkage || (job.model.linkage = {}))[name] = id;
+			if (!job.seen[id]) {
+				queueTimeline(id);
+				more = true;
+			}
+		}
+		return more;
 	}
 
 	/** Makes `id` the timeline being edited in the copy document and returns it. */
@@ -626,7 +655,10 @@
 			kf.label = { name: label, type: get(frame, "labelType", "name") };
 		}
 		var script = get(frame, "actionScript", "");
-		if (script) kf.script = String(script).substr(0, 4000);
+		if (script) {
+			kf.script = String(script);
+			job.scriptText = (job.scriptText || "") + kf.script;
+		}
 		var soundItem = get(frame, "soundLibraryItem", null);
 		if (soundItem) {
 			var snd = {

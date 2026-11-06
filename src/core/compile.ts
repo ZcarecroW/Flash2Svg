@@ -12,6 +12,7 @@ import { playbackStateMachine } from "./statemachine.ts";
 import { joinScenes } from "./scenes.ts";
 import { hasRootInteractions, interactiveStateMachine } from "./interactive.ts";
 import type { ScrollRange } from "./emit/triggers.ts";
+import { documentRuns, timelineRuns } from "./emit/scripts.ts";
 import { playhead } from "./emit/timing.ts";
 import type { SoundSettings } from "./audio.ts";
 import type { ImageSettings } from "./images.ts";
@@ -146,14 +147,16 @@ export interface CompileOutput {
  */
 function chooseFormat(model: SceneModel, files: FileSource, partial: Partial<ExportSettings>, rootIndex: number, hooks: CompileHooks): CompileOutput {
 	const sounds = Object.keys(model.sounds).length > 0;
+	const zeroBased = model.doc.type !== "Flash";
+	const scripted = documentRuns(Object.values(model.timelines), zeroBased);
 	const handlers = Object.values(model.timelines).some((t) =>
 		t.layers.some((l) => l.keyframes.some((k) => k.script && /addEventListener|\.on\s*\(/.test(k.script))),
 	);
-	if (sounds || handlers) {
+	if (sounds || handlers || scripted) {
 		const out = compileScene(model, files, { ...partial, format: "player" }, rootIndex, hooks);
 		// handlers that are only web links work in SMIL/CSS too: the player's program tells
-		if (sounds || out.files[0]?.svg.includes('"ev":')) {
-			out.warnings.unshift(`Automatic format: JS player (${sounds ? "it has sounds" : "frame scripts add mouse handlers"})`);
+		if (sounds || scripted || out.files[0]?.svg.includes('"ev":')) {
+			out.warnings.unshift(`Automatic format: JS player (${sounds ? "it has sounds" : scripted ? "it has frame scripts to run" : "frame scripts add mouse handlers"})`);
 			out.stats.format = "player";
 			return out;
 		}
@@ -241,6 +244,16 @@ export function compileScene(
 	};
 	const assets = new Map<string, { path: string; source: string }>();
 	const lottie = s.format === "lottie" || s.format === "dotlottie";
+	const zeroBased = model.doc.type !== "Flash";
+	if (s.format !== "player" && documentRuns(Object.values(model.timelines), zeroBased))
+		out.warnings.push("Frame scripts run only in the JS player format: here only plain stop(), play() and frame jumps count");
+	for (const p of Object.values(ctx.programs)) {
+		if (!p.scriptNotes) continue;
+		const tl = model.timelines[p.source ?? p.id];
+		if (s.format === "player" && tl && timelineRuns(tl, zeroBased)) continue;
+		// (a layer wrap copies its program)
+		for (const n of p.scriptNotes) if (!out.warnings.includes(n)) out.warnings.push(n);
+	}
 	if (lottie && (s.begin === "visible" || s.begin === "scroll"))
 		out.warnings.push(`Start "${s.begin === "visible" ? "when visible" : "on scroll"}" is up to the page that shows a Lottie animation: it plays when loaded`);
 	if (s.format !== "player" && !lottie && Object.keys(model.sounds).length)

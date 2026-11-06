@@ -168,6 +168,8 @@ export interface Program {
 	actions: Record<number, FrameAction[]>;
 	/** Mouse handlers added by frame scripts (Animate's code snippets, see snippets.ts). */
 	interactions?: Interaction[];
+	/** What the action lists leave out of this timeline's frame scripts (not if they run). */
+	scriptNotes?: string[];
 	camera?: TimelineData["camera"];
 	/** Camera (root scenes): transform applied to all layers, in this timeline's frame time. */
 	view?: TransformTracks;
@@ -712,7 +714,7 @@ function buildProgram(tl: TimelineData, opts: CompileOptions, warnings: string[]
 				const where = {
 					zeroBased: doc.type !== "Flash",
 					scene: tl.kind === "scene" ? tl.name : undefined,
-					warn: (m: string) => warnings.push(`${tl.name}, frame ${kf.index + 1}: ${m}`),
+					warn: (m: string) => void (prog.scriptNotes ??= []).push(`${tl.name}, frame ${kf.index + 1}: ${m}`),
 				};
 				// mouse handlers out first: their jumps aren't frame actions
 				const parts = splitScript(kf.script, { ...where, frame: kf.index });
@@ -823,7 +825,7 @@ function concatM(first: Mat, then: Mat): Mat {
  * the passes over the frame they apply to. Other conditional actions always run (warned).
  * Only the current `scene` is exported: jumps into other scenes are left out (warned).
  */
-export function parseActions(script: string, opts: { zeroBased?: boolean; scene?: string; warn?: (m: string) => void } = {}): FrameAction[] {
+export function parseActions(script: string, opts: { zeroBased?: boolean; scene?: string; anyScene?: boolean; warn?: (m: string) => void } = {}): FrameAction[] {
 	const out: FrameAction[] = [];
 	// (string-aware: "//" in a label or address isn't a comment)
 	const code = blankComments(script);
@@ -842,7 +844,7 @@ export function parseActions(script: string, opts: { zeroBased?: boolean; scene?
 			const unquote = (a: string | undefined) => /^["'](.*)["']$/.exec(a ?? "")?.[1];
 			const arg = args[0] ?? "";
 			const scene = unquote(args[1]);
-			if (scene !== undefined && scene !== opts.scene) {
+			if (scene !== undefined && scene !== opts.scene && !opts.anyScene) {
 				opts.warn?.(`${fn}() into the scene "${scene}" is left out: only the current scene is exported`);
 				continue;
 			}

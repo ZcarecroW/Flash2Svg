@@ -8,6 +8,7 @@
  */
 import { evalBezier } from "../core/easing.ts";
 import type { PChannel, PFilterAnim, PFrameSound, PInst, PItem, PListener, PMorph, PProgram, PTimeline, PTrack } from "./format.ts";
+import { Scripts, type Frozen, type ScriptFactory } from "./script.ts";
 
 /** Build flags: the sound code (Mixer) is only in the runtime of programs with sounds, the
  * morph code (shape tweens) only in that of programs with path morphs. */
@@ -15,6 +16,8 @@ declare const __SOUND__: boolean;
 declare const __MORPH__: boolean;
 /** mouse handlers from frame scripts (PTimeline.ev), the start triggers "visible" and "scroll" */
 declare const __EVENTS__: boolean;
+/** frame scripts compiled to JavaScript and the Flash API they use (script.ts) */
+declare const __SCRIPTS__: boolean;
 
 const NS = "http://www.w3.org/2000/svg";
 const XL = "http://www.w3.org/1999/xlink";
@@ -101,7 +104,7 @@ function morphValue(ch: PChannel, r: number, fi: number): string {
 }
 
 /** A running timeline (root, movie clip, graphic or button instance). */
-class Clip {
+export class Clip {
 	readonly node: SVGGElement;
 	frame = 0;
 	playing = true;
@@ -121,6 +124,12 @@ class Clip {
 	inst: Inst | null = null;
 	/** mouse handlers of this timeline already added (a frame entered again doesn't add them twice) */
 	heard: Set<PListener> | null = null;
+	/** its frame scripts, and the object scripts see of it */
+	fs?: Record<number, () => void>;
+	obj?: unknown;
+	/** in its own frame script, and where that script's last goto leads (once the script is through) */
+	inScript?: boolean;
+	pending?: [number, boolean] | null;
 
 	constructor(player: Player, tl: PTimeline, kind: number) {
 		this.player = player;
@@ -186,6 +195,7 @@ class Clip {
 				}
 		if (this.kind === -1) this.player.emit({ type: "frame", frame: this.frame, label });
 		this.playSounds();
+		if (__SCRIPTS__) this.player.scripts?.frame(this);
 		if (!acts) return;
 		const pass = (this.passes[this.frame] = (this.passes[this.frame] ?? 0) + 1);
 		for (let a of acts) {
@@ -299,6 +309,7 @@ class Clip {
 			if (c.kind === 1) c.setFrame(graphicFrame(inst.it as PInst, this.frame, c.tl.n));
 			c.tick();
 		}
+		if (__SCRIPTS__) this.player.scripts?.dynTick(this);
 		this.updateAdvance();
 	}
 
@@ -330,6 +341,7 @@ class Clip {
 				let inst = this.items.get(it);
 				if (active && !inst) {
 					inst = new Inst(this, it);
+					if (__SCRIPTS__) this.player.scripts?.track(inst);
 					this.items.set(it, inst);
 					for (const e of inst.els.length ? inst.els : [inst.node]) g.insertBefore(e, before);
 					const c = inst.clip;
@@ -341,7 +353,8 @@ class Clip {
 					this.items.delete(it);
 					inst = undefined;
 				}
-				if (inst) before = inst.els[0] ?? inst.node;
+				// (a script may have taken it elsewhere)
+				if (inst && !(__SCRIPTS__ && (inst.moved || inst.removed))) before = inst.els[0] ?? inst.node;
 			}
 		});
 	}
@@ -359,6 +372,7 @@ class Clip {
 			} else this.node.setAttribute("transform", matrixOf(this.P, vw, t, 0, 0));
 		}
 		for (const inst of this.items.values()) inst.render(t, frac, this);
+		if (__SCRIPTS__) this.player.scripts?.dynRender(this, frac);
 	}
 
 	private vanim: Animation | null = null;
@@ -399,22 +413,28 @@ class Clip {
 		this.streamSync();
 		this.sync();
 		this.updateAdvance();
+		if (__SCRIPTS__) this.player.scripts?.settle();
 	}
 }
 
 /** A display-list entry of a clip. */
-class Inst {
+export class Inst {
 	readonly node: SVGElement;
 	/** The node, or for the subtract blend the node between two inverting copies of it. */
 	els: SVGElement[] = [];
 	/** instances: the node carrying the transform, and the one carrying Animate filters */
-	private tnode: SVGElement | null = null;
+	tnode: SVGElement | null = null;
 	private fnode: SVGElement | null = null;
 	readonly it: PItem;
 	readonly owner: Clip;
 	clip: Clip | null = null;
 	/** Buttons: the Hit frame. */
 	private hit?: Clip;
+	/** set by scripts: its transform and alpha (the timeline's no longer count), moved or taken off */
+	ov?: Frozen;
+	ovAlpha?: number;
+	moved?: boolean;
+	removed?: boolean;
 	private cm: SVGElement | null = null;
 	private seqIndex = -1;
 	/** shape tweens: the morph part drawn, copies of each part's drawing (and their elements) */
@@ -424,11 +444,11 @@ class Inst {
 	private mrat?: number;
 	private mfra?: number;
 	/** the transform last written (unchanged values aren't written again) */
-	private lastM = "";
+	lastM = "";
 	/** Web Animations playing the transform and/or the alpha (see animate()) */
-	private anims: Animation[] | null = null;
-	private animTransform = false;
-	private animAlpha = false;
+	anims: Animation[] | null = null;
+	animTransform = false;
+	animAlpha = false;
 	private filterRef = "";
 	/** animated filters: this instance's copies (by filter id: copy, animated primitives, values last written), the one shown */
 	private fcopies?: Record<string, [Element, Element[], string[]]>;
@@ -472,6 +492,8 @@ class Inst {
 					}
 					if (it.t === 2) this.button(g);
 					if (__EVENTS__ && it.nm && clicks(owner, it.nm)) clickable(g);
+					// (compiled scripts wait in a queue: parents' before their children's)
+					if (__SCRIPTS__ && it.t === 0) this.clip.runActions();
 					this.clip.sync();
 					// its first frame's script runs now, before it advances (a stop() there holds it)
 					if (it.t === 0) this.clip.runActions();
@@ -598,7 +620,7 @@ class Inst {
 			const run = player.live && this.owner.flows;
 			for (const a of this.anims) sync(player, a, ms, run);
 		}
-		if (!this.animTransform) {
+		if (!this.animTransform && !(__SCRIPTS__ && this.ov)) {
 			const m = matrixOf(P, tr, t, trackAt(P, tr[6], t, 0), trackAt(P, tr[7], t, 0));
 			// (unchanged values aren't written again: a write makes the browser repaint)
 			if (m !== this.lastM) {
@@ -607,7 +629,7 @@ class Inst {
 			}
 		}
 
-		if (it.c && !this.animAlpha) {
+		if (it.c && !this.animAlpha && !(__SCRIPTS__ && this.ovAlpha !== undefined)) {
 			const cv = it.c.map((tk, i) => trackAt(P, tk, t, i < 4 ? 100 : 0));
 			if (!it.cm) {
 				const a = String(Math.max(0, cv[3]!) / 100);
@@ -894,7 +916,7 @@ function graphicFrame(it: PInst, frame: number, count: number): number {
 	}
 }
 
-class Player {
+export class Player {
 	readonly P: PProgram;
 	readonly svg: SVGSVGElement;
 	readonly defs: SVGDefsElement;
@@ -936,6 +958,7 @@ class Player {
 	mixer: Mixer | null = null;
 	/** the Web Animations of the instances on stage */
 	anims = new Set<Animation>();
+	scripts: Scripts | null = null;
 
 	constructor(svg: SVGSVGElement, P: PProgram, loop: boolean) {
 		this.svg = svg;
@@ -943,6 +966,10 @@ class Player {
 		this.loop = loop;
 		this.defs = (svg.querySelector("defs") as SVGDefsElement) ?? (svg.insertBefore(el("defs"), svg.firstChild) as SVGDefsElement);
 		if (__SOUND__ && Object.keys(P.snd).length) this.mixer = new Mixer(this);
+		if (__SCRIPTS__) {
+			const code = (window as unknown as { __f2s?: Record<string, Record<string, ScriptFactory>> }).__f2s?.[svg.id];
+			if (code) this.scripts = new Scripts(this, Clip, code, trackAt);
+		}
 		// (capturing: before a button switches its drawing under the pointer)
 		if (__EVENTS__) for (const type in EVENT_CODES) svg.addEventListener(type, (e) => hear(this, e), true);
 		this.reset();
@@ -963,6 +990,7 @@ class Player {
 		this.root = new Clip(this, this.P.tl[this.P.root]!, -1);
 		this.root.node.setAttribute("class", "f2s-stage");
 		this.svg.appendChild(this.root.node);
+		if (__SCRIPTS__) this.scripts?.started(this.root);
 		this.root.gotoFrame(0, true);
 		this.time = 0;
 		this.root.render(0);
