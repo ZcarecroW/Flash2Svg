@@ -10,6 +10,7 @@ import type { createCodecs } from "../../core/codecs.ts";
 import type { SceneModel } from "../../core/model.ts";
 import { encodeFonts, fontFiles, fontFolders, needsFonts, type FontCodecs, type FontFs } from "../../core/fonts.ts";
 import { exportRaster, type Rasterize } from "../../core/raster.ts";
+import { exportVideo } from "../../core/video.ts";
 import { evalJson, evalScript, extensionPath, fromFileUri, node, toFileUri } from "./cep.ts";
 
 export interface DocInfo {
@@ -112,6 +113,8 @@ function lazyBundle<T>(file: string, global: string, what: string): () => Promis
 	};
 }
 
+const isRaster = (f?: string) => f === "gif" || f === "webp" || f === "apng";
+
 /** SVG frames to pixels by the panel's browser (raster.ts). */
 const canvasRasterizer: Rasterize = async (svg, width, height) => {
 	const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
@@ -167,7 +170,7 @@ export async function docInfo(): Promise<DocInfo> {
 
 /** The file extension a format writes. */
 export function formatExt(format: string | undefined): string {
-	return format === "lottie" ? ".json" : format === "dotlottie" ? ".lottie" : format === "gif" ? ".gif" : format === "webp" ? ".webp" : ".svg";
+	return format === "lottie" ? ".json" : format === "dotlottie" ? ".lottie" : format === "gif" ? ".gif" : format === "webp" ? ".webp" : format === "apng" ? ".png" : format === "mp4" ? ".mp4" : format === "webm" ? ".webm" : ".svg";
 }
 
 export function defaultOutput(info: DocInfo, symbol?: string, ext = ".svg"): string {
@@ -186,7 +189,7 @@ export function defaultOutput(info: DocInfo, symbol?: string, ext = ".svg"): str
  */
 export function withExt(file: string, ext: string): string {
 	if (file.toLowerCase().endsWith(ext.toLowerCase())) return file;
-	return file.replace(/\.(svgz?|json|lottie|gif|webp)$/i, "") + ext;
+	return file.replace(/\.(svgz?|json|lottie|gif|webp|png|mp4|webm)$/i, "") + ext;
 }
 
 /**
@@ -305,7 +308,7 @@ async function exportInto(
 
 	// fonts of dynamic and input text (SVG formats); the font codecs (1 MB) load only for such text
 	const lottieOut = settings.format === "lottie" || settings.format === "dotlottie";
-	if (settings.embedFonts !== false && !settings.textAsOutlines && !lottieOut && settings.format !== "gif" && settings.format !== "webp" && needsFonts(model)) {
+	if (settings.embedFonts !== false && !settings.textAsOutlines && !lottieOut && !isRaster(settings.format) && settings.format !== "mp4" && settings.format !== "webm" && needsFonts(model)) {
 		check();
 		onProgress(0.88, "Embedding fonts");
 		const nd = nodeOrThrow();
@@ -334,18 +337,21 @@ async function exportInto(
 	const hooks = { gzip: (d: Uint8Array) => node.zlib.gzipSync(d, { level: 9 }) };
 	for (let r = 0; r < model.roots.length; r++) {
 		check();
-		const raster = settings.format === "gif" || settings.format === "webp";
-		onProgress(0.9 + (0.1 * r) / model.roots.length, raster ? "Drawing frames" : lottieOut ? "Writing Lottie" : "Compiling SVG");
-		const out = raster
-			? await exportRaster(
-					model,
-					files,
-					settings,
-					(svg, w, h) => (check(), canvasRasterizer(svg, w, h)),
-					settings.format === "webp" ? cancellable(await panelCodecs(), check) : null,
-					r,
-				)
-			: compileScene(model, files, settings, r, hooks);
+		const raster = isRaster(settings.format);
+		const video = settings.format === "mp4" || settings.format === "webm";
+		onProgress(0.9 + (0.1 * r) / model.roots.length, raster || video ? "Drawing frames" : lottieOut ? "Writing Lottie" : "Compiling SVG");
+		const out = video
+			? await exportVideo(model, files, settings, (svg, w, h) => (check(), canvasRasterizer(svg, w, h)), r)
+			: raster
+				? await exportRaster(
+						model,
+						files,
+						settings,
+						(svg, w, h) => (check(), canvasRasterizer(svg, w, h)),
+						settings.format === "webp" ? cancellable(await panelCodecs(), check) : null,
+						r,
+					)
+				: compileScene(model, files, settings, r, hooks);
 		outputs.push(out);
 		out.warnings.forEach((w) => warnings.add(w));
 		const rootName = model.timelines[model.roots[r]!]?.name ?? "";

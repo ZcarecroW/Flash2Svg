@@ -25,7 +25,7 @@ const HELP = `flash2svg <scene.json> [options]
                           <document>.svg, .json or .lottie next to the scene folder)
   --format <f>            smil (default) | css | player | static | lottie (JSON) | dotlottie (.lottie) |
                           auto (the player for sounds / mouse handlers, else CSS or SMIL) |
-                          gif | webp (animated raster fallbacks, e.g. for e-mail)
+                          gif | webp | apng (animated raster fallbacks, e.g. for e-mail)
   --frames <a-b>          frame range, 1-based inclusive (e.g. 1-24)
   --loop <m>              auto (follow stop() scripts) | always | never
   --begin <m>             auto | click | hover | manual | visible (when half on screen) |
@@ -104,7 +104,7 @@ async function main(argv: string[]) {
 				out = val();
 				break;
 			case "--format":
-				s.format = oneOf("smil", "css", "player", "static", "lottie", "dotlottie", "auto", "gif", "webp");
+				s.format = oneOf("smil", "css", "player", "static", "lottie", "dotlottie", "auto", "gif", "webp", "apng");
 				break;
 			case "--frames": {
 				const m = /^(\d+)(?:-(\d+))?$/.exec(val());
@@ -244,6 +244,7 @@ async function main(argv: string[]) {
 		s.format !== "dotlottie" &&
 		s.format !== "gif" &&
 		s.format !== "webp" &&
+		s.format !== "apng" &&
 		needsFonts(model)
 	) {
 		const { compress } = await import("woff2-encoder");
@@ -251,7 +252,7 @@ async function main(argv: string[]) {
 		model = r.model;
 		warnings = [...warnings, ...r.warnings];
 	}
-	const raster = s.format === "gif" || s.format === "webp";
+	const raster = s.format === "gif" || s.format === "webp" || s.format === "apng";
 	const kb = (n: number) => (n / 1024).toFixed(1);
 	// one file per root (several library symbols: <name>_<symbol>), as the panel writes them
 	const roots = model.roots.length;

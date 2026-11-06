@@ -21,9 +21,10 @@ import type { SceneModel } from "./model.ts";
 /**
  * "lottie": Lottie JSON; "dotlottie": the same in a .lottie archive with its bitmaps; "auto": the
  * JS player when sounds or mouse handlers need its script, else CSS or SMIL (see chooseFormat);
- * "gif" / "webp": animated raster fallbacks (raster.ts: exportRaster, async, instead of compileScene).
+ * "gif" / "webp" / "apng": animated raster fallbacks (raster.ts: exportRaster, async, instead of compileScene).
+ * "mp4" / "webm": video files (video.ts: exportVideo, in a browser with WebCodecs).
  */
-export type OutputFormat = "smil" | "css" | "player" | "static" | "lottie" | "dotlottie" | "auto" | "gif" | "webp";
+export type OutputFormat = "smil" | "css" | "player" | "static" | "lottie" | "dotlottie" | "auto" | "gif" | "webp" | "apng" | "mp4" | "webm";
 
 /** CSS plays transforms on the compositor (smoother, also in Safari): chosen up to this much larger than SMIL. */
 const CSS_SIZE_FACTOR = 1.15;
@@ -73,6 +74,8 @@ export interface ExportSettings extends ImageSettings, SoundSettings {
 	 * frame): one blended drawing instead of a drawing per frame, checked against every frame.
 	 */
 	morph: boolean;
+	/** MP4 and WebM: kilobits a second (0: enough for a clean picture at this size). */
+	videoBitrate?: number;
 	/** Lottie JSON: sounds as audio layers (lottie-web plays them, with Howler on the page). */
 	lottieSounds?: boolean;
 	/** Decimals on screen (shown larger or smaller, a part gets more or fewer, see precision.ts). */

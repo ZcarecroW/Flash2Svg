@@ -4,8 +4,9 @@
  * (nested movie clips at their own playheads), rasterised by the host (resvg's WebAssembly in the
  * CLI, the browser in the panel) and encoded as they are drawn. Identical neighbours merge into
  * one longer frame; WebP frames keep only the rectangle that changed (it replaces what was there,
- * alpha included).
+ * alpha included). APNG is lossless, with alpha; it stores the same rectangles.
  */
+import { zlibSync } from "fflate";
 import * as gifenc from "gifenc";
 import { createContext, type FileSource } from "./context.ts";
 import { DEFAULT_SETTINGS, type CompileOutput, type ExportSettings } from "./compile.ts";
@@ -30,7 +31,7 @@ export const MAX_RASTER_FRAMES = 1500;
 const SAMPLE_SIZE = 640;
 
 /** The ticks of one root, drawn one at a time (see tickSource). */
-interface Ticks {
+export interface Ticks {
 	count: number;
 	/** The file repeats from the start. */
 	loop: boolean;
@@ -46,20 +47,20 @@ interface Ticks {
  * repeat from the start, so a part that plays once first (an intro) comes again each time
  * (warned). A frame range, and "always", play the frames in order.
  */
-function tickSource(model: SceneModel, files: FileSource, s: ExportSettings, rasterize: Rasterize, warn: (m: string) => void, rootIndex: number): Ticks {
+export function tickSource(model: SceneModel, files: FileSource, s: ExportSettings, rasterize: Rasterize, warn: (m: string) => void, rootIndex: number, most = MAX_RASTER_FRAMES, once = false): Ticks {
 	model = joinScenes(model);
 	const ctx = createContext(model, files, { smooth: true, includeHiddenLayers: s.includeHiddenLayers, includeGuides: s.includeGuides, digits: s.digits });
 	const rootId = model.roots[rootIndex];
 	if (!rootId || !ctx.programs[rootId]) throw new Error("Nothing to export");
 	const { frames: rootFrames, horizon } = rootTicks(ctx, rootId, { loop: s.loop, startFrame: s.startFrame, endFrame: s.endFrame });
-	if (horizon.tail > 0)
+	if (horizon.tail > 0 && !once)
 		warn(
 			`GIF and WebP can only repeat from the start: the first ${(horizon.tail / horizon.fps).toFixed(1)} s (before the part that loops) play again each time`,
 		);
 	let count = rootFrames.length;
-	if (count > MAX_RASTER_FRAMES) {
-		warn(`The animation has ${count} frames: the raster export keeps the first ${MAX_RASTER_FRAMES}`);
-		count = MAX_RASTER_FRAMES;
+	if (count > most) {
+		warn(`The animation has ${count} frames: this export keeps the first ${most}`);
+		count = most;
 	}
 	const { width, height, frameRate } = model.doc;
 	const W = Math.max(1, Math.round(width)),
@@ -316,6 +317,94 @@ function webpWriter(loop: boolean, codecs: Codecs, quality: number, lossless: bo
 	};
 }
 
+/** The scanlines of a picture, each with the PNG filter that suits it, deflated. */
+function pngData(p: Pixels): Uint8Array {
+	const { data, width: w, height: h } = p;
+	const row = w * 4;
+	const raw = new Uint8Array((row + 1) * h);
+	const tries = [0, 1, 2, 3, 4].map(() => new Uint8Array(row));
+	for (let y = 0; y < h; y++) {
+		const cur = y * row;
+		const up = cur - row;
+		const sums = [0, 0, 0, 0, 0];
+		for (let i = 0; i < row; i++) {
+			const v = data[cur + i]!;
+			const a = i >= 4 ? data[cur + i - 4]! : 0;
+			const b = y ? data[up + i]! : 0;
+			const c = y && i >= 4 ? data[up + i - 4]! : 0;
+			const pa = Math.abs(b - c),
+				pb = Math.abs(a - c),
+				pc = Math.abs(a + b - 2 * c);
+			const paeth = pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+			const out = [v, v - a, v - b, v - ((a + b) >> 1), v - paeth];
+			for (let k = 0; k < 5; k++) {
+				const d = out[k]! & 255;
+				tries[k]![i] = d;
+				sums[k]! += d < 128 ? d : 256 - d;
+			}
+		}
+		let best = 0;
+		for (let k = 1; k < 5; k++) if (sums[k]! < sums[best]!) best = k;
+		const at = y * (row + 1);
+		raw[at] = best;
+		raw.set(tries[best]!, at + 1);
+	}
+	return zlibSync(raw, { level: 9 });
+}
+
+const CRC = new Int32Array(256).map((_, n) => {
+	let c = n;
+	for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+	return c;
+});
+
+const be32 = (v: number) => Uint8Array.of((v >>> 24) & 255, (v >>> 16) & 255, (v >> 8) & 255, v & 255);
+const be16 = (v: number) => Uint8Array.of((v >> 8) & 255, v & 255);
+
+function pngChunk(tag: string, data: Uint8Array): Uint8Array {
+	const body = concat([ascii(tag), data]);
+	let c = -1;
+	for (const b of body) c = CRC[(c ^ b) & 255]! ^ (c >>> 8);
+	return concat([be32(data.length), body, be32((c ^ -1) >>> 0)]);
+}
+
+/**
+ * Animated PNG, written as the frames come: 32-bit, each frame only the rectangle that changed,
+ * replacing what was there. Lossless with alpha; bigger than the others.
+ */
+function apngWriter(loop: boolean): Writer {
+	const chunks: Uint8Array[] = [];
+	let prev: Pixels | null = null;
+	let W = 1,
+		H = 1,
+		seq = 0,
+		frames = 0;
+	// milliseconds, at least 11 (browsers slow 10 and less down to 100)
+	const pacer = new Pacer(1, 11, (f, ms) => {
+		const p = f.pixels;
+		if (!prev) {
+			W = p.width;
+			H = p.height;
+		}
+		const r = !prev ? { x: 0, y: 0, w: W, h: H } : (changed(prev, p) ?? { x: 0, y: 0, w: 1, h: 1 });
+		const part = r.w === W && r.h === H ? p : crop(p, r);
+		const body = pngData(part);
+		chunks.push(pngChunk("fcTL", concat([be32(seq++), be32(r.w), be32(r.h), be32(r.x), be32(r.y), be16(Math.min(65535, ms)), be16(1000), Uint8Array.of(0, 0)])));
+		chunks.push(frames ? pngChunk("fdAT", concat([be32(seq++), body])) : pngChunk("IDAT", body));
+		frames++;
+		prev = p;
+	});
+	return {
+		add: (f) => pacer.add(f),
+		finish: () => {
+			void pacer.finish();
+			const ihdr = pngChunk("IHDR", concat([be32(W), be32(H), Uint8Array.of(8, 6, 0, 0, 0)]));
+			const actl = pngChunk("acTL", concat([be32(frames), be32(loop ? 0 : 1)]));
+			return concat([Uint8Array.of(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a), ihdr, actl, ...chunks, pngChunk("IEND", new Uint8Array(0))]);
+		},
+	};
+}
+
 /** Animated WebP of a list of frames; `mode` "auto" decides from the first, middle and last one (see webpLossless). */
 export async function encodeAnimatedWebp(
 	all: RasterFrame[],
@@ -369,7 +458,7 @@ function concat(parts: Uint8Array[]): Uint8Array {
 }
 
 /**
- * Format "gif" or "webp" (animated): the frames rasterised and encoded as they are drawn — a few
+ * Format "gif", "webp" or "apng" (animated): the frames rasterised and encoded as they are drawn — a few
  * pictures in memory, never all of them (a 4 s full-HD animation held 2.1 GB before). WebP is
  * lossy at the image quality (default 80) or lossless, whichever suits the drawing. The output
  * counts as images in the size overview.
@@ -384,14 +473,17 @@ export async function exportRaster(
 ): Promise<CompileOutput> {
 	const s: ExportSettings = { ...DEFAULT_SETTINGS, ...partial };
 	const warnings: string[] = [];
-	if (Object.keys(model.sounds).length) warnings.push("Sounds aren't part of a GIF or WebP animation");
+	const name = s.format === "gif" ? "GIF" : s.format === "apng" ? "APNG" : "WebP";
+	if (Object.keys(model.sounds).length) warnings.push(`Sounds aren't part of a ${name} animation`);
 	if (Object.values(model.timelines).some((t) => t.layers.some((l) => l.keyframes.some((k) => k.elements.some((e) => e.kind === "video")))))
-		warnings.push("Videos aren't part of a GIF or WebP animation (their place stays empty)");
+		warnings.push(`Videos aren't part of a ${name} animation (their place stays empty)`);
 	const gif = s.format === "gif";
-	if (!gif && !codecs) throw new Error("Animated WebP needs the image codecs");
+	const apng = s.format === "apng";
+	if (!gif && !apng && !codecs) throw new Error("Animated WebP needs the image codecs");
 	const src = tickSource(model, files, s, rasterize, (m) => warnings.push(m), rootIndex);
 	let writer: Writer;
 	if (gif) writer = gifWriter(src.loop);
+	else if (apng) writer = apngWriter(src.loop);
 	else {
 		const quality = Number.isFinite(s.imageQuality) && s.imageQuality > 0 ? Math.min(100, s.imageQuality) : 80;
 		// lossy or lossless: decided on the first, middle and last tick, drawn for it at most 640
@@ -405,7 +497,7 @@ export async function exportRaster(
 	const ms = await eachFrame(src, (f) => writer.add(f));
 	const bytes = await writer.finish();
 	return {
-		files: [{ suffix: "", svg: "", ext: gif ? ".gif" : ".webp", bytes }],
+		files: [{ suffix: "", svg: "", ext: gif ? ".gif" : apng ? ".png" : ".webp", bytes }],
 		assets: [],
 		warnings,
 		stats: {

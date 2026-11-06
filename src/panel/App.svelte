@@ -64,7 +64,10 @@
 		{ id: "static", name: "Frames", icon: "layers", hint: "One still SVG per frame (no animation)." },
 		{ id: "lottie", name: "Lottie", icon: "animation-14", hint: "Lottie JSON for lottie-web, dotLottie, Skottie and the iOS / Android players." },
 		{ id: "dotlottie", name: ".lottie", icon: "archive", hint: "dotLottie: the Lottie animation and its bitmaps in one compressed file." },
+		{ id: "mp4", name: "MP4", icon: "image-2", hint: "A video file, with its sound: for social media and video players. H.264 where this Animate has the encoder." },
+		{ id: "webm", name: "WebM", icon: "image-2", hint: "A video file (VP9), with its sound: small, for the web." },
 		{ id: "gif", name: "GIF", icon: "image-2", hint: "Animated GIF (256 colours a frame): a fallback where SVG doesn't play, e.g. e-mail." },
+		{ id: "apng", name: "APNG", icon: "image-2", hint: "Animated PNG: lossless with transparency, in every browser. Bigger than the others." },
 		{
 			id: "webp",
 			name: "WebP",

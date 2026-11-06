@@ -31,7 +31,7 @@ export const BUILTIN_PRESETS: Record<string, Partial<ExportSettings>> = {
  * in the panel's storage) can name ones this one doesn't have; those keep their default.
  */
 const CHOICES: { [K in keyof ExportSettings]?: readonly string[] } = {
-	format: ["auto", "smil", "css", "player", "static", "lottie", "dotlottie", "gif", "webp"],
+	format: ["auto", "smil", "css", "player", "static", "lottie", "dotlottie", "gif", "webp", "apng", "mp4", "webm"],
 	loop: ["auto", "always", "never"],
 	begin: ["auto", "click", "hover", "manual", "visible", "scroll"],
 	scrollRange: ["visible", "crossing", "page"],
