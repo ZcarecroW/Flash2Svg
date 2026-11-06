@@ -409,9 +409,10 @@ export function sizeParts(svg: string): SizeParts {
 	let runtime = 0;
 	let animation = count(/<style\b[^>]*>[\s\S]*?<\/style>/g, svg) + count(/<(?:animate|animateTransform|animateMotion|set)\b[^>]*>/g, svg);
 	for (const m of svg.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)) {
-		// the player's timeline data (its sounds counted as sounds), or the player itself
-		if (/application\/json/.test(m[1]!)) animation += m[0].length - count(/data:audio\/[^"\\]*/g, m[2]!);
-		else runtime += m[0].length;
+		// the player's timeline data, or the player itself; the sounds in them count as sounds
+		const size = m[0].length - count(/data:audio\/[^"\\]*/g, m[2]!);
+		if (/application\/json/.test(m[1]!)) animation += size;
+		else runtime += size;
 	}
 	// fonts sit in the <style> too
 	const fonts = count(/@font-face\{[^}]*\}/g, svg);

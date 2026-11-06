@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { sizeParts } from "../../src/core/compile.ts";
 import { controlNode } from "../../src/core/emit/controls.ts";
 import { inputNode } from "../../src/core/emit/text.ts";
 import type { ControlElement, TextElement } from "../../src/core/model.ts";
@@ -64,5 +65,15 @@ describe("Input text as HTML", () => {
 		const s = serialize(inputNode(field({ matrix: [2, 0, 0, 2, 0, 0], width: 200, height: 40 }), 2));
 		expect(s).toContain('width="100"');
 		expect(s).toContain('height="20"');
+	});
+});
+
+describe("The size overview", () => {
+	it("counts a sound once, also in a script of its own", () => {
+		const sound = "data:audio/mpeg;base64,AAAA";
+		const svg = `<svg><script>var a="${sound}";</script></svg>`;
+		const p = sizeParts(svg);
+		expect(p.sounds).toBe(sound.length);
+		expect(p.drawing + p.animation + p.images + p.sounds + p.runtime + p.fonts).toBe(svg.length);
 	});
 });
