@@ -91,6 +91,8 @@ export interface BakedInstance extends NodeBase {
 	child: BakedTimeline | null;
 	/** Buttons: Over and Down states (Up is `child`). */
 	states?: BakedTimeline[];
+	/** Buttons with states: what takes the pointer (the Hit frame, or Up without one). */
+	hit?: BakedTimeline;
 }
 /** Frames of a shape tween drawn as one morphing drawing. */
 export interface BakedMorph extends NodeBase {
@@ -407,7 +409,9 @@ class Baker {
 					if (item.motion.rot) node.motion.rot = this.mapTrack(item.motion.rot, runs);
 				}
 				if (item.symbolType === "button" && childProg && childProg.frameCount > 1) {
-					node.states = [1, 2].filter((f) => f < childProg.frameCount).map((f) => this.timeline(childProg, new Int32Array(this.H).fill(f), depth + 1));
+					const state = (f: number) => this.timeline(childProg, new Int32Array(this.H).fill(f), depth + 1);
+					node.states = [1, 2].filter((f) => f < childProg.frameCount).map(state);
+					node.hit = state(childProg.frameCount > 3 ? 3 : 0);
 				}
 				bl.nodes.push(node);
 				return;

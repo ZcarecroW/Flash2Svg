@@ -89,6 +89,12 @@ export interface LayerData {
 	rig?: (Mat | null)[];
 	/** Advanced layer effects (Animate 2020+), at keyframes, when present. */
 	effects?: LayerEffect[];
+	/** An armature (pose layer): the keyframes are its frames, one motion of bones. */
+	ik?: boolean;
+	/** Layer depth per frame (root timelines; negative is nearer), when it isn't 0 throughout. */
+	depth?: number[];
+	/** Attached to the camera: the layer doesn't move with it. */
+	attached?: boolean;
 }
 
 export interface LayerEffect {
@@ -278,6 +284,8 @@ export interface CameraFrame {
 	y: number;
 	zoom: number;
 	rotation: number;
+	/** The camera's depth, when it isn't 0. */
+	z?: number;
 	tint?: { color: string; percent: number };
 	colorFilter?: { brightness: number; contrast: number; saturation: number; hue: number };
 }

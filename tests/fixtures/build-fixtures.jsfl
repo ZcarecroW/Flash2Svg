@@ -111,6 +111,10 @@
 	}
 	function build(name, fn) {
 		if (only && only.indexOf("," + name + ",") == -1) return;
+		// (written as it goes: what was reached when Animate crashes)
+		log.push(name + ": building");
+		FLfile.write(outDir + "/build-log.txt", log.join("\n"));
+		if (fl.__checkpoint) fl.__checkpoint(name);
 		try {
 			fn();
 			save(name);
@@ -2604,6 +2608,238 @@
 		m2.scaleX = m2.scaleY = 0.8;
 		extendAll(60);
 	});
+
+	// ---------------------------------------------------------------- f61: layer depth and the camera
+	build("f61-depth", function () {
+		newDoc("timeline", 400, 300, 24);
+		boxSymbol();
+		layer("sky");
+		rect(-200, -150, 600, 450, "#DDEEFF");
+		layer("far");
+		place("box", 80, 90, 0);
+		place("box", 320, 90, 0);
+		layer("mid");
+		rect(150, 130, 250, 190, "#33AA33");
+		layer("near");
+		place("box", 200, 240, 0);
+		layer("hud");
+		rect(10, 10, 110, 30, "#222222");
+		// a masked layer at a depth of its own, its mask at another
+		layer("seen");
+		rect(280, 180, 390, 290, "#CC4488");
+		layer("window");
+		oval(290, 190, 380, 280, "#000000");
+		extendAll(48);
+		var t = tl();
+		t.camera.cameraEnabled = true;
+		var idx = {};
+		for (var i = 0; i < t.layers.length; i++) idx[t.layers[i].name] = i;
+		t.layers[idx.window].layerType = "mask";
+		t.layers[idx.seen].layerType = "masked";
+		t.layers[idx.seen].parentLayer = t.layers[idx.window];
+		t.layers[idx.window].setZDepthAtFrame(0, -60);
+		t.layers[idx.seen].setZDepthAtFrame(0, 120);
+		t.layers[idx.far].setZDepthAtFrame(0, 300);
+		t.layers[idx.sky].setZDepthAtFrame(0, 900);
+		t.layers[idx.near].setZDepthAtFrame(0, -150);
+		t.layers[idx.hud].lockForCamera = true;
+		var ci = -1;
+		for (i = 0; i < t.layers.length; i++) if (t.layers[i].layerType == "camera") ci = i;
+		t.setSelectedLayers(ci);
+		t.insertKeyframe(47);
+		t.currentFrame = 47;
+		var ce = t.layers[ci].frames[47].elements[0];
+		ce.x = ce.x + 80;
+		ce.y = ce.y - 30;
+		t.setSelectedLayers(ci);
+		t.setSelectedFrames(0, 1);
+		t.createMotionTween();
+		var z = [];
+		for (i = 0; i < t.layers.length; i++) z.push(t.layers[i].name + "=" + t.layers[i].getZDepthAtFrame(0));
+		log.push("f61 depths: " + z.join(", "));
+	});
+
+	// ---------------------------------------------------------------- f62: layer depth changing over time, camera depth
+	build("f62-depth2", function () {
+		newDoc("timeline", 400, 300, 24);
+		boxSymbol();
+		layer("a");
+		place("box", 120, 150, 0);
+		layer("b");
+		place("box", 280, 150, 0);
+		// top of the timeline but farther away than b, and than a until a passes it
+		layer("c");
+		rect(60, 110, 340, 190, "#EEDD55");
+		extendAll(24);
+		var t = tl();
+		t.camera.cameraEnabled = true;
+		var idx = {};
+		for (var i = 0; i < t.layers.length; i++) idx[t.layers[i].name] = i;
+		// keyframes at 0 and 23 with different depths, a classic tween between
+		t.setSelectedLayers(idx.a);
+		t.insertKeyframe(23);
+		t.layers[idx.a].setZDepthAtFrame(23, 400);
+		t.setSelectedLayers(idx.a);
+		t.setSelectedFrames(0, 1);
+		t.createMotionTween();
+		t.layers[idx.c].setZDepthAtFrame(0, 200);
+		// held change
+		t.setSelectedLayers(idx.b);
+		t.insertKeyframe(12);
+		t.layers[idx.b].setZDepthAtFrame(12, -200);
+		var r = [];
+		for (var f = 0; f < 24; f += 6) r.push(f + ":" + t.layers[idx.a].getZDepthAtFrame(f) + "/" + t.layers[idx.b].getZDepthAtFrame(f));
+		log.push("f62 depth a/b: " + r.join(" "));
+		try { t.camera.setZDepth(0, -100); log.push("f62 camera z " + t.camera.getZDepth(0)); } catch (e) { log.push("f62 setZDepth: " + e); }
+	});
+
+	// ---------------------------------------------------------------- f63: 3D rotation and translation
+	build("f63-3d", function () {
+		newDoc("timeline", 400, 300, 24);
+		symbol("card", "movie clip", function () {
+			rect(-50, -35, 50, 35, "#CC6633", "#552200");
+			oval(-20, -20, 20, 20, "#FFEE88");
+		});
+		var turned = function (lname, name, x, y, rot, move) {
+			layer(lname);
+			var e = place(name, x, y, 0);
+			doc.selectNone();
+			doc.selection = [e];
+			if (rot) doc.rotate3DSelection(rot, true);
+			if (move) doc.translate3DSelection(move, true);
+			doc.selectNone();
+		};
+		turned("y", "card", 90, 80, { x: 0, y: 50, z: 0 });
+		turned("x", "card", 220, 80, { x: 50, y: 0, z: 0 });
+		turned("xyz", "card", 330, 90, { x: 30, y: 40, z: 20 });
+		turned("near", "card", 100, 210, null, { x: 0, y: 0, z: -200 });
+		turned("far", "card", 220, 210, null, { x: 0, y: 0, z: 300 });
+		turned("both", "card", 330, 210, { x: 0, y: -60, z: 0 }, { x: 0, y: 0, z: 150 });
+		extendAll(12);
+		var t = tl(), r = [];
+		for (var i = 0; i < t.layers.length; i++) {
+			var els = t.layers[i].frames[0].elements;
+			if (!els.length || els[0].elementType != "instance") continue;
+			var m = els[0].matrix, q = els[0].matrix3D;
+			r.push(t.layers[i].name + " is3D " + els[0].is3D + " m " + [m.a, m.b, m.c, m.d, m.tx, m.ty].join(",") + " m3 " + [q.m00, q.m01, q.m02, q.m10, q.m11, q.m12, q.m20, q.m21, q.m22, q.m30, q.m31, q.m32].join(","));
+		}
+		log.push("f63: " + r.join(" | "));
+	});
+
+	// ---------------------------------------------------------------- f64: 3D tween, view angle and vanishing point
+	build("f64-3d2", function () {
+		newDoc("timeline", 400, 300, 24);
+		symbol("card", "movie clip", function () {
+			rect(-60, -40, 60, 40, "#3366CC", "#112244");
+			rect(-40, -10, 0, 10, "#FFCC00");
+		});
+		doc.setStageViewAngle(80);
+		layer("spin");
+		place("card", 130, 150, 0);
+		var t = tl();
+		var li = t.currentLayer;
+		t.insertFrames(23, false, 1);
+		try {
+			t.setSelectedLayers(li);
+			t.createMotionObjectTween(0, 23);
+			t.currentFrame = 23;
+			var e2 = t.layers[li].frames[23].elements[0];
+			doc.selectNone();
+			doc.selection = [e2];
+			doc.rotate3DSelection({ x: 0, y: 170, z: 0 }, true);
+			log.push("f64 tween: " + t.layers[li].frames[0].tweenType);
+		} catch (ex2) { log.push("f64 motion tween: " + ex2); }
+		layer("still");
+		var s = place("card", 300, 150, 0);
+		doc.selectNone();
+		doc.selection = [s];
+		doc.rotate3DSelection({ x: 40, y: 0, z: 0 }, true);
+		extendAll(24);
+	});
+
+	// ---------------------------------------------------------------- f65: layer parenting with scale, skew and flip
+	build("f65-rig2", function () {
+		newDoc("timeline", 500, 300, 24);
+		boxSymbol();
+		symbol("dot", "movie clip", function () { oval(-10, -10, 10, 10, "#CC0000"); });
+		layer("scaled");
+		classicTween("box", 110, 150, 23, function (el) { el.scaleX = 2; el.scaleY = 0.6; });
+		layer("skewed");
+		classicTween("box", 250, 150, 23, function (el) { el.skewX = 30; el.skewY = -20; });
+		layer("flipped");
+		classicTween("box", 390, 150, 23, function (el) { el.scaleX = -1; });
+		var kids = ["scaled", "skewed", "flipped"];
+		for (var k = 0; k < 3; k++) {
+			layer(kids[k] + "Child");
+			var x = [110, 250, 390][k];
+			classicTween("dot", x + 50, 100, 23, function (el) { el.y = 200; });
+		}
+		extendAll(24);
+		var t = tl(), idx = {};
+		for (var j = 0; j < t.layers.length; j++) idx[t.layers[j].name] = j;
+		for (k = 0; k < 3; k++) {
+			var child = t.layers[idx[kids[k] + "Child"]];
+			child.setRigParentAtFrame(t.layers[idx[kids[k]]], 0);
+			child.setRigParentAtFrame(t.layers[idx[kids[k]]], 23);
+		}
+		var rm = t.layers[idx.flippedChild].getRigMatrixAtFrame(12);
+		log.push("f65 rig matrix@12: " + [rm.a, rm.b, rm.c, rm.d, rm.tx, rm.ty].join(","));
+	});
+
+	// ---------------------------------------------------------------- f66: button hit areas
+	build("f66-hit", function () {
+		newDoc("timeline", 400, 200, 24);
+		// the hit area is much larger than the button
+		symbol("wide hit", "button", function () {
+			var t = tl();
+			for (var i = 1; i < 4; i++) t.insertBlankKeyframe(i);
+			var c = ["#CC3333", "#33CC33", "#3333CC"];
+			for (i = 0; i < 3; i++) { t.currentFrame = i; rect(-20, -20, 20, 20, c[i]); }
+			t.currentFrame = 3;
+			rect(-70, -60, 70, 60, "#000000");
+		});
+		// invisible: only a Hit frame
+		symbol("invisible", "button", function () {
+			var t = tl();
+			for (var i = 1; i < 4; i++) t.insertBlankKeyframe(i);
+			t.currentFrame = 3;
+			rect(-40, -40, 40, 40, "#000000");
+		});
+		// no Hit frame: the Up art's shape is the hit area
+		symbol("own hit", "button", function () {
+			var t = tl();
+			t.currentFrame = 0;
+			oval(-30, -30, 30, 30, "#996600");
+			t.insertKeyframe(1);
+			t.insertKeyframe(2);
+		});
+		layer("ui");
+		var a = place("wide hit", 90, 100, 0);
+		var b = place("invisible", 210, 100, 0);
+		var c = place("own hit", 320, 100, 0);
+		a.name = "a"; b.name = "b"; c.name = "c";
+	});
+
+	/** A document written as XFL by scripts/build-fixtures.mjs (what JSFL can't make), saved as FLA. */
+	function buildXfl(name, fn) {
+		if (only && only.indexOf("," + name + ",") == -1) return;
+		try {
+			doc = fl.openDocument(root + "/xfl/" + name + "/" + name + ".xfl");
+			lib = doc.library;
+			if (fn) fn();
+			var uri = outDir + "/" + name + ".fla";
+			if (FLfile.exists(uri)) FLfile.remove(uri);
+			var ok = fl.saveDocument(doc, uri);
+			fl.closeDocument(doc, false);
+			log.push(name + ": " + (ok ? "saved" : "SAVE FAILED"));
+		} catch (e) {
+			log.push(name + ": ERROR " + e + (e.lineNumber ? " line " + e.lineNumber : ""));
+			try { fl.closeDocument(doc, false); } catch (e2) {}
+		}
+	}
+	buildXfl("f67-ik");
+	buildXfl("f68-ikshape");
+	buildXfl("f69-iknested");
 
 	FLfile.write(outDir + "/build-log.txt", log.join("\n"));
 	fl.closeAll(false);

@@ -470,11 +470,18 @@ class Writer {
 		}
 		let inner: XmlNode = this.childRef(n.child);
 		if (n.states?.length) {
-			// Button states driven by CSS :hover / :active (works wherever the SVG is interactive)
+			// Button states driven by CSS :hover / :active (works wherever the SVG is interactive).
+			// The pointer meets only the Hit frame, drawn invisibly over the states (a shape with
+			// opacity 0 still takes the pointer): it doesn't change with them, and can be larger
+			// than what shows or be all there is.
 			const names = ["up", "over", "down"];
 			const parts = [el("g", { class: "f2s-up" }, [inner]), ...n.states.map((s, i) => el("g", { class: `f2s-${names[i + 1]}` }, [this.childRef(s)]))];
+			parts.push(el("g", { class: "f2s-hit", opacity: "0" }, [this.childRef(n.hit!)]));
 			inner = el("g", { class: "f2s-btn", style: "cursor:pointer" }, parts);
 			this.buttons = true;
+		} else if (n.item.symbolType === "button") {
+			// one frame: nothing changes, but it is a button (the Hit area is its drawing)
+			inner = el("g", { style: "cursor:pointer" }, [inner]);
 		}
 
 		// transform components, innermost first: translate(-tp) scale skewX rotate translate(x,y)
@@ -1149,7 +1156,8 @@ class Writer {
 		if (this.buttons) {
 			const s = `#${this.svgId}`;
 			this.doc.styles.push(
-				`${s} .f2s-over,${s} .f2s-down{display:none}` +
+				`${s} .f2s-btn>g{pointer-events:none}${s} .f2s-btn>.f2s-hit{pointer-events:auto}` +
+					`${s} .f2s-over,${s} .f2s-down{display:none}` +
 					`${s} .f2s-btn:hover>.f2s-over{display:inline}${s} .f2s-btn:hover>.f2s-up{display:none}` +
 					`${s} .f2s-btn:active>.f2s-down{display:inline}${s} .f2s-btn:active>.f2s-over,${s} .f2s-btn:active>.f2s-up{display:none}`,
 			);

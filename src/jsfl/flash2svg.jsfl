@@ -434,17 +434,48 @@
 			var r = item.scalingGridRect;
 			data.scalingGrid = { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
 		}
+		var armatures = bakeArmatures(tl);
 		var layers = tl.layers;
-		for (var li = 0; li < layers.length; li++) {
-			data.layers.push(readLayer(id, tl, layers, li));
-		}
+		for (var li = 0; li < layers.length; li++) data.layers.push(readLayer(id, tl, layers, li, armatures[li]));
 		if (!item) readCamera(tl, data);
 		job.model.timelines[id] = data;
 		job.message = "Reading " + data.name;
 		job.doneCount++;
 	}
 
-	function readLayer(tlId, tl, layers, li) {
+	/**
+	 * Armatures become frames in the working copy: JSFL shows an instance's first pose whatever the
+	 * frame (only its bounds follow the pose), and no tween object gives the poses in between.
+	 * Returns the indices of the layers that had one.
+	 */
+	function bakeArmatures(tl) {
+		var baked = {};
+		for (var li = 0; li < tl.layers.length; li++) {
+			var layer = tl.layers[li];
+			if (get(layer, "animationType", "none") != "IK pose") continue;
+			if (layer.locked) layer.locked = false;
+			tl.currentLayer = li;
+			tl.setSelectedLayers(li);
+			var f = 0;
+			while (f < layer.frameCount) {
+				var frame = layer.frames[f];
+				if (!frame) break;
+				var span = Math.max(1, frame.duration);
+				if (frame.tweenType == "IK pose") {
+					try {
+						frame.convertToFrameByFrameAnimation();
+						baked[li] = true;
+					} catch (e) {
+						warn("Could not read the armature on layer " + layer.name + ": only its first pose is exported (" + e + ")");
+					}
+				}
+				f += span;
+			}
+		}
+		return baked;
+	}
+
+	function readLayer(tlId, tl, layers, li, armature) {
 		var layer = layers[li];
 		var type = layer.layerType;
 		var parent = layer.parentLayer ? indexOf(layers, layer.parentLayer) : -1;
@@ -457,6 +488,7 @@
 			keyframes: []
 		};
 		if (type == "folder") return out;
+		if (armature) out.ik = true;
 		var guided = type == "guided";
 		var hasRig = false;
 		var f = 0;
@@ -464,11 +496,12 @@
 			var frame = layer.frames[f];
 			if (!frame) break;
 			var kf = readKeyframe(tlId, tl, layer, li, frame, f, guided);
+			if (armature) bentShape(tlId, layer, li, kf);
 			out.keyframes.push(kf);
 			if (layer.getRigParentAtFrame) {
 				try { if (isRigParent(layer.getRigParentAtFrame(f))) hasRig = true; } catch (e) {}
 			}
-			f += Math.max(1, frame.duration);
+			f += Math.max(1, kf.duration);
 		}
 		if (hasRig) {
 			out.rig = [];
@@ -479,7 +512,48 @@
 			}
 		}
 		readLayerEffects(layer, out);
+		if (tlId.indexOf("scene:") == 0) readDepth(layer, out);
 		return out;
+	}
+
+	/** Layer depth: a layer without any at its keyframes has none between them. */
+	function readDepth(layer, out) {
+		if (get(layer, "lockForCamera", false)) out.attached = true;
+		if (!layer.getZDepthAtFrame) return;
+		var used = false;
+		try {
+			for (var i = 0; i < out.keyframes.length; i++) if (layer.getZDepthAtFrame(out.keyframes[i].index)) used = true;
+			if (!used) return;
+			out.depth = [];
+			for (var f = 0; f < layer.frameCount; f++) out.depth.push(layer.getZDepthAtFrame(f));
+		} catch (e) {
+			warn("Layer depth of " + layer.name + ": " + e);
+		}
+	}
+
+	/**
+	 * A shape with bones, baked: a keyframe per frame with one shape in each. Read as a shape tween
+	 * over them, its frames can become one drawing that changes.
+	 */
+	function bentShape(tlId, layer, li, kf) {
+		var run = 1;
+		while (kf.index + run < layer.frameCount) {
+			var next = layer.frames[kf.index + run];
+			if (!next || next.startFrame != kf.index + run || next.duration != 1 || !oneShape(next)) break;
+			run++;
+		}
+		if (run < 3 || !oneShape(layer.frames[kf.index]) || kf.duration != 1) return;
+		var j = addAtlasJob(tlId, li, kf.index, -1, -1, run, "shapeTween");
+		var tw = { type: "shape", easing: 0, rotate: "none", rotateTimes: 0, orientToPath: false, scale: true, snap: false, sync: false, guided: false, shapeFrames: [] };
+		j.frameIds = tw.shapeFrames;
+		for (var k = 0; k < run; k++) tw.shapeFrames.push(j.id + "_" + k);
+		kf.duration = run;
+		kf.tween = tw;
+	}
+
+	function oneShape(frame) {
+		var els = frame.elements;
+		return els.length == 1 && els[0].elementType == "shape" && !els[0].isGroup;
 	}
 
 	/** getRigParentAtFrame() returns a layer (index or object) or nothing. */
@@ -972,6 +1046,8 @@
 				c.x = round(p.x); c.y = round(p.y);
 				c.zoom = round(cam.getZoom(f));
 				c.rotation = round(cam.getRotation(f));
+				var z = cam.getZDepth(f);
+				if (z) c.z = z;
 				if (cam.tintEnabled) c.tint = cam.getTint(f);
 				if (cam.colorFilterEnabled) c.colorFilter = cam.getColorFilter(f);
 			} catch (e) {

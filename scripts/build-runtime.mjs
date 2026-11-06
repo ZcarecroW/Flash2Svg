@@ -32,7 +32,7 @@ const INTERNAL = [
 	"lastM",
 	"filterRef",
 	"fcopies",
-	"fanim",
+	"fanim", "hit",
 	"colorWrap",
 	"vanim",
 	"anims",

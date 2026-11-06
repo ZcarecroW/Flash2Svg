@@ -19,6 +19,7 @@
 		if (!name) continue;
 		var fla = repo + "/tests/fixtures/fla/" + name + ".fla";
 		var t0 = new Date().getTime();
+		if (fl.__checkpoint) fl.__checkpoint(name);
 		try {
 			var doc = fl.openDocument(fla);
 			var res = Flash2Svg.run({ outDir: outRoot + "/" + name + "/model" });

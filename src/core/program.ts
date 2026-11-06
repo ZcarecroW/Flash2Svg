@@ -234,6 +234,7 @@ export function buildPrograms(model: SceneModel, opts: CompileOptions): CompileR
 	for (const id in model.timelines) {
 		wrapLayerEffects(programs, programs[id]!, model.timelines[id]!, warnings);
 		wrapRigs(programs, programs[id]!, opts);
+		wrapDepth(programs, programs[id]!, model.timelines[id]!, opts, warnings, model.doc);
 	}
 	for (const [id, list] of uses) {
 		const layered = list.filter((it) => it.blendMode === "layer");
@@ -351,20 +352,8 @@ function wrapRigs(programs: Record<string, Program>, prog: Program, opts: Compil
 			labels: [],
 			actions: {},
 		};
-		const transform = emptyTracks(TRANSFORM_PROPS);
-		let prevRot: number | undefined, prevSkw: number | undefined;
-		for (let f = 0; f < prog.frameCount; f++) {
-			const p = toProps(rig[Math.min(f, rig.length - 1)] ?? [1, 0, 0, 1, 0, 0], { x: 0, y: 0 });
-			if (prevRot !== undefined) p.rot = nearestAngle(p.rot, prevRot);
-			if (prevSkw !== undefined) p.skw = nearestAngle(p.skw, prevSkw);
-			prevRot = p.rot;
-			prevSkw = p.skw;
-			for (const k of TRANSFORM_PROPS) transform[k].push({ t: f, v: p[k], ease: opts.smooth ? "linear" : "hold" });
-		}
-		for (const k of TRANSFORM_PROPS) {
-			transform[k] = simplify(transform[k], TOL[k] / 2);
-			closeTrack(transform[k]);
-		}
+		const frames = Array.from({ length: prog.frameCount }, (_, t) => ({ t, m: rig[Math.min(t, rig.length - 1)] ?? ([1, 0, 0, 1, 0, 0] as Mat) }));
+		const transform = matrixTracks(frames, opts);
 		const bounds = pl.items.find((it): it is InstanceItem => it.kind === "instance")?.bounds ?? { left: 0, top: 0, width: 50, height: 50 };
 		const wrapper: InstanceItem = {
 			kind: "instance",
@@ -387,6 +376,156 @@ function wrapRigs(programs: Record<string, Program>, prog: Program, opts: Compil
 		pl.items = [wrapper];
 		delete pl.rig;
 	}
+}
+
+/** Tracks of a matrix per frame (angles unwrapped, interpolated when smooth, simplified). */
+function matrixTracks(frames: { t: number; m: Mat }[], opts: CompileOptions): TransformTracks {
+	const out = emptyTracks(TRANSFORM_PROPS);
+	let prevRot: number | undefined, prevSkw: number | undefined;
+	for (const { t, m } of frames) {
+		const p = toProps(m, { x: 0, y: 0 });
+		if (prevRot !== undefined) p.rot = nearestAngle(p.rot, prevRot);
+		if (prevSkw !== undefined) p.skw = nearestAngle(p.skw, prevSkw);
+		prevRot = p.rot;
+		prevSkw = p.skw;
+		for (const k of TRANSFORM_PROPS) out[k].push({ t, v: p[k], ease: opts.smooth ? "linear" : "hold" });
+	}
+	for (const k of TRANSFORM_PROPS) {
+		out[k] = simplify(out[k], TOL[k] / 2);
+		closeTrack(out[k]);
+	}
+	return out;
+}
+
+/**
+ * Layer depth (Animate 2019+) and layers attached to the camera. Each layer of the timeline is
+ * drawn through its own view: the camera's (none when attached), then scaled about the stage's
+ * centre by f / (f + z), where z is the layer's depth minus the camera's and f is Animate's fixed
+ * focal length: near layers grow and pan faster. Layers are stacked by depth, the farthest first,
+ * whatever their order in the timeline; a mask moves with the layers it masks.
+ *
+ * Each layer's items move into a synced graphic (as with rigs) whose instance carries the view.
+ * Where depths cross during the animation, the stacking order changes: a layer that has to change
+ * places ends there and goes on as a second instance at its new place.
+ */
+function wrapDepth(programs: Record<string, Program>, prog: Program, tl: TimelineData, opts: CompileOptions, warnings: string[], doc: SceneModel["doc"]) {
+	const info = (pl: ProgramLayer) => tl.layers[pl.index];
+	if (!tl.camera?.some((c) => c.z) && !prog.layers.some((pl) => info(pl)?.depth || info(pl)?.attached)) return;
+	const camLayer = tl.layers.findIndex((l) => l.type === "camera");
+	const views = camLayer >= 0 ? cameraMatrices(tl, camLayer, opts, warnings, doc) : [];
+	delete prog.view;
+	const n = prog.frameCount;
+	const zOf = (pl: ProgramLayer, f: number) => {
+		const l = info(pl);
+		const d = l?.depth;
+		return (d?.[Math.min(f, d.length - 1)] ?? 0) - (l?.attached ? 0 : (tl.camera?.[f]?.z ?? 0));
+	};
+	const cx = doc.width / 2,
+		cy = doc.height / 2;
+	const matrixOf = (pl: ProgramLayer, f: number): Mat => {
+		const z = zOf(pl, f);
+		// behind the camera: not drawn
+		const s = DEPTH_FOCAL + z > 0 ? DEPTH_FOCAL / (DEPTH_FOCAL + z) : 0;
+		const near: Mat = [s, 0, 0, s, cx * (1 - s), cy * (1 - s)];
+		const v = info(pl)?.attached ? null : views[f];
+		return v ? concatM(v, near) : near;
+	};
+
+	// a mask and what it masks stay together (at the mask's depth)
+	const units: { key: ProgramLayer; layers: ProgramLayer[] }[] = [];
+	const ofMask = new Map<number, (typeof units)[number]>();
+	for (const pl of prog.layers) {
+		const mask = pl.type === "mask" ? pl.index : pl.maskedBy;
+		const known = mask >= 0 ? ofMask.get(mask) : undefined;
+		if (known) {
+			known.layers.push(pl);
+			if (pl.type === "mask") known.key = pl;
+			continue;
+		}
+		const u = { key: pl, layers: [pl] };
+		units.push(u);
+		if (mask >= 0) ofMask.set(mask, u);
+	}
+	const orderAt = (f: number) =>
+		units
+			.map((u, i) => ({ i, z: zOf(u.key, f) }))
+			.sort((a, b) => b.z - a.z || a.i - b.i)
+			.map((x) => x.i);
+
+	// the places: a unit keeps its instance while it stays in order with the others
+	const places: { unit: number; start: number; end: number }[] = orderAt(0).map((unit) => ({ unit, start: 0, end: n }));
+	let order = orderAt(0);
+	for (let f = 1; f < n; f++) {
+		const next = orderAt(f);
+		if (next.every((u, i) => u === order[i])) continue;
+		const kept = commonOrder(order, next);
+		for (const p of places) if (p.end === n && !kept.has(p.unit)) p.end = f;
+		let at = -1;
+		for (const u of next) {
+			if (kept.has(u)) at = places.findIndex((p) => p.unit === u && p.end === n);
+			else places.splice(++at, 0, { unit: u, start: f, end: n });
+		}
+		order = next;
+	}
+
+	const made = new Set<string>();
+	const layers: ProgramLayer[] = [];
+	const copies = new Map<number, number>();
+	for (const place of places) {
+		const copy = copies.get(place.unit) ?? 0;
+		copies.set(place.unit, copy + 1);
+		const unit = units[place.unit]!;
+		// (a second instance of a masked unit needs its own layer numbers)
+		const number = (i: number) => (i < 0 || !copy ? i : 1e6 * copy + i);
+		for (const pl of unit.layers) {
+			const out: ProgramLayer = { ...pl, index: number(pl.index), maskedBy: number(pl.maskedBy) };
+			if (pl.items.length) {
+				const id = `${prog.id}#depth${pl.index}`;
+				if (!made.has(id)) {
+					made.add(id);
+					programs[id] = {
+						id,
+						name: `${prog.name} ${pl.name}`,
+						kind: "graphic",
+						frameCount: n,
+						layers: [{ index: 0, name: pl.name, type: "normal", maskedBy: -1, items: pl.items }],
+						labels: [],
+						actions: {},
+					};
+				}
+				const frames = Array.from({ length: place.end - place.start }, (_, i) => ({ t: place.start + i, m: matrixOf(pl, place.start + i) }));
+				out.items = [
+					{
+						...syncedWrapper(prog, id, `${prog.id}|${pl.index}|depth${copy}`, pl.items.find((it): it is InstanceItem => it.kind === "instance")?.bounds ?? { left: 0, top: 0, width: 50, height: 50 }),
+						start: place.start,
+						end: place.end,
+						transform: matrixTracks(frames, opts),
+						graphic: [{ start: place.start, end: place.end, loop: "play once", firstFrame: place.start, lastFrame: n - 1 }],
+					},
+				];
+			}
+			layers.push(out);
+		}
+	}
+	prog.layers = layers;
+}
+
+/** The members of a longest common subsequence of two orders. */
+function commonOrder(a: number[], b: number[]): Set<number> {
+	const len = a.map(() => new Array<number>(b.length + 1).fill(0));
+	len.push(new Array<number>(b.length + 1).fill(0));
+	for (let i = a.length - 1; i >= 0; i--)
+		for (let j = b.length - 1; j >= 0; j--) len[i]![j] = a[i] === b[j] ? len[i + 1]![j + 1]! + 1 : Math.max(len[i + 1]![j]!, len[i]![j + 1]!);
+	const out = new Set<number>();
+	for (let i = 0, j = 0; i < a.length && j < b.length; ) {
+		if (a[i] === b[j]) {
+			out.add(a[i]!);
+			i++;
+			j++;
+		} else if (len[i + 1]![j]! >= len[i]![j + 1]!) i++;
+		else j++;
+	}
+	return out;
 }
 
 /** A synced graphic instance showing `id` over the whole timeline of `prog`. */
@@ -621,35 +760,22 @@ function buildProgram(tl: TimelineData, opts: CompileOptions, warnings: string[]
 function cameraView(tl: TimelineData, li: number, opts: CompileOptions, warnings: string[], doc: SceneModel["doc"]): TransformTracks | undefined {
 	if (tl.camera?.some((c) => (c.tint && c.tint.percent) || (c.colorFilter && Object.values(c.colorFilter).some((v) => v))))
 		warnings.push("The camera's colour effects (tint, colour filter) aren't exported: only its position, zoom and rotation");
-	const layer = tl.layers[li]!;
-	const items = buildLayerItems(tl, layer, li, { ...opts, smooth: true }, warnings).filter((i): i is InstanceItem => i.kind === "instance");
-	if (!items.length) return undefined;
+	const frames = cameraMatrices(tl, li, opts, warnings, doc).flatMap((m, t) => (m ? [{ t, m }] : []));
+	return frames.length ? matrixTracks(frames, opts) : undefined;
+}
+
+/** The view transform per frame; null in frames without a camera. */
+function cameraMatrices(tl: TimelineData, li: number, opts: CompileOptions, warnings: string[], doc: SceneModel["doc"]): (Mat | null)[] {
+	const items = buildLayerItems(tl, tl.layers[li]!, li, { ...opts, smooth: true }, warnings).filter((i): i is InstanceItem => i.kind === "instance");
 	const cx = doc.width / 2,
 		cy = doc.height / 2;
-	const view = emptyTracks(TRANSFORM_PROPS);
-	let prevRot: number | undefined, prevSkw: number | undefined;
-	let lastFrame = -1;
-	for (let f = 0; f < tl.frameCount; f++) {
+	return Array.from({ length: tl.frameCount }, (_, f) => {
 		const it = items.find((i) => f >= i.start && f < i.end);
-		if (!it) continue;
+		if (!it) return null;
 		const p = {} as Record<TransformProp, number>;
 		for (const k of TRANSFORM_PROPS) p[k] = valueAtTrack(it.transform[k], f);
-		const cam = fromProps(p);
-		const v = concatM(invertM(cam), [1, 0, 0, 1, cx, cy]);
-		const props = toProps(v, { x: 0, y: 0 });
-		if (prevRot !== undefined) props.rot = nearestAngle(props.rot, prevRot);
-		if (prevSkw !== undefined) props.skw = nearestAngle(props.skw, prevSkw);
-		prevRot = props.rot;
-		prevSkw = props.skw;
-		for (const k of TRANSFORM_PROPS) view[k].push({ t: f, v: props[k], ease: opts.smooth ? "linear" : "hold" });
-		lastFrame = f;
-	}
-	if (lastFrame < 0) return undefined;
-	for (const k of TRANSFORM_PROPS) {
-		view[k] = simplify(view[k], TOL[k] / 2);
-		closeTrack(view[k]);
-	}
-	return view;
+		return concatM(invertM(fromProps(p)), [1, 0, 0, 1, cx, cy]);
+	});
 }
 
 function valueAtTrack(t: Track, f: number): number {
@@ -1043,9 +1169,11 @@ function finishInstance(
 		return c === undefined ? v : nearestAngle(v, c);
 	};
 
-	for (let si = 0; si < segs.length; si++) {
-		const s = segs[si]!;
-		const next = segs[si + 1];
+	// an armature's frames are one motion, like a motion tween's samples
+	const motions = layer.ik && segs.length > 1 ? [{ ...segs[0]!, b: n, kf: { ...segs[0]!.kf, tween: BONE_MOTION } }] : segs;
+	for (let si = 0; si < motions.length; si++) {
+		const s = motions[si]!;
+		const next = motions[si + 1];
 		const tw = s.kf.tween;
 		const isTween = !!tw && (tw.type === "classic" || tw.type === "motionObject") && s.b - s.a > 1;
 		// end state: for classic tweens the next keyframe in the span
@@ -1138,6 +1266,11 @@ function finishInstance(
 	void tl;
 	void layer;
 }
+
+/** Layer depth's distance of the stage from the camera: fixed in Animate. */
+export const DEPTH_FOCAL = 528.25;
+
+const BONE_MOTION: TweenData = { type: "motionObject", easing: 0, rotate: "none", rotateTimes: 0, orientToPath: false, scale: true, snap: false, sync: false, guided: false };
 
 /** How far beside its guide's true curve a frame may be (Animate follows an approximation of it). */
 const NEAR_GUIDE = 0.25;

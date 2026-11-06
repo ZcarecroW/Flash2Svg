@@ -4,6 +4,7 @@
 //   3. compares static renders with Animate's PNGs (resvg)
 //   4. checks SMIL / CSS / JS player output frame by frame in the browser (smooth and --steps)
 //   5. checks the JS player's API and interaction (labels, goto, loop, start modes, buttons, sounds)
+//      and the Hit frame of buttons with a real mouse (SMIL, CSS, player)
 //   6. inlines several exports into one HTML page (ids must not clash)
 //   7. checks the Lottie output (schema; lottie-web, dotLottie, Skottie frame by frame; smooth and --steps)
 //   8. runs the .lottie state machine in dotLottie (intro and tail, click start, loop, play once)
@@ -40,6 +41,7 @@ failed += run("e2e-compare.ts", names ? [names] : []);
 failed += run("e2e-browser.ts", [...(names ? [names] : []), "--formats=smil,css,player"]);
 failed += run("e2e-browser.ts", [...(names ? [names] : []), "--formats=smil,css,player", "--steps"]);
 if (!names) failed += run("e2e-player.ts");
+if (!names) failed += run("e2e-hit.ts");
 if (!names) failed += run("e2e-inline.ts");
 failed += run("e2e-lottie.ts", names ? [names] : []);
 failed += run("e2e-lottie.ts", [...(names ? [names] : []), "--steps"]);

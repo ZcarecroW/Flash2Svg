@@ -49,6 +49,12 @@ const TOLERANCE: Record<string, number> = {
 	"f49-fonts": 0.02,
 	"f55-strokes2": 0.008,
 	"f56-text3": 0.016,
+	// f61: at the first steps of the camera the edges of far layers lie differently in the pixels
+	// (0.42 % in one frame); f65: a stroke scaled below a pixel (see f35); f66: Animate shows an
+	// invisible button's hit area in cyan while authoring, Flash Player and the export don't
+	"f61-depth": 0.005,
+	"f65-rig2": 0.004,
+	"f66-hit": 0.085,
 	// the guide's demos: labels and headlines are static text Animate hints (banner, easing, filters;
 	// the filters' gradient bevel at its light setting also draws a 1 px softer rim, ~0.1 %); text is
 	// dynamic text as f49; the morph's star splits into pieces Animate's preview draws apart (f45)

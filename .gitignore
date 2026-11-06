@@ -9,6 +9,7 @@ cert/password.txt
 
 # Generated test material
 tests/fixtures/fla/
+tests/fixtures/xfl/
 tests/out/
 tools/probe/out*/
 tools/probe/*-result.txt

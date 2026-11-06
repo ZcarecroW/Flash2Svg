@@ -413,6 +413,8 @@ class Inst {
 	readonly it: PItem;
 	readonly owner: Clip;
 	clip: Clip | null = null;
+	/** Buttons: the Hit frame. */
+	private hit?: Clip;
 	private cm: SVGElement | null = null;
 	private seqIndex = -1;
 	/** shape tweens: the morph part drawn, copies of each part's drawing (and their elements) */
@@ -527,6 +529,19 @@ class Inst {
 				c.render(0);
 			}
 		};
+		// the pointer meets only the Hit frame (Up without one), invisible over the states; a
+		// button of one frame has nothing else to show
+		const c = this.clip!;
+		if (c.tl.n > 1) {
+			const hit = (this.hit = new Clip(this.owner.player, c.tl, 2));
+			hit.up = this.owner;
+			hit.frame = c.tl.n > 3 ? 3 : 0;
+			hit.sync();
+			hit.render(0);
+			hit.node.setAttribute("opacity", "0");
+			c.node.style.pointerEvents = "none";
+			g.appendChild(hit.node);
+		}
 		g.style.cursor = "pointer";
 		g.addEventListener("pointerenter", () => set(1));
 		g.addEventListener("pointerleave", () => set(0));
@@ -689,6 +704,7 @@ class Inst {
 			this.owner.player.anims.delete(a);
 		}
 		this.clip?.dispose();
+		this.hit?.dispose();
 		// its own filters go with it (movie clips are made anew each time they appear)
 		if (__MORPH__) for (const k in this.fcopies) this.fcopies[k]![0].remove();
 		this.cm?.parentElement?.remove();

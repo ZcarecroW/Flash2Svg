@@ -13,7 +13,7 @@ import { safeName } from "./artwork.ts";
 import type { FileSource } from "./context.ts";
 import { parseTransform } from "./geom.ts";
 import type { BitmapFill, Keyframe, LayerData, Mat, SceneModel } from "./model.ts";
-import { layerIncluded } from "./program.ts";
+import { DEPTH_FOCAL, layerIncluded } from "./program.ts";
 
 export interface BitmapScale {
 	/** Largest scale of the bitmap's x and y axis on the stage. */
@@ -111,6 +111,8 @@ export function bitmapScales(model: SceneModel, files: FileSource, opts: { inclu
 			// layer parenting: the parent's matrix per frame (none = not parented in that frame)
 			let rig = layer.rig?.length ? 0 : 1;
 			for (const m of layer.rig ?? []) rig = Math.max(rig, m ? norm(m) : 1);
+			// a near layer is drawn larger
+			for (const z of layer.depth ?? []) if (z < 0 && z > -DEPTH_FOCAL) rig = Math.max(rig, DEPTH_FOCAL / (DEPTH_FOCAL + z));
 			layer.keyframes.forEach((kf, k) => {
 				for (const e of kf.elements) {
 					if (e.kind === "bitmap") {

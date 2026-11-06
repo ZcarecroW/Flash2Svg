@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pngjs from "pngjs";
 import { outputProblems, runJsfl } from "./lib/animate.mjs";
+import { buildXflFixtures } from "../tests/fixtures/build-xfl.mjs";
 
 const { PNG } = pngjs;
 
@@ -196,6 +197,8 @@ mkdirSync(assets, { recursive: true });
 	enc.configure({ sampleRate: rate, channels: 1, bitrate: 96 });
 	writeFileSync(join(assets, "melody.mp3"), Buffer.concat([Buffer.from(enc.encode([mel])), Buffer.from(enc.finalize())]));
 }
+
+buildXflFixtures(join(repo, "tests", "fixtures", "xfl"));
 
 const onlyFile = join(flaDir, "fixtures-only.txt");
 if (process.argv[2]) writeFileSync(onlyFile, process.argv[2]);

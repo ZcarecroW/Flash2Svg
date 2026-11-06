@@ -46,6 +46,7 @@ export function joinScenes(model: SceneModel): SceneModel {
 					...(k.script ? { script: rewrite(k.script, { scene: t.name, offsets, label, zeroBased, next, prev }) } : {}),
 				})),
 				...(l.rig ? { rig: [...Array<null>(off).fill(null), ...l.rig] } : {}),
+				...(l.depth ? { depth: [...Array<number>(off).fill(0), ...l.depth] } : {}),
 				...(l.effects ? { effects: l.effects.map((e) => ({ ...e, frame: e.frame + off })) } : {}),
 			});
 		if (t.camera) {
