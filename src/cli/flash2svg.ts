@@ -46,9 +46,10 @@ const HELP = `flash2svg <scene.json> [options]
   --image-resolution <x>  bitmaps shown smaller are made smaller, down to x times the largest size
                           they are shown at (default 2; 0 = always every pixel)
   --image-full <name>     keep every pixel of this bitmap (library name); repeatable
-  --sound-format <f>      compressed sounds (player format): mp3 (default) | opus
+  --sound-format <f>      compressed sounds: mp3 (default) | opus
   --sound-bitrate <kbps>  on MP3's scale, Opus uses half (default: each sound's setting from Animate)
   --sound-mode <name=m>   per sound (library name): lossy | lossless (WAV); repeatable
+  --lottie-sounds         sounds as audio layers in Lottie JSON (lottie-web with Howler plays them)
   --text-outlines         draw dynamic text as outlines
   --no-embed-fonts        dynamic text uses the viewer's fonts (default: the installed fonts are
                           embedded as WOFF2 subsets of the characters used)
@@ -158,6 +159,9 @@ async function main(argv: string[]) {
 				break;
 			case "--image-full":
 				s.imageFullSize = { ...s.imageFullSize, [val()]: true };
+				break;
+			case "--lottie-sounds":
+				s.lottieSounds = true;
 				break;
 			case "--sound-format":
 				s.soundFormat = oneOf("mp3", "opus");

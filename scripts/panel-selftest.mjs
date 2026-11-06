@@ -91,7 +91,7 @@ const jobs = [
 		fla: fla("f43-sounds"),
 		output: join(out, "sounds-smil.svg"),
 		settings: { format: "smil" },
-		expect: { files: 1, warning: /Sounds play only in the JS player/ },
+		expect: { files: 1, warning: /Sounds play where a script can run/ },
 	},
 	// shape tweens as path morphs: SMIL animates path data and gradient matrices, the player gets morph parts
 	{

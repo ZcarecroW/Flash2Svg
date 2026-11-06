@@ -73,6 +73,8 @@ export interface ExportSettings extends ImageSettings, SoundSettings {
 	 * frame): one blended drawing instead of a drawing per frame, checked against every frame.
 	 */
 	morph: boolean;
+	/** Lottie JSON: sounds as audio layers (lottie-web plays them, with Howler on the page). */
+	lottieSounds?: boolean;
 	/** Decimals on screen (shown larger or smaller, a part gets more or fewer, see precision.ts). */
 	digits: number;
 	pretty: boolean;
@@ -258,7 +260,7 @@ export function compileScene(
 	if (lottie && (s.begin === "visible" || s.begin === "scroll"))
 		out.warnings.push(`Start "${s.begin === "visible" ? "when visible" : "on scroll"}" is up to the page that shows a Lottie animation: it plays when loaded`);
 	if (s.format !== "player" && !lottie && Object.keys(model.sounds).length)
-		out.warnings.push("Sounds play only in the JS player format (SMIL, CSS and still frames have no sound)");
+		out.warnings.push(s.format === "static" ? "Still frames have no sound" : "Sounds play where a script can run (inline, as a file, in <object>), not in <img>");
 	// buttons from code snippets in a .lottie: labels as states, clicks as transitions (interactive.ts)
 	const interactive = s.format === "dotlottie" && hasRootInteractions(prog);
 	if (s.format !== "player" && !interactive) {

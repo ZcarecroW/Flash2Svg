@@ -125,7 +125,12 @@ export const HELP = {
 	},
 	soundFormat: {
 		label: "Compressed as",
-		text: "Sounds play only in the JS player. MP3 plays everywhere; Opus sounds as good at about half the bit rate and plays in all current browsers (Safari from 18.4).",
+		text: "Sounds play in the JS player, and in SMIL and CSS where a script can run (not in <img>). MP3 plays everywhere; Opus sounds as good at about half the bit rate and plays in all current browsers (Safari from 18.4).",
+		guide: "images-sounds.html#sounds",
+	},
+	lottieSounds: {
+		label: "Sounds in Lottie JSON",
+		text: "Writes the sounds into Lottie JSON as audio layers. Only lottie-web plays them, and only on a page with Howler; every other player leaves them, and the file is bigger by the sounds.",
 		guide: "images-sounds.html#sounds",
 	},
 	bitrate: {

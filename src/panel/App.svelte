@@ -609,7 +609,7 @@
 	</Section>
 
 	<Section title="Sounds" icon="sound" bind:open={panel.open.sounds}>
-		<p class="hint">Sounds play only in the <i>JS player</i> format (and <i>Automatic</i>, which picks it for documents with sounds).</p>
+		<p class="hint">Sounds play wherever a script can run: the <i>JS player</i>, and <i>SMIL</i> and <i>CSS</i> inline, as a file or in an <code>&lt;object&gt;</code>; not in <code>&lt;img&gt;</code>.</p>
 		<div class="line">
 			<label class="row">
 				<span>Compressed as</span>
@@ -627,6 +627,10 @@
 				<span class="unit">{panel.export.soundBitrate ? "kbps" : "Animate's"}</span>
 			</label>
 			<Info topic="bitrate" />
+		</div>
+		<div class="line">
+			<label class="check"><input type="checkbox" bind:checked={panel.export.lottieSounds} /> Sounds in Lottie JSON</label>
+			<Info topic="lottieSounds" />
 		</div>
 		<div class="line list-head">
 			<span class="sub">Sounds{sounds?.length ? ` (${sounds.length})` : ""}</span>

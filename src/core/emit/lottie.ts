@@ -22,6 +22,8 @@ import { apply, concat, invert, isIdentity, parseTransform } from "../geom.ts";
 import { imageMime } from "../mime.ts";
 import type { FilterData, Mat, TextElement } from "../model.ts";
 import { hasFieldExtras } from "./text.ts";
+import { schedule, soundTable } from "./soundtrack.ts";
+import type { SoundSchedule } from "../../player/soundtrack.ts";
 import { channelNumbers, channelText, templateNodes, type MorphChannel } from "../morph.ts";
 import { spatialKeys } from "../motionpath.ts";
 import { fromProps, toProps, type ColorProp, type TransformProp } from "../program.ts";
@@ -2552,6 +2554,34 @@ function toBase64(bytes: Uint8Array): string {
 }
 
 /** The scene as a Lottie animation. */
+/** Each sound due as an audio layer, its file as an asset. */
+function audioLayers(track: SoundSchedule, out: Json[], assets: Json[], H: number) {
+	const done = new Set<string>();
+	const open: Json[] = [];
+	for (const e of track.ev) {
+		const [t, id, sync, loops, end] = e;
+		// a stop sound ends what plays of it
+		if (sync === 2) {
+			for (const l of open) if (l.refId === `snd${id}` && (l.op as number) > t) l.op = t;
+			continue;
+		}
+		const file = track.snd[id];
+		if (!file) continue;
+		if (!done.has(id)) {
+			done.add(id);
+			assets.push({ id: `snd${id}`, u: "", p: typeof file === "string" ? file : file[0], e: 1, t: 2 });
+		}
+		// "start": not while that sound plays
+		if (sync === 1 && open.some((l) => l.refId === `snd${id}` && (l.op as number) > t)) continue;
+		const seconds = typeof file === "string" ? 0 : file[1];
+		const length = sync === 3 ? end : seconds ? t + Math.ceil(seconds * track.fps * Math.min(loops, 999)) : H;
+		const layer: Json = { ty: 6, ind: out.length + 1, nm: id, refId: `snd${id}`, sr: 1, ip: t, op: Math.min(H, length), st: t, ks: {}, au: { lv: { a: 0, k: [100, 100] } } };
+		out.unshift(layer);
+		open.push(layer);
+	}
+	out.forEach((l, i) => void (l.ind = i + 1));
+}
+
 export function renderLottie(ctx: Context, rootId: string, s: ExportSettings, images: LottieImages): LottieResult {
 	const { horizon, root, frames } = bake(ctx, rootId, {
 		smooth: s.smooth,
@@ -2605,7 +2635,10 @@ export function renderLottie(ctx: Context, rootId: string, s: ExportSettings, im
 			nm: "Background",
 		});
 	}
-	if (Object.keys(ctx.model.sounds).length) w.warn("Sounds aren't exported to Lottie");
+	// lottie-web plays audio layers with Howler, if the page has it; other players leave them
+	const track = s.lottieSounds && s.format === "lottie" ? schedule(ctx, root, horizon, () => soundTable(ctx, true, [])) : null;
+	if (track) audioLayers(track, out, w.assets, H);
+	else if (Object.keys(ctx.model.sounds).length) w.warn(s.format === "lottie" ? "Sounds aren't in this Lottie file (Sounds in Lottie adds them, for lottie-web with Howler)" : "Sounds aren't exported to .lottie files");
 	const animation: Json = {
 		v: "5.12.0",
 		fr: horizon.fps,

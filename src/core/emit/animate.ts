@@ -30,6 +30,8 @@ import {
 import { OutputDoc, perspectiveNode, svgRoot, withAcc } from "./document.ts";
 import { blendHides, blendSubtract, blendWhite, colorMatrix, cssBlendMode, isAlphaOnly, matrixString, type ColorMatrixValues } from "./filters.ts";
 import { alignTracks, encodeKeyframes, groupFrames, withLegacyTiming, type MKey } from "./keyframes.ts";
+import { PLAYER_SOUNDTRACK } from "./runtime-code.generated.ts";
+import { schedule, soundTable } from "./soundtrack.ts";
 import { StaticRenderer } from "./static.ts";
 import { outlineText, textField, textNode } from "./text.ts";
 import { scrollCss, scrollScript, scrollScriptCss, visibleScript, type ScrollRange } from "./triggers.ts";
@@ -43,6 +45,8 @@ export interface AnimateOptions extends BakeOptions {
 	format: "smil" | "css";
 	includeBackground: boolean;
 	embedImages: boolean;
+	/** Sounds where a script can run; false: none. */
+	sounds?: boolean;
 	textAsOutlines: boolean;
 	/** Which frame to show where animation is unsupported / before it starts. */
 	posterFrame: "first" | "last";
@@ -74,6 +78,7 @@ export function renderAnimated(ctx: Context, rootId: string, opts: AnimateOption
 	const smilMorph = opts.format === "smil" && opts.morph !== false;
 	const { horizon, root } = bake(ctx, rootId, { ...opts, morph: smilMorph, turning: smilMorph });
 	const doc = new OutputDoc(ctx, { embedImages: opts.embedImages, idPrefix: opts.idPrefix ?? "" });
+	const sounds = opts.sounds === false ? null : schedule(ctx, root, horizon, () => soundTable(ctx, opts.embedImages, doc.assets));
 	const svgId = doc.uid("anim");
 	const svg = svgRoot(ctx, { id: svgId });
 	const w = new Writer(ctx, doc, horizon, opts, svgId);
@@ -94,6 +99,8 @@ export function renderAnimated(ctx: Context, rootId: string, opts: AnimateOption
 		doc.styles.push(`@media (prefers-reduced-motion:reduce){#${svgId}>.f2s-anim{display:none}#${svgId}>.f2s-still{display:inline}}`);
 	} else svg.children.push(...content);
 	w.finish(svg);
+	// where a script can run, sounds follow the animation's clock
+	if (sounds) doc.scripts.push(`${PLAYER_SOUNDTRACK};__f2sSound.default(${JSON.stringify(sounds).replace(/</g, "\\u003c")},${JSON.stringify(svgId)});`);
 	return { svg: doc.toString(svg, { pretty: opts.pretty }), assets: doc.assets, drawingBytes: doc.drawingBytes, horizon, warnings: ctx.warnings };
 }
 

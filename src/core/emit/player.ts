@@ -12,13 +12,13 @@ import { cdata, serialize, el, walk, type XmlNode } from "../xml.ts";
 import type { PChannel, PFrameSound, PInst, PItem, PListener, PMorph, PProgram, PSeq, PTextExtras, PTimeline, PTrack } from "../../player/format.ts";
 import type { HandlerAction, InteractionEvent } from "../snippets.ts";
 import { channelNumbers, channelText, channelVaries, type MorphChannel } from "../morph.ts";
-import { audioMime } from "../mime.ts";
 import { accAttrs, filterNode, OutputDoc, svgRoot } from "./document.ts";
 import { filterRuns } from "./filteranim.ts";
 import { blendHides, blendSubtract, blendWhite, cssBlendMode } from "./filters.ts";
 import { PLAYER_RUNTIMES } from "./runtime-code.generated.ts";
 import { cssMatrix, fromCorner } from "../persp.ts";
 import { playerScripts } from "./scripts.ts";
+import { frameSounds, soundTable } from "./soundtrack.ts";
 import { StaticRenderer } from "./static.ts";
 import { hasFieldExtras, outlineText, textField, textNode } from "./text.ts";
 import { SCROLL_RANGE_CODES } from "./triggers.ts";
@@ -312,42 +312,11 @@ export function renderPlayer(
 	for (const id in P.tl) if (drawsHairlines(id)) P.tl[id]!.hl = 1;
 	// frame sounds
 	for (const id in ctx.programs) {
-		const tl = ctx.model.timelines[ctx.programs[id]!.source ?? id];
-		if (!tl) continue;
-		const sd: NonNullable<PTimeline["sd"]> = [];
-		for (const layer of tl.layers)
-			for (const kf of layer.keyframes) {
-				const fs = kf.sound;
-				if (!fs) continue;
-				const sync = { event: 0, start: 1, stop: 2, stream: 3 }[fs.sync] ?? 0;
-				const e: PFrameSound = [kf.index, fs.sound, sync, fs.loopMode === "loop" ? 9999 : fs.loops || 1, kf.duration];
-				const snd = ctx.model.sounds[fs.sound];
-				// in and out point in the file (encodeSounds cut off what no frame plays)
-				const trim = snd?.trim ?? 0;
-				const length = snd?.seconds;
-				const lim = fs.limits;
-				const inPt = lim ? Math.max(0, (lim.start - trim) / 44100) : 0;
-				const outPt = lim && lim.end < 1073741823 ? (lim.end - trim) / 44100 : undefined;
-				const hasOut = outPt !== undefined && (length === undefined || outPt < length - 1e-4);
-				if (inPt > 1e-4 || hasOut) e.push(round(inPt, 4), hasOut ? round(outPt, 4) : undefined);
-				if (fs.envelope?.length) {
-					while (e.length < 7) e.push(undefined);
-					e.push(fs.envelope.flatMap(([t, l, r]) => [round(t / 44100, 4), round(l / 32768, 3), round(r / 32768, 3)]));
-				}
-				sd.push(e);
-			}
-		if (sd.length && tl.kind === "graphic") warn(`Sounds inside graphic symbols don't play (as in Flash): ${tl.name}`);
+		const sd = frameSounds(ctx, id);
+		if (sd.length && ctx.model.timelines[ctx.programs[id]!.source ?? id]?.kind === "graphic") warn(`Sounds inside graphic symbols don't play (as in Flash): ${ctx.programs[id]!.name}`);
 		if (sd.length && P.tl[id]) P.tl[id]!.sd = sd;
 	}
-	for (const sid in ctx.model.sounds) {
-		const snd = ctx.model.sounds[sid]!;
-		let url = snd.file;
-		if (s.embedImages) url = `data:${audioMime(snd.file)};base64,${toBase64(ctx.files.readBinary(snd.file))}`;
-		else doc.assets.push({ path: snd.file, source: snd.file });
-		// (scripts ask how long a sound is)
-		const seconds = snd.seconds ?? (scripts && snd.samples ? snd.samples / 44100 : undefined);
-		P.snd[sid] = seconds !== undefined ? [url, round(seconds, 4), round(snd.lead ?? 0, 5)] : url;
-	}
+	P.snd = soundTable(ctx, s.embedImages, doc.assets, !!scripts);
 	P.mf = doc.maskFilter().slice(5, -1);
 
 	// Poster: the static frame, removed by the runtime when it starts

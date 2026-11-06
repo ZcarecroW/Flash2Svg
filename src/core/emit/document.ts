@@ -490,7 +490,7 @@ export function withAcc(node: XmlNode, acc: AccInfo | undefined, button: boolean
 	return el("g", a, [...desc, node]);
 }
 
-function toBase64(bytes: Uint8Array): string {
+export function toBase64(bytes: Uint8Array): string {
 	const B = (globalThis as { Buffer?: { from(b: Uint8Array): { toString(enc: string): string } } }).Buffer;
 	if (B) return B.from(bytes).toString("base64");
 	let s = "";

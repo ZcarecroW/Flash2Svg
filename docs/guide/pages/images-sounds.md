@@ -28,7 +28,7 @@ The **Result** lists the format, pixels and size of every bitmap.
 
 ## Sounds
 
-Frame sounds play in the **JS player**, with Animate's sound settings: *Event*, *Start*, *Stop* and *Stream* sync, *Repeat* and *Loop*, the effects and custom envelopes (*Edit sound envelope*: volume and panning), in and out points, sounds in movie clips and on button states. Stream sounds follow the playhead, also after `gotoAndPlay()` or a pause.
+Frame sounds play in the **JS player**, and in **SMIL** and **CSS** wherever a script can run (inline, as a file, in an `<object>`; not in `<img>`), with Animate's sound settings: *Event*, *Start*, *Stop* and *Stream* sync, *Repeat* and *Loop*, the effects and custom envelopes (*Edit sound envelope*: volume and panning), in and out points, sounds in movie clips and on button states. Stream sounds follow the playhead, also after `gotoAndPlay()` or a pause.
 
 ::: demo sound player A beep on every bounce: an event sound on the frame where the ball lands. Click the demo first — browsers keep sound off until you interact with the page.
 
@@ -40,7 +40,7 @@ Frame sounds play in the **JS player**, with Animate's sound settings: *Event*, 
 Every sound is **cut to the part the frames play**: Animate pads its sounds with silence (a 0.4 s beep came out as a 3.7 s file). *Convert stereo to mono* is followed.
 
 > [!NOTE]
-> Browsers block sound until the visitor clicks or presses a key. Until then the sounds run on silently and join at their position — a long one starts in the middle. SMIL, CSS, Lottie, GIF and WebP don't play sounds (warned).
+> Browsers block sound until the visitor clicks or presses a key. Until then the sounds run on silently and join at their position — a long one starts in the middle. In **Lottie** JSON, *Sounds in Lottie JSON* (`--lottie-sounds`) writes them as audio layers: lottie-web plays those on a page with Howler, other players leave them.
 
 The encoders — the Squoosh codecs for images, LAME, libopus and mpg123 for sound — are WebAssembly builds that load only when a document has bitmaps or sounds.
 
