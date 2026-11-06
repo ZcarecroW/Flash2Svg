@@ -2840,6 +2840,46 @@
 	buildXfl("f67-ik");
 	buildXfl("f68-ikshape");
 	buildXfl("f69-iknested");
+	buildXfl("f70-width");
+
+	/**
+	 * Documents made with Animate's own Asset Warp tool (no script can: scripts/animate-session.mjs
+	 * and real mouse drags), kept as FLA in assets/.
+	 */
+	function fromAsset(name, asset, fn) {
+		if (only && only.indexOf("," + name + ",") == -1) return;
+		var uri = outDir + "/" + name + ".fla";
+		if (FLfile.exists(uri)) FLfile.remove(uri);
+		FLfile.copy(root + "/assets/" + asset + ".fla", uri);
+		if (fn) {
+			try {
+				doc = fl.openDocument(uri);
+				fn();
+				fl.saveDocument(doc, uri);
+				fl.closeDocument(doc, false);
+			} catch (e) {
+				log.push(name + ": ERROR " + e);
+			}
+		}
+		log.push(name + ": saved");
+	}
+	fromAsset("f71-warp", "f71-warp");
+	fromAsset("f72-warp2", "f72-warp2");
+	// the warp in a clip as a graphic, which Animate's own frames step through
+	fromAsset("f73-warp3", "f72-warp2", function () {
+		var t = doc.getTimeline();
+		for (var i = 0; i < t.layers.length; i++) {
+			if (t.layers[i].name != "clips") continue;
+			t.setSelectedLayers(i);
+			t.setSelectedFrames(0, 1);
+			try { t.setFrameProperty("tweenType", "none"); } catch (e) {}
+			var els = t.layers[i].frames[0].elements;
+			for (var k = 0; k < els.length; k++) {
+				els[k].symbolType = "graphic";
+				els[k].loop = "loop";
+			}
+		}
+	});
 
 	FLfile.write(outDir + "/build-log.txt", log.join("\n"));
 	fl.closeAll(false);

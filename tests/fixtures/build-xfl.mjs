@@ -155,7 +155,55 @@ function bendingStrip(name, frames, length, width, color, bendAt) {
 	return `<DOMSymbolItem ${HEAD} name="${name}" symbolType="ik container"><timeline><DOMTimeline name="${name}"><layers><DOMLayer name="Layer 1" color="#4FFF4F" current="true" isSelected="true"><frames>${Array.from({ length: frames }, (_, f) => frame(f)).join("")}</frames></DOMLayer></layers></DOMTimeline></timeline></DOMSymbolItem>`;
 }
 
+/**
+ * A stroked path with a width profile. `markers`: [position 0..1, left, right, corner?], left and
+ * right as shares of the stroke's weight (0.5 + 0.5 = its full weight). `edges` in twips.
+ */
+function widthStroke(edges, weight, color, markers, extra = "") {
+	const list = markers.map(([p, l, r, c]) => `<WidthMarker position="${p}" left="${l}" right="${r}"${c ? ` type="corner"` : ""}/>`).join("");
+	return `<DOMShape><strokes><StrokeStyle index="1"><SolidStroke scaleMode="normal" weight="${weight}"${extra}><fill><SolidColor color="${color}"/></fill><VariablePointWidth>${list}</VariablePointWidth></SolidStroke></StrokeStyle></strokes><edges><Edge strokeStyle="1" edges="${edges}"/></edges></DOMShape>`;
+}
+const twips = (x, y) => `${Math.round(x * 20)} ${Math.round(y * 20)}`;
+/** Connected straight pieces. */
+const lines = (...p) => p.slice(1).map((q, i) => `!${twips(...p[i])}|${twips(...q)}`).join("");
+/** Connected quadratic pieces: [start, control, end, control, end, ...]. */
+const curves = (...p) => {
+	let s = "";
+	for (let i = 0; i + 2 < p.length; i += 2) s += `!${twips(...p[i])}[${twips(...p[i + 1])} ${twips(...p[i + 2])}`;
+	return s;
+};
+
 export function buildXflFixtures(root) {
+	// variable-width strokes (the Width tool): profiles along lines and curves; on a symbol that
+	// turns and scales; in a shape tween from one profile to another
+	const taper = [[0, 0, 0], [0.5, 0.5, 0.5], [1, 0, 0]];
+	const bulge = [[0, 0.5, 0.5], [0.25, 0.1, 0.1], [0.5, 0.8, 0.8], [0.75, 0.1, 0.1], [1, 0.5, 0.5]];
+	const lopsided = [[0, 0.1, 0.5], [0.5, 0.9, 0.1], [1, 0.1, 0.5]];
+	const shaped = (e) => `<DOMFrame index="0" duration="24" keyMode="9728"><elements>${e}</elements></DOMFrame>`;
+	const plainLayer = (name, frames) => `<DOMLayer name="${name}" color="#4FFF4F"><frames>${frames}</frames></DOMLayer>`;
+	writeXfl(
+		root,
+		"f70-width",
+		documentTag(
+			500,
+			400,
+			24,
+			["brushy"],
+			plainLayer("line", shaped(widthStroke(lines([30, 40], [230, 40]), 30, "#3366CC", taper))) +
+				plainLayer("wave", shaped(widthStroke(curves([260, 60], [320, -20], [380, 60], [440, 140], [480, 40]), 24, "#CC3366", bulge))) +
+				plainLayer("sided", shaped(widthStroke(curves([30, 150], [130, 80], [230, 150]), 40, "#22AA55", lopsided))) +
+				plainLayer("corner", shaped(widthStroke(lines([260, 130], [360, 180], [460, 120]), 26, "#AA7722", [[0, 0.1, 0.1], [0.5, 0.6, 0.6, true], [1, 0.1, 0.1]]))) +
+				plainLayer(
+					"turning",
+					`<DOMFrame index="0" duration="23" keyMode="22017" tweenType="motion" motionTweenSnap="true"><elements><DOMSymbolInstance libraryItemName="brushy" symbolType="graphic" loop="loop"><matrix><Matrix tx="130" ty="290"/></matrix><transformationPoint><Point/></transformationPoint></DOMSymbolInstance></elements></DOMFrame><DOMFrame index="23" keyMode="22017"><elements><DOMSymbolInstance libraryItemName="brushy" symbolType="graphic" loop="loop"><matrix><Matrix a="0.5" b="0.866" c="-1.2" d="0.7" tx="130" ty="290"/></matrix><transformationPoint><Point/></transformationPoint></DOMSymbolInstance></elements></DOMFrame>`,
+				) +
+				plainLayer(
+					"tween",
+					`<DOMFrame index="0" duration="23" keyMode="17922" tweenType="shape"><elements>${widthStroke(lines([280, 260], [460, 260]), 30, "#6633AA", taper)}</elements></DOMFrame><DOMFrame index="23" keyMode="17922"><elements>${widthStroke(curves([280, 330], [370, 250], [460, 330]), 30, "#6633AA", bulge)}</elements></DOMFrame>`,
+				),
+		),
+		{ "brushy.xml": symbolXml("brushy", widthStroke(curves([-80, 20], [0, -60], [80, 20]), 28, "#118899", taper)) },
+	);
 	// armatures inside a movie clip (bones on a clip that plays on), placed twice; on a locked layer,
 	// starting after the first frame, ending before the layer does
 	writeXfl(

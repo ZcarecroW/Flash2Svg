@@ -56,6 +56,10 @@ const TOLERANCE: Record<string, number> = {
 	// the guide's filters demo: lottie-web draws its inner gradient bevel (default stops: white,
 	// transparent, black) only faintly — Skottie draws it exactly, gradient glows and plain bevels are
 	// right in lottie-web too (2026-11-01; open, roadmap); ThorVG's narrower blur on the bevels
+	// warped objects are bitmaps at fractional positions: ThorVG samples their edges differently
+	"f71-warp/dotlottie": 0.006,
+	"f72-warp2/dotlottie": 0.006,
+	"f73-warp3/dotlottie": 0.006,
 	"guide:filters/lottie-web": 0.009,
 	"guide:filters/dotlottie": 0.0017,
 };

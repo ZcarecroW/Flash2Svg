@@ -3,6 +3,7 @@
 ## Unreleased
 
 - **Armatures (IK bones) export**, on symbols and on shapes, also inside movie clips: the poses become one smooth motion per bone (a shape with bones one drawing that changes). They were frozen at the first pose.
+- **Asset Warp exports** (shapes and bitmaps, in tweens, inside symbols): the warped frames as Animate draws them, as bitmaps. Animate's own SVG export leaves them unwarped; its stage rendering is the only way to get them, so the exporter has it draw the timeline once in its working copy.
 - **Layer depth**: layers at a depth grow and pan with the camera as in Animate, and are stacked by depth; depths that cross change the order on the frame they cross. Camera depth counts, layers attached to the camera stay where they are.
 - **Button hit areas**: the Hit frame takes the pointer in SMIL, CSS and the JS player: it can be larger than the button, or all there is (invisible buttons). Over and Down don't flicker when their art is smaller than Up's. A button of one frame shows the hand cursor.
 

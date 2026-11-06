@@ -135,8 +135,10 @@ while ($p -and -not $p.HasExited) {
 	}
 	# crash handling of this Animate, not of whatever else crashes on the computer
 	$crash = @()
+	# Adobe's own report replaces the main window (no dialog of it: it stays until it is answered)
+	if ($p.MainWindowTitle -match "^Error Report") { $crash = @("Adobe's error report") }
 	if (Get-Process | Where-Object { $_.ProcessName -match "crash|WerFault" -and $_.StartTime -gt $started }) {
-		$crash = @(Get-CimInstance Win32_Process -Filter "Name LIKE '%crash%' OR Name = 'WerFault.exe'" | Where-Object {
+		$crash += @(Get-CimInstance Win32_Process -Filter "Name LIKE '%crash%' OR Name = 'WerFault.exe'" | Where-Object {
 			$_.ParentProcessId -eq $AnimatePid -or $_.CommandLine -match "-p $AnimatePid\b"
 		} | ForEach-Object { $_.Name })
 	}

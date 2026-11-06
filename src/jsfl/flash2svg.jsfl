@@ -422,6 +422,8 @@
 		var tl = editTimeline(id);
 		var item = tl.libraryItem;
 		var kind = item ? get(item, "symbolType", "movie clip") : "scene";
+		// Asset Warp's symbols
+		if (kind == "puppet" || kind == "puppetBase") kind = "graphic";
 		var data = {
 			id: id,
 			name: item ? item.name : tl.name,
@@ -435,12 +437,40 @@
 			data.scalingGrid = { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
 		}
 		var armatures = bakeArmatures(tl);
+		renderWarps(tl);
 		var layers = tl.layers;
 		for (var li = 0; li < layers.length; li++) data.layers.push(readLayer(id, tl, layers, li, armatures[li]));
 		if (!item) readCamera(tl, data);
 		job.model.timelines[id] = data;
 		job.message = "Reading " + data.name;
 		job.doneCount++;
+	}
+
+	/**
+	 * Asset Warp: Animate works out a warped object's in-between frames when it draws them; until
+	 * then the frames of its symbol hold the art as it was. Drawing the timeline once fills them
+	 * with the warped bitmaps (its SVG export doesn't warp at all).
+	 */
+	function renderWarps(tl) {
+		if (job.hasWarps === undefined) {
+			job.hasWarps = false;
+			var items = job.lib.items;
+			for (var i = 0; i < items.length; i++) if (get(items[i], "symbolType", "") == "puppet") job.hasWarps = true;
+		}
+		if (!job.hasWarps) return;
+		var found = false;
+		for (var li = 0; li < tl.layers.length && !found; li++) {
+			var layer = tl.layers[li];
+			for (var f = 0; f < layer.frameCount && !found; f += Math.max(1, layer.frames[f].duration)) {
+				var els = layer.frames[f].elements;
+				for (var e = 0; e < els.length; e++) if (els[e].libraryItem && get(els[e].libraryItem, "symbolType", "") == "puppet") found = true;
+			}
+		}
+		if (!found) return;
+		var dir = job.outDir + "/_warps";
+		FLfile.createFolder(dir);
+		job.doc.exportPNG(dir + "/f.png", true, false);
+		FLfile.remove(dir);
 	}
 
 	/**
@@ -742,10 +772,13 @@
 				// the camera's own frame graphic is never drawn
 				if (el.libraryItem.name != "___Camera___") queueTimeline(symId);
 				var tp = get(el, "transformationPoint", { x: 0, y: 0 });
+				// a warped object (Asset Warp): its symbol's frames hold what the warp makes of the art,
+				// one per frame of a tween (frame 1 on; frame 0 is the art itself), played like a graphic
+				var warped = get(el.libraryItem, "symbolType", "") == "puppet";
 				var d = {
 					kind: "instance",
 					symbol: symId,
-					symbolType: el.symbolType,
+					symbolType: warped ? "graphic" : el.symbolType,
 					name: get(el, "name", ""),
 					matrix: mat(el.matrix),
 					transformPoint: { x: round(tp.x), y: round(tp.y) },
@@ -756,9 +789,12 @@
 					cacheAsBitmap: !!get(el, "cacheAsBitmap", false),
 					bounds: boundsOf(el)
 				};
-				var acc = el.symbolType == "graphic" ? null : accOf(el);
+				var acc = el.symbolType == "graphic" || warped ? null : accOf(el);
 				if (acc) d.acc = acc;
-				if (el.symbolType == "graphic") {
+				if (warped) {
+					d.loop = "play once";
+					d.firstFrame = el.libraryItem.timeline.frameCount > 1 ? 1 : 0;
+				} else if (el.symbolType == "graphic") {
 					d.loop = get(el, "loop", "loop");
 					d.firstFrame = get(el, "firstFrame", 0);
 					var lf = get(el, "lastFrame", -1);

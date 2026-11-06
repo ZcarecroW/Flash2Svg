@@ -171,7 +171,8 @@ the AS3 that Animate users actually write is.
 |---|---|---|
 | Shapes, gradients (focal point, spread, linear RGB), bitmap fills, stroke styles | ✅ | checked against Animate's frames |
 | Stroke scale *Horizontal* / *Vertical* | 🟡 | drawn like *Normal* (warned) |
-| Variable-width strokes, art and pattern brushes, fluid brush | ❓ | come through Animate's SVG export; never tested |
+| Variable-width strokes | ✅ | come through Animate's SVG export as outlines: 0.00 % in f70, on scaled symbols and in shape tweens |
+| Art and pattern brushes, fluid brush | ❓ | `PaintBrushStroke`; no test document yet |
 | Static, dynamic, input text; fonts embedded | ✅ | input text isn't editable in the output (❓ check) |
 | Bitmaps, smoothing, compression, downscaling | ✅ | |
 | Filters (all 7), colour effects, blend modes, layer effects | ✅ | tweened filters: one filter whose numbers change in the player (package 9); SMIL and CSS a `<filter>` per frame — cheaper to draw in Chromium, compresses well (filters demo 284 KB, 19 KB gzip) |
@@ -179,14 +180,15 @@ the AS3 that Animate users actually write is.
 | Classic and motion tweens, eases, shape tweens with hints | ✅ | |
 | Motion guides, orient to path, motion-tween paths | 🟡 | exact, but Animate's frames (a keyframe per frame), not the path |
 | Graphic looping, frame picker, lip sync, movie clips, scenes | ✅ | SMIL/CSS: clips with unrelated loop lengths jump at the repeat (player exact) |
-| Layer parenting, modern rigging (scale/skew/flip) | ✅ / ❓ | the 2022 rigging never tested |
-| Camera pan, zoom, rotate | ✅ | camera colour effects ⬜; layer depth (parallax) ❓ |
-| 3D rotation and translation (perspective) | 🟡 | 2D projection |
-| IK armatures (bones on symbols and on shapes) | ⬜ | not exported; what JSFL reads of a pose layer is unknown |
-| Asset Warp, Flexi bones, envelope deformer (2020–2023) | ❓ | Animate turns vectors into bitmaps for warping by default; never tested |
+| Layer parenting, modern rigging (scale/skew/flip) | ✅ | f65 |
+| Camera pan, zoom, rotate, depth; layer depth (parallax), attached layers | ✅ | f61, f62; camera colour effects ⬜ |
+| 3D rotation and translation (perspective) | ⬜ | drawn flat: `element.matrix` holds no 3D (30 % of f63's pixels differ); `matrix3D` and `is3D` are there: package 13 |
+| IK armatures (bones on symbols and on shapes) | ✅ | baked in the working copy (f67–f69): 0.00 % |
+| Asset Warp | ✅ | as Animate's warped bitmaps (f71–f73) |
+| Flexi bones, envelope deformer; warps with "Auto convert vector to bitmap" off | ❓ | go the same way; no test document yet |
 | Sounds | ✅ player / ⬜ SMIL, CSS, Lottie | |
 | Video components / video in the timeline | ✅ / ⬜ | |
-| Buttons (states, hit area), links, start triggers, scroll | ✅ | hit area ❓ in SMIL/CSS |
+| Buttons (states, Hit frame), links, start triggers, scroll | ✅ | e2e-hit: a real mouse in three engines; Lottie: its art is the hit area |
 | Frame scripts | 🟡 | `stop`/`play`/`goto`/counters; other conditions always run (warned) |
 | Code snippets | 🟡 | mouse events, timeline navigation, visibility, web pages; not: drag and drop, keyboard, `ENTER_FRAME`, timers, random, text, sounds, fades, load/unload |
 | ActionScript in general (variables, conditions, loops, Math, properties) / Canvas JavaScript | ⬜ | |
@@ -198,8 +200,8 @@ the AS3 that Animate users actually write is.
 |---|---|---|---|---|
 | 8 | Motion along paths: motion guides and motion-tween paths as real paths (SMIL `animateMotion` with `keyPoints` and `rotate="auto"`, CSS `offset-path`, the player, Lottie position keys with spatial tangents) | smoother (any frame rate), smaller; the user's request | medium | ✅ motion guides (SMIL, CSS, Lottie); ⬜ motion tweens (see below) |
 | 9 | Animated filters as animated filter primitives (SMIL and player animate `stdDeviation`, `dx`, `slope`, colours; CSS keeps a filter per frame where nothing else is exact) | filter animations ~10× smaller | medium | ✅ player (one filter per tween); SMIL/CSS measured and kept (see below) |
-| 10 | Measure-first sweep: a test document each for IK (symbols, shapes), Asset Warp (bitmap and vector, Flexi bones, envelope), layer depth with the camera, modern rigging, variable-width strokes and brushes, input text, button hit areas, 3D — extracted and compared with Animate's frames; fix what breaks | turns every ❓ into ✅ or a known gap | medium | ⬜ |
-| 11 | Bones and warps: whatever 10 finds missing (poses baked to transforms like guided tweens; deformed shapes as morphs or frames) | rigged characters export | medium–high | ⬜ |
+| 10 | Measure-first sweep: a test document each for IK (symbols, shapes), Asset Warp (bitmap and vector, Flexi bones, envelope), layer depth with the camera, modern rigging, variable-width strokes and brushes, input text, button hit areas, 3D — extracted and compared with Animate's frames; fix what breaks | turns every ❓ into ✅ or a known gap | medium | ✅ but brushes (see below) |
+| 11 | Bones and warps: whatever 10 finds missing (poses baked to transforms like guided tweens; deformed shapes as morphs or frames) | rigged characters export | medium–high | ✅ done in 10 |
 | 12 | Scripts in the player: Animate's AS3 (a subset compiled to JavaScript at export: variables, conditions, loops, functions, Math, display-object properties, events — mouse, keyboard, `ENTER_FRAME`, timers, drag and drop, text, sounds) and Canvas documents' JavaScript (run as it is, on a CreateJS-like `this`); every code snippet Animate offers that a browser can do; what can't be compiled is warned | interactive pieces, simple games | high | ⬜ |
 | 13 | Remaining appearance: camera colour effects, stroke scale *Horizontal*/*Vertical*, 3D with real perspective where the format allows (measure: CSS 3D, Lottie 3D layers), *Export as bitmap* | fidelity | medium | ⬜ |
 | 14 | Sounds outside the player: SMIL/CSS with a few lines of script (inline, `<object>`), Lottie audio layers where players support them | sound everywhere a script runs | medium | ⬜ |
@@ -215,6 +217,17 @@ handles per key), no path geometry: fit those curves exactly instead of sampling
 JSFL to measure it: a curve fitted through the frames). The JS player could move along the curve
 with `offset-path` in its Web Animations too. Firefox's SMIL draws f09 wrong far into the loop
 (~8 minutes, before this package too).
+
+**10. Sweep** (2026-11-06): each feature got a test document (f61–f73) checked against Animate's frames.
+JSFL can't make bones, warps or width profiles: documents are written as XFL (`tests/fixtures/build-xfl.mjs`:
+Animate takes hand-written armatures) or made with the real tool (`scripts/animate-session.mjs`, window
+messages for most tools, the real mouse for Asset Warp) and kept in `tests/fixtures/assets`.
+Armatures: JSFL shows only the first pose, `frame.convertToFrameByFrameAnimation()` bakes them.
+Asset Warp: a warped object is a symbol of type puppet (frame 0 the art, then a frame per frame of a tween)
+whose frames are only worked out when drawn; its SVG export doesn't warp. Layer depth: scale f / (f + z)
+about the stage's centre, f = 528.25 whatever the stage size, layers stacked by depth. 3D stays for
+package 13: Animate's view angle and vanishing point are only in the file (`viewAngle3D`,
+`vanishingPoint3DX/Y`; `setStageVanishingPoint` is gone), the focal length is the same 528.25.
 
 **9. Animated filters** (2026-11-01): the JS player writes a tweened filter as one filter whose
 numbers it sets frame by frame (`src/core/emit/filteranim.ts`: filter sets built into primitives,
