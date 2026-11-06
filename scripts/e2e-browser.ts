@@ -47,7 +47,8 @@ const guideModels = join(repo, "docs", "guide", "demos", "models");
 const names = list
 	? list.split(",")
 	: [
-			...readdirSync(out).filter((d) => existsSync(join(out, d, "model", "scene.json"))),
+			// (documents whose scripts change the picture have no frames of Animate to compare with: e2e-as3, e2e-canvas, e2e-scripts test them)
+			...readdirSync(out).filter((d) => existsSync(join(out, d, "model", "scene.json")) && !/^f(7[4-9]|8[01])-/.test(d)),
 			...readdirSync(guideModels)
 				.filter((d) => existsSync(join(guideModels, d, "scene.json")))
 				.map((d) => `guide:${d}`),

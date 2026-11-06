@@ -19,6 +19,12 @@ const GLOBALS = new Set([
 	"Array",
 	"Function",
 	"Error",
+	"RangeError",
+	"TypeError",
+	"ReferenceError",
+	"SyntaxError",
+	"EvalError",
+	"URIError",
 	"String",
 	"Number",
 	"Boolean",
@@ -152,7 +158,7 @@ export const FLASH_API = new Set([
 ]);
 
 /** JavaScript's reserved words that are plain names in AS3. */
-const JS_RESERVED = new Set(["await", "let", "yield", "async", "of", "enum", "implements", "private", "public", "protected", "static", "arguments", "eval", "with", "debugger", "export", "extends", "class", "super"]);
+const JS_RESERVED = new Set(["await", "let", "yield", "async", "of", "enum", "implements", "private", "public", "protected", "static", "eval", "with", "debugger", "export", "extends", "class", "super"]);
 
 const safe = (n: string) => (JS_RESERVED.has(n) ? `$_${n}` : n);
 
@@ -177,6 +183,9 @@ export interface CompiledScripts {
 }
 
 /** Collects what a statement list declares at function level (var hoists out of blocks). */
+/** The type of a function declared by name: unlike a variable of type Function, it has a value at once. */
+const DECLARED = "function!";
+
 function hoist(body: Stmt[], out: Map<string, string>, fns: FuncDecl[] | null) {
 	const walk = (s: Stmt | null | undefined) => {
 		if (!s) return;
@@ -185,7 +194,7 @@ function hoist(body: Stmt[], out: Map<string, string>, fns: FuncDecl[] | null) {
 				for (const d of s.decls) if (!out.has(d.name) || d.type !== "*") out.set(d.name, d.type);
 				break;
 			case "func":
-				out.set(s.f.name, "Function");
+				out.set(s.f.name, DECLARED);
 				fns?.push(s.f);
 				break;
 			case "block":
@@ -213,7 +222,7 @@ function hoist(body: Stmt[], out: Map<string, string>, fns: FuncDecl[] | null) {
 				break;
 			case "try":
 				s.body.forEach(walk);
-				s.handler?.forEach(walk);
+				for (const c of s.catches) c.body.forEach(walk);
 				s.final?.forEach(walk);
 				break;
 		}
@@ -243,9 +252,26 @@ class Emitter {
 		this.linked = linked;
 	}
 	private ret = "*";
+	/** What `this` is: the timeline at the top of a frame and in its functions; in a function literal, what it is called on. */
+	private self = "$t";
+
+	/** The declared type of an expression, as far as it is known here. */
+	private typeIn(x: Expr): string {
+		if (x.k === "id") return this.lookup(x.name) ?? this.members.get(x.name) ?? "*";
+		if (x.k === "member" && x.o.k === "this") return this.members.get(x.name) ?? "*";
+		if (x.k === "index") {
+			const m = /^Vector\.<(.*)>$/.exec(this.typeIn(x.o));
+			if (m) return m[1]!;
+		}
+		return "*";
+	}
+
+	private isVector(x: Expr) {
+		return this.typeIn(x).startsWith("Vector.<");
+	}
 
 	private isDictionary(x: Expr): boolean {
-		return x.k === "id" && (this.lookup(x.name) ?? this.members.get(x.name)) === "Dictionary";
+		return this.typeIn(x) === "Dictionary";
 	}
 
 	private lookup(name: string): string | undefined {
@@ -259,9 +285,9 @@ class Emitter {
 	private ref(name: string): string {
 		if (this.lookup(name) !== undefined) return safe(name);
 		if (name === "trace") return "$f.trace";
+		if (name === "arguments") return name;
 		if (this.members.has(name)) return `$t.${safe(name) === name ? name : `["${name}"]`}`;
 		if (GLOBALS.has(name)) return name;
-		if (name === "Vector") return "Array";
 		if (FLASH_API.has(name) && !this.linked.has(name)) return `$f.${name}`;
 		// a class of the library (linkage), or what the timeline has
 		if (/^[A-Z]/.test(name)) return `$r.cls("${name}",$t)`;
@@ -287,24 +313,31 @@ class Emitter {
 	}
 
 	private typeOfTarget(a: Expr): string {
-		if (a.k !== "id") return "*";
-		return this.lookup(a.name) ?? this.members.get(a.name) ?? "*";
+		return this.typeIn(a);
 	}
 
 	expr(x: Expr): string {
 		switch (x.k) {
 			case "num":
-				return x.v;
+				// (a leading zero means nothing in AS3)
+				return /^0\d+$/.test(x.v) ? x.v.replace(/^0+(?=\d)/, "") : x.v;
+			case "vector":
+				return JSON.stringify(`Vector.<${x.of}>`);
 			case "str":
 				return JSON.stringify(x.v);
-			case "regex":
-				return x.v;
+			case "regex": {
+				// AS3's x flag: spaces and comments in the pattern don't count. JavaScript hasn't got it.
+				const m = /^\/([\s\S]*)\/([a-z]*)$/.exec(x.v);
+				if (!m || !m[2]!.includes("x")) return x.v;
+				const plain = m[1]!.replace(/\\[\s\S]|\s+|#.*$/gm, (t) => (t[0] === "\\" ? t : ""));
+				return `$r.re(${JSON.stringify(plain)},${JSON.stringify(m[2]!.replace("x", ""))})`;
+			}
 			case "lit":
 				return x.v;
 			case "id":
 				return this.ref(x.name);
 			case "this":
-				return "$t";
+				return this.self;
 			case "array":
 				return `[${x.items.map((i) => this.expr(i)).join(",")}]`;
 			case "object":
@@ -312,9 +345,24 @@ class Emitter {
 			case "func":
 				return this.func(x.f, true);
 			case "unary":
+				if (x.op === "typeof" && x.x.k === "id") {
+					// (a typed variable has its type's name, null or not; a class is an object)
+					const t = this.typeIn(x.x);
+					if (t === "String") return '"string"';
+					if (t === "Boolean") return '"boolean"';
+					if (t === "Number" || INT.has(t)) return '"number"';
+					if (t === "*" && this.lookup(x.x.name) === undefined && !this.members.has(x.x.name) && /^[A-Z]/.test(x.x.name) && (GLOBALS.has(x.x.name) || FLASH_API.has(x.x.name))) return '"object"';
+				}
 				if (x.op === "delete" || x.op === "typeof" || x.op === "void") return `(${x.op} ${this.expr(x.x)})`;
 				return `(${x.op}${this.expr(x.x)})`;
 			case "update": {
+				if (x.x.k === "index" && this.isVector(x.x.o)) {
+					const o = this.expr(x.x.o),
+						i = this.expr(x.x.i);
+					const step = x.op === "++" ? 1 : -1;
+					const set = `$r.vset(${o},${i},$r.vget(${o},${i})+${step})`;
+					return x.prefix ? set : `(${set}-${step})`;
+				}
 				const js = this.expr(x.x);
 				const t = this.typeOfTarget(x.x);
 				// (overflow wraps; postfix gives the old value)
@@ -329,6 +377,12 @@ class Emitter {
 			case "bin":
 				return this.binary(x);
 			case "assign": {
+				if (x.a.k === "index" && this.isVector(x.a.o)) {
+					const o = this.expr(x.a.o),
+						i = this.expr(x.a.i),
+						v = this.expr(x.b);
+					return x.op === "=" ? `$r.vset(${o},${i},${v})` : `$r.vset(${o},${i},$r.vget(${o},${i})${x.op.slice(0, -1)}(${v}))`;
+				}
 				const a = this.expr(x.a);
 				const b = this.expr(x.b);
 				const t = this.typeOfTarget(x.a);
@@ -344,18 +398,39 @@ class Emitter {
 			case "member":
 				return this.member(x.o, x.name);
 			case "index":
+				if (this.isVector(x.o)) return `$r.vget(${this.expr(x.o)},${this.expr(x.i)})`;
 				// (a Dictionary's keys are objects)
 				return `${this.expr(x.o)}[${this.isDictionary(x.o) ? `$r.key(${this.expr(x.i)})` : this.expr(x.i)}]`;
 			case "call":
 				return this.call(x.f, x.args);
-			case "new":
-				return `new (${this.expr(x.f)})(${x.args.map((a) => this.expr(a)).join(",")})`;
+			case "new": {
+				const list = x.args.map((a) => this.expr(a));
+				if (x.f.k === "vector") return `$r.vec(${[JSON.stringify(x.f.of), ...list].join(",")})`;
+				// (in AS3 these make plain values)
+				if (x.f.k === "id" && this.lookup(x.f.name) === undefined) {
+					if (x.f.name === "String") return list.length ? `$r.text(${list[0]})` : '""';
+					if (x.f.name === "Number") return list.length ? `(+(${list[0]}))` : "0";
+					if (x.f.name === "Boolean") return list.length ? `(!!(${list[0]}))` : "false";
+				}
+				// (an error's second argument is its number)
+				if (x.f.k === "id" && /Error$/.test(x.f.name) && list.length > 1) return `Object.assign(new (${this.expr(x.f)})(${list[0]}),{errorID:${list[1]}})`;
+				return `new (${this.expr(x.f)})(${list.join(",")})`;
+			}
 			case "seq":
 				return `(${x.items.map((i) => this.expr(i)).join(",")})`;
 		}
 	}
 
+	/** The name of a package path (flash.utils.Timer), if that is what this is. */
+	private inPackage(o: Expr): boolean {
+		for (let x = o; ; x = (x as { o: Expr }).o) {
+			if (x.k === "id") return (x.name === "flash" || x.name === "fl") && this.lookup(x.name) === undefined && !this.members.has(x.name);
+			if (x.k !== "member") return false;
+		}
+	}
+
 	private member(o: Expr, name: string): string {
+		if (this.inPackage(o)) return this.ref(name);
 		// constants of AS3's Array
 		if (o.k === "id" && o.name === "Array" && this.lookup("Array") === undefined) {
 			const c: Record<string, number> = { CASEINSENSITIVE: 1, DESCENDING: 2, UNIQUESORT: 4, RETURNINDEXEDARRAY: 8, NUMERIC: 16 };
@@ -366,9 +441,16 @@ class Emitter {
 		return o.k === "num" ? `(${of})${n}` : `${of}${n}`;
 	}
 
+	/** A class as `is` and `as` take it. */
+	private classOf(type: string): string {
+		if (type === "int" || type === "uint" || type === "Number" || type === "String" || type === "Boolean") return `"${type}"`;
+		return type.startsWith("Vector.<") ? JSON.stringify(type) : this.ref(type);
+	}
+
 	private binary(x: Extract<Expr, { k: "bin" }>): string {
 		const a = this.expr(x.a);
 		if (x.op === "as" || x.op === "is") {
+			if (x.b.k === "vector") return `$r.${x.op}(${a},${this.expr(x.b)})`;
 			const type = x.b.k === "id" ? x.b.name : x.b.k === "member" ? x.b.name : "*";
 			const cls = type === "int" || type === "uint" || type === "Number" || type === "String" || type === "Boolean" ? `"${type}"` : this.expr(x.b);
 			return `$r.${x.op}(${a},${cls})`;
@@ -378,43 +460,52 @@ class Emitter {
 
 	private call(f: Expr, args: Expr[]): string {
 		const list = args.map((a) => this.expr(a)).join(",");
+		if (f.k === "vector") return `$r.vec(${JSON.stringify(f.of)},${list})`;
 		if (f.k === "id" && this.lookup(f.name) === undefined && !this.members.has(f.name)) {
 			// conversions
 			if (f.name === "int") return `(${list}|0)`;
 			if (f.name === "uint") return `(${list}>>>0)`;
 			if (f.name === "String" && args.length === 1) return `$r.text(${list})`;
 			// a cast: Class(x)
-			if (args.length === 1 && /^[A-Z]/.test(f.name) && !GLOBALS.has(f.name)) return `(${list})`;
-			if (f.name === "Vector" && args.length === 1) return `(${list})`;
+			if (args.length === 1 && /^[A-Z]/.test(f.name) && (!GLOBALS.has(f.name) || f.name === "Object")) return `(${list})`;
 		}
 		if (f.k === "member" && (f.name === "sort" || f.name === "sortOn")) return `$r.${f.name}(${this.expr(f.o)}${list ? `,${list}` : ""})`;
 		return `${this.expr(f)}(${list})`;
 	}
 
 	/** A function with its own scope. Named functions are members or locals, see `decl`. */
-	func(f: FuncDecl, asExpression: boolean): string {
+	func(f: FuncDecl, asExpression: boolean, member = false): string {
 		const vars = new Map<string, string>();
 		for (const p of f.params) vars.set(p.name, p.rest ? "Array" : p.type);
 		const inner: FuncDecl[] = [];
 		hoist(f.body, vars, inner);
-		if (asExpression && f.name) vars.set(f.name, "Function");
+		if (asExpression && f.name) vars.set(f.name, DECLARED);
 		const saved = this.scope;
 		const savedRet = this.ret;
+		const savedSelf = this.self;
 		this.scope = { vars, up: saved };
 		this.ret = f.ret;
-		const params = f.params.map((p) => (p.rest ? `...${safe(p.name)}` : p.init ? `${safe(p.name)}=${this.expr(p.init)}` : safe(p.name))).join(",");
+		this.self = member ? "$t" : "this";
+		const params = f.params.map((p) => (p.rest ? `...${safe(p.name)}` : safe(p.name))).join(",");
+		// defaults by how many came: passing undefined isn't leaving out, and they don't count in .length
 		const head = f.params
-			.filter((p) => !p.rest && (p.type === "int" || p.type === "uint"))
-			.map((p) => `${safe(p.name)}=${this.coerce(p.type, safe(p.name))};`)
+			.map((p, i) => {
+				if (p.rest) return "";
+				const n = safe(p.name);
+				const given = p.init ? `if(arguments.length<${i + 1})${n}=${this.expr(p.init)};` : "";
+				const typed = p.type === "int" || p.type === "uint" || p.type === "Number" || p.type === "String" || p.type === "Boolean";
+				return given + (typed ? `${n}=${this.coerce(p.type, n)};` : "");
+			})
 			.join("");
 		const paramNames = new Set(f.params.map((p) => p.name));
-		const locals = [...vars].filter(([n]) => !paramNames.has(n) && n !== f.name).map(([n, t]) => (t === "Function" ? null : `${safe(n)}=${defaultOf(t)}`));
+		const locals = [...vars].filter(([n]) => !paramNames.has(n) && n !== f.name).map(([n, t]) => (t === DECLARED ? null : `${safe(n)}=${defaultOf(t)}`));
 		const decl = locals.filter(Boolean).length ? `var ${locals.filter(Boolean).join(",")};` : "";
 		// functions in functions: there from the start, as declarations are
 		const hoisted = inner.map((g) => `function ${safe(g.name)}${this.func(g, false).replace(/^function/, "")}`).join("");
 		const body = f.body.map((s) => this.stmt(s, false)).join("");
 		this.scope = saved;
 		this.ret = savedRet;
+		this.self = savedSelf;
 		return `function${asExpression && f.name ? ` ${safe(f.name)}` : ""}(${params}){${head}${decl}${hoisted}${body}}`;
 	}
 
@@ -466,10 +557,20 @@ class Emitter {
 				return `${s.name}:${this.stmt(s.body, top)}`;
 			case "try": {
 				let out = `try{${s.body.map(body).join("")}}`;
-				if (s.handler) {
+				if (s.catches.length) {
+					// by type, in turn; what none of them takes goes on
 					const saved = this.scope;
-					this.scope = { vars: new Map([[s.param, "*"]]), up: saved };
-					out += `catch(${safe(s.param)}){${safe(s.param)}=$r.err(${safe(s.param)});${s.handler.map(body).join("")}}`;
+					out += "catch($e){$e=$r.err($e);";
+					let open = false;
+					s.catches.forEach((c, i) => {
+						this.scope = { vars: new Map([[c.param, c.type]]), up: saved };
+						const any = c.type === "*" || c.type === "Object";
+						const test = any ? "" : `if($r.is($e,${this.classOf(c.type)}))`;
+						out += `${i ? "else " : ""}${test}{var ${safe(c.param)}=$e;${c.body.map(body).join("")}}`;
+						open = !any;
+					});
+					if (open) out += "else throw $e;";
+					out += "}";
 					this.scope = saved;
 				}
 				if (s.final) out += `finally{${s.final.map(body).join("")}}`;
@@ -504,8 +605,8 @@ export function compileScripts(units: ScriptUnit[], linked: Set<string> = new Se
 	for (const p of parsed) hoist(p.body, members, fns);
 	const em = new Emitter(members, linked);
 	let out = "function($t,$f,$r){";
-	for (const [name, type] of members) if (type !== "Function") out += `$t.${name}=${defaultOf(type)};`;
-	for (const f of fns) out += `$t.${f.name}=${em.func(f, false)};`;
+	for (const [name, type] of members) if (type !== DECLARED) out += `$t.${name}=${defaultOf(type)};`;
+	for (const f of fns) out += `$t.${f.name}=${em.func(f, false, true)};`;
 	out += "return{";
 	out += parsed.map((p) => `${p.frame}:function(){${p.body.map((s) => em.stmt(s, true)).join("")}}`).join(",");
 	out += "}}";

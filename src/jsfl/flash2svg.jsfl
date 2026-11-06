@@ -354,7 +354,7 @@
 		job.pendingTimelines = [];
 		job.seen = {};
 		job.linked = {};
-		var docClass = String(get(job.srcDoc || fl.getDocumentDOM(), "docClass", "") || "");
+		var docClass = job.model.doc.type == "htmlcanvas" ? "" : String(get(job.srcDoc || fl.getDocumentDOM(), "docClass", "") || "");
 		if (docClass) warn("The document class " + docClass + " isn't run: classes in .as files aren't compiled, only frame scripts are");
 		for (i = 0; i < roots.length; i++) {
 			var id = roots[i].item ? "sym:" + roots[i].item : "scene:" + roots[i].scene;
@@ -895,7 +895,8 @@
 				try { multiline = el.lineType == "multiline"; } catch (e) {}
 				try { password = el.lineType == "password"; } catch (e) {}
 				try { name = el.name || ""; } catch (e) {}
-				try { border = !!el.border; } catch (e) {}
+				// (HTML5 Canvas has no border, selectable or letter spacing: asking says so in the Output panel)
+				if (job.model.doc.type != "htmlcanvas") try { border = !!el.border; } catch (e) {}
 			}
 			// a password field shows a star per character, and its text never leaves Animate
 			var mask = function (s) { return password ? String(s).replace(/[^\r\n]/g, "*") : s; };
@@ -909,14 +910,14 @@
 						text: mask(run.characters),
 						face: get(a, "face", "Arial"), size: get(a, "size", 12), fillColor: get(a, "fillColor", "#000000"),
 						bold: !!get(a, "bold", false), italic: !!get(a, "italic", false),
-						alignment: get(a, "alignment", "left"), letterSpacing: get(a, "letterSpacing", 0) || 0, lineSpacing: get(a, "lineSpacing", 0) || 0
+						alignment: get(a, "alignment", "left"), letterSpacing: job.model.doc.type == "htmlcanvas" ? 0 : get(a, "letterSpacing", 0) || 0, lineSpacing: get(a, "lineSpacing", 0) || 0
 					};
 					var url = get(a, "url", "");
 					if (url) { tr.url = url; var target = get(a, "target", ""); if (target) tr.target = target; }
 					runs.push(tr);
 				}
 			} catch (e) {}
-			try { selectable = !!el.selectable; } catch (e) {}
+			if (job.model.doc.type != "htmlcanvas") try { selectable = !!el.selectable; } catch (e) {}
 			var txt = {
 				kind: "text",
 				textType: textType,

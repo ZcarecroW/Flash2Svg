@@ -40,7 +40,8 @@ function flashTraces(name: string): string[] {
 	const mm = join(homedir(), "mm.cfg");
 	const saved = existsSync(mm) ? `${mm}.f2s-saved` : null;
 	if (saved) renameSync(mm, saved);
-	writeFileSync(mm, "ErrorReportingEnable=1\nTraceOutputFileEnable=1\nMaxWarnings=0\n");
+	// (an uncaught error goes to the log: without the last line it also opens a window that waits)
+	writeFileSync(mm, "ErrorReportingEnable=1\nTraceOutputFileEnable=1\nMaxWarnings=0\nSuppressDebuggerExceptionDialogs=1\n");
 	const log = join(process.env.APPDATA!, "Macromedia", "Flash Player", "Logs", "flashlog.txt");
 	rmSync(log, { force: true });
 	try {
@@ -64,8 +65,10 @@ async function playerTraces(name: string, page: import("playwright-core").Page, 
 	writeFileSync(file, alone ? res.files[0]!.svg : `<!doctype html><html><body style="margin:0">${res.files[0]!.svg}</body></html>`);
 	const lines: string[] = [];
 	// (what isn't there on purpose: the browser says so too)
-	const onLog = (m: import("playwright-core").ConsoleMessage) => void (m.text().startsWith("Failed to load") || lines.push(m.text()));
+	const onLog = (m: import("playwright-core").ConsoleMessage) => void (m.text().startsWith("Failed to load") || !m.text() || lines.push(m.text()));
 	const onError = (e: Error) => void lines.push(`PAGE ERROR ${e.message}`);
+	// (the last document may still be running: nothing of it goes into this one's lines)
+	await page.goto("about:blank");
 	page.on("console", onLog);
 	page.on("pageerror", onError);
 	await page.goto(`${origin}/${name}/${alone ? "as3-player.svg" : "as3-player.html"}`);

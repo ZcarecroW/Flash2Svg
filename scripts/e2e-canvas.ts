@@ -55,6 +55,7 @@ async function play(page: Page, url: string): Promise<string[]> {
 	const lines: string[] = [];
 	const onLog = (m: import("playwright-core").ConsoleMessage) => void (/^(Failed to load|\[object|Access to|Canvas2D)/.test(m.text()) || lines.push(m.text()));
 	const onError = (e: Error) => void lines.push(`PAGE ERROR ${e.message}`);
+	await page.goto("about:blank");
 	page.on("console", onLog);
 	page.on("pageerror", onError);
 	await page.goto(url);

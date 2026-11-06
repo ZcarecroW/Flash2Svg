@@ -3346,6 +3346,113 @@
 		doc.editScene(0);
 	});
 
+	// ---------------------------------------------------------------- f81: the language, compared with Flash Player
+	build("f81-as3language", function () {
+		newDoc("timeline", 300, 200, 24);
+		doc.as3StrictMode = false;
+		rect(10, 10, 100, 60, "#3366CC");
+		var t = tl();
+		t.layers[0].frames[0].actionScript = FLfile.read(root + "/as3/f81-language.as");
+	});
+
+	// ---------------------------------------------------------------- f82: the camera's colour effects
+	build("f82-camcolor", function () {
+		newDoc("timeline", 400, 300, 24);
+		layer("art");
+		rect(40, 40, 180, 200, "#3366CC");
+		oval(200, 80, 340, 220, "#CC3366");
+		rect(120, 200, 300, 260, "#44AA55");
+		extendAll(24);
+		var t = tl();
+		t.camera.cameraEnabled = true;
+		var c = t.camera;
+		log.push("camera members: " + typeof c.setTint + " " + typeof c.setColorFilter + " " + typeof c.getTint + " " + typeof c.getColorFilter + " " + typeof c.setTintColor + " " + typeof c.setTintPercent);
+		var ci = -1;
+		for (var i = 0; i < t.layers.length; i++) if (t.layers[i].layerType == "camera") ci = i;
+		t.setSelectedLayers(ci);
+		t.currentLayer = ci;
+		t.insertKeyframe(8);
+		t.insertKeyframe(16);
+		c.tintEnabled = true;
+		c.colorFilterEnabled = true;
+		c.setTint(0, 0, 255, 128, 0);
+		c.setColorFilter(0, 0, 0, 0, 0);
+		c.setTint(8, 60, 255, 128, 0);
+		c.setColorFilter(8, 0, 0, 0, 0);
+		c.setTint(16, 0, 255, 128, 0);
+		c.setColorFilter(16, 20, 30, -40, 60);
+		t.setSelectedFrames(0, 7);
+		t.createMotionTween();
+		for (var f = 0; f < 24; f += 6) { var ti = c.getTint(f), cf = c.getColorFilter(f), dump = "cam " + f; for (var k in ti) dump += " " + k + "=" + ti[k]; for (var q in cf) dump += " " + q + "=" + cf[q]; log.push(dump); }
+	});
+
+	// ---------------------------------------------------------------- f83: how strokes scale, under an uneven scale
+	build("f83-strokescale", function () {
+		newDoc("timeline", 500, 300, 24);
+		var kinds = ["normal", "horizontal", "vertical", "none"];
+		for (var i = 0; i < kinds.length; i++) {
+			(function (kind, n) {
+				symbol("s " + kind, "graphic", function () {
+					doc.setStrokeSize(4);
+					doc.setStrokeColor("#222222");
+					doc.setFillColor("#FFCC00");
+					doc.addNewRectangle({ left: -20, top: -20, right: 20, bottom: 20 }, 0, true, true);
+					var els = tl().layers[0].frames[0].elements;
+					doc.selectAll();
+					var st = doc.getCustomStroke("selection");
+					st.scaleType = kind;
+					doc.setCustomStroke(st);
+					doc.selectNone();
+				});
+				layer("l " + kind);
+				var a = place("s " + kind, 70 + n * 115, 80, 0);
+				a.scaleX = 2.5;
+				a.scaleY = 0.75;
+				var b = place("s " + kind, 70 + n * 115, 210, 0);
+				b.scaleX = 0.6;
+				b.scaleY = 2;
+			})(kinds[i], i);
+		}
+	});
+
+	// ---------------------------------------------------------------- f84: Export as Bitmap and Cache as Bitmap
+	build("f84-render", function () {
+		newDoc("timeline", 500, 300, 24);
+		symbol("art", "movie clip", function () {
+			oval(-40, -40, 40, 40, "#3366CC");
+			rect(-10, -30, 10, 30, "#FFCC00");
+		});
+		layer("as vector");
+		place("art", 80, 80, 0);
+		layer("export");
+		var e = place("art", 220, 80, 0);
+		e.bitmapRenderMode = "export";
+		log.push("render mode " + e.bitmapRenderMode + " cacheAsBitmap " + e.cacheAsBitmap);
+		layer("export scaled");
+		var s = place("art", 380, 80, 0);
+		s.bitmapRenderMode = "export";
+		s.scaleX = 1.5;
+		s.scaleY = 1.5;
+		s.rotation = 20;
+		layer("cache");
+		var c = place("art", 80, 220, 0);
+		c.cacheAsBitmap = true;
+		layer("cache scaled");
+		var d = place("art", 220, 220, 0);
+		d.cacheAsBitmap = true;
+		d.scaleX = 1.5;
+		d.rotation = 20;
+		layer("export filtered");
+		var f = place("art", 380, 220, 0);
+		f.bitmapRenderMode = "export";
+		doc.selectNone();
+		doc.selection = [f];
+		doc.addFilter("blurFilter");
+		doc.setFilterProperty("blurX", 0, 6);
+		doc.setFilterProperty("blurY", 0, 6);
+		doc.selectNone();
+	});
+
 	FLfile.write(outDir + "/build-log.txt", log.join("\n"));
 	fl.closeAll(false);
 	fl.quit(false);

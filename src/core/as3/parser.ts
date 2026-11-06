@@ -195,6 +195,7 @@ export type Expr =
 	| { k: "index"; o: Expr; i: Expr }
 	| { k: "call"; f: Expr; args: Expr[] }
 	| { k: "new"; f: Expr; args: Expr[] }
+	| { k: "vector"; of: string }
 	| { k: "seq"; items: Expr[] };
 
 export interface VarDecl {
@@ -230,7 +231,7 @@ export type Stmt =
 	| { k: "break" | "continue"; label: string }
 	| { k: "return"; x: Expr | null }
 	| { k: "throw"; x: Expr }
-	| { k: "try"; body: Stmt[]; param: string; handler: Stmt[] | null; final: Stmt[] | null }
+	| { k: "try"; body: Stmt[]; catches: { param: string; type: string; body: Stmt[] }[]; final: Stmt[] | null }
 	| { k: "label"; name: string; body: Stmt }
 	| { k: "expr"; x: Expr }
 	| { k: "empty" };
@@ -310,9 +311,9 @@ export function parseScript(src: string): Stmt[] {
 			t = ident();
 		}
 		if (eat(".<")) {
-			typeName();
+			const of = typeName();
 			closeAngle();
-			return "Vector";
+			return `Vector.<${of}>`;
 		}
 		return t;
 	}
@@ -389,8 +390,9 @@ export function parseScript(src: string): Stmt[] {
 			p++;
 			// Vector.<int> as a value: new Vector.<int>(), Vector.<int>(list)
 			if (t.text === "Vector" && eat(".<")) {
-				typeName();
+				const of = typeName();
 				closeAngle();
+				return { k: "vector", of };
 			}
 			return { k: "id", name: t.text };
 		}
@@ -436,9 +438,9 @@ export function parseScript(src: string): Stmt[] {
 		expect("new");
 		// new <int>[1, 2, 3]
 		if (eat("<")) {
-			typeName();
+			const of = typeName();
 			closeAngle();
-			return primary();
+			return { k: "call", f: { k: "vector", of }, args: [primary()] };
 		}
 		let f: Expr = primary();
 		for (;;) {
@@ -706,22 +708,16 @@ export function parseScript(src: string): Stmt[] {
 	function tryStatement(): Stmt {
 		expect("try");
 		const body = blockBody();
-		let param = "";
-		let handler: Stmt[] | null = null;
+		const catches: { param: string; type: string; body: Stmt[] }[] = [];
 		while (eat("catch")) {
 			expect("(");
-			const name = ident();
-			annotation();
+			const param = ident();
+			const type = annotation();
 			expect(")");
-			const h = blockBody();
-			// (several catch clauses by type: the first one takes all)
-			if (!handler) {
-				handler = h;
-				param = name;
-			}
+			catches.push({ param, type, body: blockBody() });
 		}
 		const final = eat("finally") ? blockBody() : null;
-		return { k: "try", body, param, handler, final };
+		return { k: "try", body, catches, final };
 	}
 
 	const out: Stmt[] = [];

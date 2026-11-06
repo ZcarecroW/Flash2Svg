@@ -19,7 +19,9 @@ import {
 	FPoint,
 	FRectangle,
 	FTextFormat,
+	FVector,
 	inverse,
+	makeVector,
 	IOError,
 	mul,
 	PACKAGES,
@@ -28,6 +30,8 @@ import {
 	twips,
 	URLRequest,
 	URLVariables,
+	vectorGet,
+	vectorSet,
 	type Mat,
 } from "./flash-lib.ts";
 
@@ -181,7 +185,10 @@ class Dispatcher {
 		e.currentTarget = this;
 		for (const x of l.slice()) {
 			if (e._stop > 1) break;
-			if (x.capture === capture) run(() => x.fn.call(this, e));
+			if (x.capture !== capture) continue;
+			// (a function literal isn't called on anything: `this` in it isn't the dispatcher)
+			const f = x.fn;
+			run(() => f(e));
 		}
 	}
 	dispatchEvent(e: FEvent) {
@@ -2182,6 +2189,10 @@ export class Scripts {
 			as: (x: unknown, c: unknown) => (isType(x, c) ? x : null),
 			cls: (n: string, t: Record<string, unknown>) => self.classOf(n) ?? t[n],
 			err: asFlashError,
+			vec: makeVector,
+			vget: vectorGet,
+			vset: vectorSet,
+			re: (s: string, f: string) => Object.defineProperty(new RegExp(s, f), "extended", { value: true }),
 			key: dictKey,
 			keys: dictKeys,
 			sort: sortArray,
@@ -2697,6 +2708,7 @@ export class Scripts {
 }
 
 function isType(x: unknown, c: unknown): boolean {
+	if (typeof c === "string" && c.startsWith("Vector.<")) return x instanceof FVector && c === `Vector.<${x._t}>`;
 	switch (c) {
 		case "int":
 			return typeof x === "number" && (x | 0) === x;
@@ -2717,9 +2729,20 @@ function isType(x: unknown, c: unknown): boolean {
 	return typeof c === "function" && x instanceof c;
 }
 
-function sortArray(a: unknown[], ...o: unknown[]): unknown[] {
+function sortArray(a: unknown[], ...o: unknown[]): unknown {
 	const f = o.find((x) => typeof x === "function") as Fn | undefined;
 	const flags = (o.find((x) => typeof x === "number") as number) ?? 0;
+	// RETURNINDEXEDARRAY: where each would go, the array left alone
+	if (flags & 8) {
+		const copy = a.map((v, i) => ({ v, i }));
+		const by = sortArray(copy.map((c) => c.v), ...o.map((x) => (typeof x === "number" ? x & ~12 : x))) as unknown[];
+		return by.map((v) => {
+			const at = copy.findIndex((c) => c.v === v);
+			return copy.splice(at, 1)[0]!.i;
+		});
+	}
+	// UNIQUESORT: 0, the array left alone, if two are the same
+	if (flags & 4 && new Set(a).size < a.length) return 0;
 	if (f) a.sort(f);
 	else if (flags & 16) a.sort((x, y) => (x as number) - (y as number));
 	else if (flags & 1) a.sort((x, y) => String(x).toLowerCase().localeCompare(String(y).toLowerCase()));
@@ -2756,6 +2779,10 @@ Object.defineProperties(Date.prototype, {
 	dayUTC: { get(this: Date) { return this.getUTCDay(); }, configurable: true },
 	time: { get(this: Date) { return this.getTime(); }, set(this: Date, v: number) { this.setTime(v); }, configurable: true },
 	timezoneOffset: { get(this: Date) { return this.getTimezoneOffset(); }, configurable: true },
+});
+Object.defineProperties(RegExp.prototype, {
+	extended: { value: false, configurable: true },
+	dotall: { get(this: RegExp) { return this.dotAll; }, configurable: true },
 });
 (Error.prototype as any).errorID = 0;
 (Error.prototype as any).getStackTrace = function (this: Error) {

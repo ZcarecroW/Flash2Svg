@@ -55,6 +55,8 @@ export interface BakeOptions {
 export interface BakedTimeline {
 	key: string;
 	program: Program;
+	/** The frame shown at each tick (-1: none). */
+	frames?: Int32Array;
 	layers: BakedLayer[];
 	/** True if anything inside changes over time. */
 	animated: boolean;
@@ -305,7 +307,7 @@ class Baker {
 		const key = prog.id + "#" + hashFrames(frames);
 		const hit = this.cache.get(key);
 		if (hit) return hit;
-		const bt: BakedTimeline = { key, program: prog, layers: [], animated: false };
+		const bt: BakedTimeline = { key, program: prog, frames, layers: [], animated: false };
 		this.cache.set(key, bt);
 		if (depth > 48) return bt;
 		if (prog.view) {

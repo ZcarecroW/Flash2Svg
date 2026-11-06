@@ -30,7 +30,8 @@ export function findAnimate() {
 
 /** Lines of Animate's Output panel that report a problem (errors, unsupported APIs). */
 export function outputProblems(text) {
-	return (text ?? "").split(/\r?\n/).filter((l) => /error|exception|failed|not supported|could not|damaged/i.test(l));
+	// (lines starting with "*": what Animate changes when text moves into an HTML5 Canvas document, as notes)
+	return (text ?? "").split(/\r?\n/).filter((l) => /error|exception|failed|not supported|could not|damaged/i.test(l) && !/^\s*\* For /.test(l));
 }
 
 export function isAnimateRunning() {

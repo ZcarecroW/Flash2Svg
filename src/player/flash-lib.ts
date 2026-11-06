@@ -401,6 +401,85 @@ export class FTextFormat {
 	}
 }
 
+const CONVERT: Record<string, (v: any) => unknown> = { int: (v) => v | 0, uint: (v) => v >>> 0, Number: (v) => +v, Boolean: (v) => !!v, String: (v) => (v === null || v === undefined ? null : String(v)) };
+const none = (t: string) => (t === "int" || t === "uint" || t === "Number" ? 0 : null);
+
+/** Vector.<T>: an array that converts what goes in and watches its bounds. */
+export class FVector extends Array<any> {
+	static override get [Symbol.species]() {
+		return Array;
+	}
+	fixed = false;
+	_t = "*";
+	_in(v: unknown) {
+		const c = CONVERT[this._t];
+		return c ? c(v) : v;
+	}
+	private same(list: unknown[]) {
+		return makeVector(this._t, list);
+	}
+	private open() {
+		if (this.fixed) throw fail(RangeError, 1126, "Cannot change the length of a fixed Vector.");
+	}
+	override push(...v: unknown[]) {
+		this.open();
+		return super.push(...v.map((x) => this._in(x)));
+	}
+	override unshift(...v: unknown[]) {
+		this.open();
+		return super.unshift(...v.map((x) => this._in(x)));
+	}
+	override pop() {
+		this.open();
+		return super.pop();
+	}
+	override shift() {
+		this.open();
+		return super.shift();
+	}
+	override splice(a: number, n?: number, ...v: unknown[]) {
+		this.open();
+		return this.same(super.splice(a, n as number, ...v.map((x) => this._in(x))));
+	}
+	override slice(a?: number, b?: number) {
+		return this.same(super.slice(a, b));
+	}
+	override concat(...v: any[]) {
+		return this.same(super.concat(...v));
+	}
+	override filter(f: any, t?: unknown) {
+		return this.same(super.filter(f, t)) as any;
+	}
+	override map(f: any, t?: unknown) {
+		return this.same(super.map(f, t)) as any;
+	}
+	override join(s = ",") {
+		return Array.prototype.map.call(this, (v) => String(v)).join(s);
+	}
+	override toString() {
+		return this.join();
+	}
+}
+
+export function makeVector(t: string, a?: unknown, fixed?: boolean): FVector {
+	const v = new FVector();
+	v._t = t;
+	if (typeof a === "number") for (let i = 0; i < a; i++) Array.prototype.push.call(v, none(t));
+	else if (a) for (const x of a as unknown[]) Array.prototype.push.call(v, v._in(x));
+	v.fixed = !!fixed;
+	return v;
+}
+
+export function vectorGet(v: FVector, i: number) {
+	if (i >= v.length || i < 0) throw fail(RangeError, 1125, `The index ${i} is out of range ${v.length}.`);
+	return v[i];
+}
+
+export function vectorSet(v: FVector, i: number, x: unknown) {
+	if (i > v.length || i < 0 || (i === v.length && v.fixed)) throw fail(RangeError, 1125, `The index ${i} is out of range ${v.length}.`);
+	return (v[i] = v._in(x));
+}
+
 /** Name-value pairs of a URL's query. */
 export class URLVariables {
 	constructor(s?: string) {

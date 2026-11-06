@@ -1,0 +1,80 @@
+/**
+ * Sounds of SMIL and CSS output: where a script can run (inline, a file of its own, an <object>),
+ * these few lines follow the animation's own clock and play what its frames say. The schedule comes
+ * from the baked timelines: every sound on the document's clock (src/core/emit/soundtrack.ts).
+ * The clock is the animation's, so pausing, a start trigger and a page scrolled away all count.
+ */
+import { Mixer, type MixerHost, type Voice } from "./mixer.ts";
+import type { PFrameSound, PSound } from "./format.ts";
+
+export interface SoundSchedule {
+	snd: Record<string, PSound>;
+	fps: number;
+	/** Ticks of the whole, and from which one it repeats (-1: it doesn't). */
+	ticks: number;
+	from: number;
+	/** At a tick: a frame sound ([tick, ...PFrameSound without its frame]), from tick order; a stream ends with the tick in [4]. */
+	ev: PFrameSound[];
+}
+
+export default function soundtrack(S: SoundSchedule, id: string) {
+	const svg = document.getElementById(id) as unknown as SVGSVGElement & { getAnimations(o: object): Animation[] };
+	if (!svg) return;
+	const host: MixerHost = { P: { snd: S.snd }, clock: 0, running: true, speed: 1, quiet: false, muted: false };
+	const mixer = new Mixer(host);
+	const smil = svg.querySelector("animate,animateTransform,animateMotion,set") as SVGAnimationElement | null;
+
+	/** Seconds the animation has played, or null while it hasn't begun. */
+	const now = (): number | null => {
+		if (smil) {
+			try {
+				return svg.getCurrentTime() - smil.getStartTime();
+			} catch {
+				return null;
+			}
+		}
+		const a = svg.getAnimations?.({ subtree: true })[0];
+		if (a) return a.playState === "paused" || typeof a.currentTime !== "number" ? null : a.currentTime / 1000;
+		return null;
+	};
+	const streams = new Map<PFrameSound, Voice>();
+	const span = S.ticks - S.from;
+	/** The tick a time is on, looped; each pass of the loop has its own number. */
+	const place = (t: number): [number, number] => {
+		const k = t * S.fps;
+		if (S.from < 0 || k < S.ticks) return [k, 0];
+		const over = k - S.from;
+		return [S.from + (over % span), Math.floor(over / span)];
+	};
+	let last = -1,
+		pass = 0;
+	const frame = () => {
+		requestAnimationFrame(frame);
+		const t = now();
+		if (t === null || document.hidden) return;
+		host.clock = t;
+		const [k, p] = place(t);
+		const wrapped = p !== pass;
+		if (last > k && !wrapped) streams.forEach((v) => v.stop());
+		for (const e of S.ev) {
+			const at = e[0];
+			const due = wrapped ? at > last || at <= k : at > last && at <= k;
+			if (e[2] === 3) {
+				// a stream plays between its ticks, from where the animation is
+				const on = k >= at && k < e[4];
+				const v = streams.get(e);
+				if (on && (!v || v.done)) streams.set(e, mixer.voice(e, (k - at) / S.fps));
+				else if (!on && v) {
+					v.stop();
+					streams.delete(e);
+				}
+			} else if (due) mixer.trigger(e);
+		}
+		last = k;
+		pass = p;
+	};
+	// (ticks start at 0: a sound on the first frame is due at once)
+	last = -1;
+	requestAnimationFrame(frame);
+	document.addEventListener("visibilitychange", () => mixer.hold(document.hidden));
+}
