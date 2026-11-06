@@ -327,7 +327,7 @@ export function artworkBounds(a: Artwork): Box | null {
 }
 
 /** Bounds of everything a symbol ever shows, in its own space (Flash slices against these). */
-function contentBounds(prog: Program, art: (id: string) => Artwork | null): Box | null {
+export function contentBounds(prog: Program, art: (id: string) => Artwork | null): Box | null {
 	let box: Box | null = null;
 	const addArt = (id: string) => {
 		const a = art(id);

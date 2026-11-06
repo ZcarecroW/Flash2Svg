@@ -53,6 +53,8 @@ export interface AccInfo {
 
 export interface DocInfo {
 	name: string;
+	/** The document's 3D view, when something in it is in 3D. */
+	view3D?: { angle: number | null; x: number; y: number };
 	acc?: AccInfo;
 	/** "Flash" (ActionScript 3), "htmlcanvas", "webgl", ... */
 	type: string;
@@ -164,6 +166,8 @@ export interface InstanceElement extends ElementBase {
 	firstFrame?: number;
 	lastFrame?: number;
 	is3D?: boolean;
+	/** 3D: the axes and translation, rows m00..m02, m10..m12, m20..m22, m30..m32 (`matrix` holds none of it). */
+	m3?: number[];
 }
 
 export interface ShapeElement extends ElementBase {

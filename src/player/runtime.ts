@@ -432,6 +432,9 @@ export class Inst {
 	clip: Clip | null = null;
 	/** Buttons: the Hit frame. */
 	private hit?: Clip;
+	/** in perspective: the HTML element with its matrix3d, and which of them it has */
+	private p3?: HTMLElement;
+	private p3at = -1;
 	/** set by scripts: its transform and alpha (the timeline's no longer count), moved or taken off */
 	ov?: Frozen;
 	ovAlpha?: number;
@@ -481,7 +484,19 @@ export class Inst {
 					this.clip = new Clip(owner.player, sym, it.t);
 					this.clip.up = owner;
 					this.clip.inst = this;
-					g.appendChild(this.clip.node);
+					if (__MORPH__ && it.p3) {
+						// in perspective: HTML around the timeline can do what SVG can't (core/persp.ts)
+						const [x, y, w, h] = it.p3.b;
+						const f = el("foreignObject", { x: String(x), y: String(y), width: String(w), height: String(h), style: "overflow:visible" });
+						const d = document.createElementNS("http://www.w3.org/1999/xhtml", "div") as HTMLElement;
+						d.style.cssText = `width:${w}px;height:${h}px;transform-origin:0 0`;
+						const s = el("svg", { width: String(w), height: String(h), viewBox: `${x} ${y} ${w} ${h}`, style: "display:block;overflow:visible" });
+						s.appendChild(this.clip.node);
+						d.appendChild(s);
+						f.appendChild(d);
+						g.appendChild(f);
+						this.p3 = d;
+					} else g.appendChild(this.clip.node);
 					if (it.nm) {
 						g.setAttribute("data-name", it.nm);
 						owner.player.named.set(it.nm, this.clip);
@@ -621,6 +636,14 @@ export class Inst {
 			const ms = ((this.owner.tw - it.s) / P.fps) * 1000;
 			const run = player.live && this.owner.flows;
 			for (const a of this.anims) sync(player, a, ms, run);
+		}
+		if (__MORPH__ && this.p3) {
+			const q = (it as PInst).p3!;
+			const at = trackAt(P, q.t, this.owner.frame, 0);
+			if (at !== this.p3at) {
+				this.p3at = at;
+				this.p3.style.transform = q.r[at]!;
+			}
 		}
 		if (!this.animTransform && !(__SCRIPTS__ && this.ov)) {
 			const m = matrixOf(P, tr, t, trackAt(P, tr[6], t, 0), trackAt(P, tr[7], t, 0));

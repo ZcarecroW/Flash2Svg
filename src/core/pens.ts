@@ -137,6 +137,8 @@ export function applyPens(
 	/** The scale of an instance, if it stays. */
 	const scaleOf = (it: InstanceItem): Mat | null => {
 		const t = it.transform;
+		// (in perspective a drawing is seen as a picture on a plane: its strokes go along)
+		if (it.persp) return null;
 		if (![t.rot, t.skw, t.sx, t.sy].every((k) => isConstant(k))) return null;
 		const p = Object.fromEntries(TRANSFORM_PROPS.map((k) => [k, valueAt(t[k], it.start)])) as Parameters<typeof fromProps>[0];
 		return linear(fromProps(p));

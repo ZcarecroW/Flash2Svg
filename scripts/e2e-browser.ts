@@ -82,6 +82,11 @@ async function shot(file: string, width: number, height: number, seek: { format:
 			if (format === "smil") {
 				svg.pauseAnimations();
 				svg.setCurrentTime(time);
+				// (perspective that changes is CSS in a SMIL document too)
+				for (const a of document.getAnimations()) {
+					a.pause();
+					a.currentTime = time * 1000;
+				}
 			} else if (format === "css") {
 				// Commit the seeked values as static styles: Edge rasterises running CSS animations on the
 				// compositor with its own sub-pixel snap (a moving box lands 1 px off), which would hide

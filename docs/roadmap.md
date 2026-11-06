@@ -182,7 +182,7 @@ the AS3 that Animate users actually write is.
 | Graphic looping, frame picker, lip sync, movie clips, scenes | ✅ | SMIL/CSS: clips with unrelated loop lengths jump at the repeat (player exact) |
 | Layer parenting, modern rigging (scale/skew/flip) | ✅ | f65 |
 | Camera pan, zoom, rotate, depth; layer depth (parallax), attached layers; colour effects | ✅ | f61, f62, f82 |
-| 3D rotation and translation (perspective) | ⬜ | drawn flat: `element.matrix` holds no 3D (30 % of f63's pixels differ); `matrix3D` and `is3D` are there: package 13 |
+| 3D rotation and translation (perspective) | ✅ | `src/core/persp.ts`: a flat transform plus a CSS `matrix3d` on HTML in a `foreignObject`; Lottie flat (warned) |
 | IK armatures (bones on symbols and on shapes) | ✅ | baked in the working copy (f67–f69): 0.00 % |
 | Asset Warp | ✅ | as Animate's warped bitmaps (f71–f73) |
 | Flexi bones, envelope deformer; warps with "Auto convert vector to bitmap" off | ❓ | go the same way; no test document yet |
@@ -204,7 +204,7 @@ the AS3 that Animate users actually write is.
 | 10 | Measure-first sweep: a test document each for IK (symbols, shapes), Asset Warp (bitmap and vector, Flexi bones, envelope), layer depth with the camera, modern rigging, variable-width strokes and brushes, input text, button hit areas, 3D — extracted and compared with Animate's frames; fix what breaks | turns every ❓ into ✅ or a known gap | medium | ✅ but brushes (see below) |
 | 11 | Bones and warps: whatever 10 finds missing (poses baked to transforms like guided tweens; deformed shapes as morphs or frames) | rigged characters export | medium–high | ✅ done in 10 |
 | 12 | Scripts in the player: Animate's AS3 (a subset compiled to JavaScript at export: variables, conditions, loops, functions, Math, display-object properties, events — mouse, keyboard, `ENTER_FRAME`, timers, drag and drop, text, sounds) and Canvas documents' JavaScript (run as it is, on a CreateJS-like `this`); every code snippet Animate offers that a browser can do; what can't be compiled is warned | interactive pieces, simple games | high | ✅ (see below); all snippets but FLVPlayback's |
-| 13 | Remaining appearance: camera colour effects, stroke scale *Horizontal*/*Vertical*, 3D with real perspective where the format allows (measure: CSS 3D, Lottie 3D layers), *Export as bitmap* | fidelity | medium | ⬜ |
+| 13 | Remaining appearance: camera colour effects, stroke scale *Horizontal*/*Vertical*, 3D with real perspective where the format allows (measure: CSS 3D, Lottie 3D layers), *Export as bitmap* | fidelity | medium | ✅ (see below) |
 | 14 | Sounds outside the player: SMIL/CSS with a few lines of script (inline, `<object>`), Lottie audio layers where players support them | sound everywhere a script runs | medium | ⬜ |
 | 15 | Input text and UI components as real HTML controls (`<foreignObject>`), working in the player | forms, quizzes | medium | ⬜ |
 | 16 | Video: MP4/WebM export through WebCodecs in the panel, APNG; video embedded in the timeline if Animate can hand over its frames | social media, lossless with alpha | medium | ⬜ |
@@ -218,6 +218,20 @@ handles per key), no path geometry: fit those curves exactly instead of sampling
 JSFL to measure it: a curve fitted through the frames). The JS player could move along the curve
 with `offset-path` in its Web Animations too. Firefox's SMIL draws f09 wrong far into the loop
 (~8 minutes, before this package too).
+
+**13. Appearance** (2026-11-06): the camera's tint and Adjust Color go on one wrapper around all layers, the
+way layer effects do, so every format has them (f82). Strokes: Animate's pen stays round under an uneven scale
+where SVG and Lottie stretch it; widths measured for 16 scale pairs: Normal width x sqrt((sx² + sy²) / 2),
+Horizontal x sx, Vertical x sy; `src/core/pens.ts` redraws such strokes in the scaled space, for Lottie the scale
+moves into the drawing because a layer stretches whatever is in it (f83: 0.00 % everywhere). *Export as bitmap*
+looks the same as vectors (f84: 0.00 %): nothing to do. 3D: `src/core/persp.ts`. JSFL gives `matrix3D` per
+frame once a tween is baked (`convertToFrameByFrameAnimation`), the view angle and vanishing point only in a copy
+saved as XFL (`doc.saveAsCopy`, the folder named like the file). The stored angle belongs to the stage's width:
+focal length = (width / 2) / tan(angle / 2); no angle in the file: 528.25. Instance bounds of a 3D element are
+local, those of a baked tween's frames the stage's. Flash draws 3D through a bitmap, its edges are softer. Animate
+hangs closing a document with a 3D motion tween (after saving it). CSS 3D measured: Edge and Firefox honour
+`matrix3d` in a `foreignObject`, inline, as a file and in `<img>`; Playwright's WebKit flattens it. A `<use>` can't
+hold a `foreignObject`: such timelines stay in place.
 
 **12. Scripts** (2026-11-06): frame scripts run. `src/core/as3` parses AS3 and compiles it to JavaScript at
 export (`parser.ts`, `emit.ts`); Canvas documents' JavaScript goes in as it is (`src/core/emit/scripts.ts`).

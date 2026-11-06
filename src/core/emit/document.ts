@@ -20,6 +20,19 @@ export interface Asset {
 	source: string;
 }
 
+/**
+ * Content seen in perspective: HTML can do what SVG can't, so the drawing goes into an element with
+ * a matrix3d, the size of the content (see persp.ts). The drawing itself stays SVG, and refers to
+ * the same shared drawings.
+ */
+export function perspectiveNode(inner: XmlNode, box: [number, number, number, number], transform: string): { node: XmlNode; holder: XmlNode } {
+	const [x, y, w, h] = box;
+	const holder = el("div", { xmlns: "http://www.w3.org/1999/xhtml", style: `width:${w}px;height:${h}px;transform-origin:0 0;transform:${transform}` }, [
+		el("svg", { xmlns: "http://www.w3.org/2000/svg", width: w, height: h, viewBox: `${x} ${y} ${w} ${h}`, style: "display:block;overflow:visible" }, [inner]),
+	]);
+	return { node: el("foreignObject", { x, y, width: w, height: h, style: "overflow:visible" }, [holder]), holder };
+}
+
 export class OutputDoc {
 	readonly defs: XmlNode[] = [];
 	readonly assets: Asset[] = [];

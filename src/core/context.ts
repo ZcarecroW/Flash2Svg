@@ -4,6 +4,7 @@ import { el } from "./xml.ts";
 import type { BitmapFill, SceneModel } from "./model.ts";
 import { applyNineSlice } from "./nineslice.ts";
 import { applyPens, type PenModes } from "./pens.ts";
+import { contentBounds } from "./nineslice.ts";
 import { buildMorph, type Morph } from "./morph.ts";
 import { guideCurve, type GuideCurve } from "./motionpath.ts";
 import { measurePrecision, type Precision } from "./precision.ts";
@@ -40,6 +41,19 @@ export interface Context {
 	/** Decimals asked for on screen; `precision` turns them into decimals per coordinate space. */
 	digits: number;
 	precision: Precision;
+}
+
+/** Where 3D instances' content is: the HTML that turns it is that size, not the size of everything. */
+function placePerspective(model: SceneModel, programs: Record<string, Program>, art: (id: string) => Artwork | null) {
+	for (const p of Object.values(programs))
+		for (const l of p.layers)
+			for (const it of l.items) {
+				if (it.kind !== "instance" || !it.persp) continue;
+				const child = programs[it.symbol];
+				const b = child ? contentBounds(child, art) : null;
+				const room = 4;
+				it.persp.box = b ? [Math.floor(b.l - room), Math.floor(b.t - room), Math.ceil(b.r - b.l + 2 * room), Math.ceil(b.b - b.t + 2 * room)] : [-model.doc.width, -model.doc.height, 2 * model.doc.width, 2 * model.doc.height];
+			}
 }
 
 export function createContext(model: SceneModel, files: FileSource, opts: CompileOptions & { digits?: number }): Context {
@@ -210,6 +224,7 @@ export function createContext(model: SceneModel, files: FileSource, opts: Compil
 	const addArt = (id: string, a: Artwork | null) => derived.set(id, a);
 	applyNineSlice(model, programs, ctx.art, addArt, digits, warn, opts.smooth);
 	applyPens(model.roots, programs, ctx.art, addArt, (id) => precision.art(id), pens, !!opts.pensInDrawings);
+	placePerspective(model, programs, ctx.art);
 	markShapeAlpha(programs, model.roots, (id) => {
 		const a = ctx.art(id);
 		return (bitmapFills.has(id) ? 4 : 0) | (a ? artworkPaints(a) : 0);

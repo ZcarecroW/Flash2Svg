@@ -27,6 +27,7 @@ import type {
 	TimelineData,
 	TweenData,
 } from "./model.ts";
+import { focalOf, homographyOf, isFlat, residual, tangentAt, unproject, type Homography, type Perspective } from "./persp.ts";
 import { angleAtLength, fitGuided, project, type GuideCurve } from "./motionpath.ts";
 import { blankComments, splitScript, type Interaction } from "./snippets.ts";
 import { simplify, type Ease, type Key, type Track } from "./tracks.ts";
@@ -40,6 +41,8 @@ export interface CompileOptions {
 	guide?: (atlas: string) => GuideCurve | null;
 	/** Lottie: an uneven scale goes into the drawings, see pens.ts. */
 	pensInDrawings?: boolean;
+	/** The document's 3D view. */
+	perspective?: Perspective;
 }
 
 export const TRANSFORM_PROPS = ["x", "y", "rot", "skw", "sx", "sy", "tpx", "tpy"] as const;
@@ -59,7 +62,17 @@ interface ItemBase {
 	slot: number;
 }
 
+/** What perspective adds to an instance's flat transform, see persp.ts. */
+export interface InstancePersp {
+	/** The homographies left over; `track`: which of them, by frame. */
+	rests: Homography[];
+	track: Track;
+	/** Where the symbol's content is: x, y, width, height. */
+	box?: [number, number, number, number];
+}
+
 export interface InstanceItem extends ItemBase {
+	persp?: InstancePersp;
 	kind: "instance";
 	symbol: string;
 	symbolType: InstanceElement["symbolType"];
@@ -225,8 +238,10 @@ const GROUP_OF: Record<TransformProp | ColorProp, "position" | "rotation" | "sca
 	aA: "color",
 };
 
-export function buildPrograms(model: SceneModel, opts: CompileOptions): CompileResult {
+export function buildPrograms(model: SceneModel, options: CompileOptions): CompileResult {
 	const warnings: string[] = [...model.warnings];
+	const view = model.doc.view3D;
+	const opts: CompileOptions = view ? { ...options, perspective: { focal: focalOf(view.angle, model.doc.width), x: view.x, y: view.y } } : options;
 	const programs: Record<string, Program> = {};
 	for (const id in model.timelines) {
 		programs[id] = buildProgram(model.timelines[id]!, opts, warnings, model.doc);
@@ -1195,6 +1210,8 @@ function finishInstance(
 		}
 	}
 
+	if (opts.perspective && segs.some((s) => s.el.m3)) inPerspective(item, truth, segs, opts.perspective);
+
 	// Graphic frame selection
 	if (item.symbolType === "graphic") {
 		item.graphic = segs.map((s) => ({
@@ -1316,6 +1333,39 @@ function finishInstance(
 	void warnings;
 	void tl;
 	void layer;
+}
+
+/**
+ * 3D instances: drawn through the flat transform closest to them around their middle, with what is
+ * left of the perspective on top (persp.ts).
+ */
+function inPerspective(item: InstanceItem, truth: FrameTruth[], segs: { a: number; b: number; el: InstanceElement }[], view: Perspective) {
+	const rests: Homography[] = [];
+	const seen = new Map<string, number>();
+	const track: Track = [];
+	for (const s of segs) {
+		const m = s.el.m3;
+		if (!m) continue;
+		const h = homographyOf(m, view);
+		// the middle of what it shows: an instance's bounds are its own, those of a tween's frames (whose
+		// 2D matrix has no position) the stage's
+		const b = s.el.bounds;
+		const bx = b.left + b.width / 2,
+			by = b.top + b.height / 2;
+		const own = Math.abs(s.el.matrix[4] - m[9]!) < 1e-3 && Math.abs(s.el.matrix[5] - m[10]!) < 1e-3;
+		const [cx, cy] = own ? [bx, by] : unproject(h, bx, by);
+		const flat = tangentAt(h, cx, cy);
+		const rest = residual(h, flat);
+		const key = rest.map((v) => v.toFixed(7)).join();
+		let i = seen.get(key);
+		if (i === undefined) {
+			seen.set(key, (i = rests.length));
+			rests.push(rest);
+		}
+		if (track[track.length - 1]?.v !== i) track.push({ t: s.a + item.start, v: i, ease: "hold" });
+		for (let f = s.a; f < s.b; f++) truth[f] = { ...truth[f]!, m: flat, tp: { x: 0, y: 0 } };
+	}
+	if (rests.some((r) => !isFlat(r))) item.persp = { rests, track };
 }
 
 /** Layer depth's distance of the stage from the camera: fixed in Animate. */

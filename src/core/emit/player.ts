@@ -17,6 +17,7 @@ import { accAttrs, filterNode, OutputDoc, svgRoot } from "./document.ts";
 import { filterRuns } from "./filteranim.ts";
 import { blendHides, blendSubtract, blendWhite, cssBlendMode } from "./filters.ts";
 import { PLAYER_RUNTIMES } from "./runtime-code.generated.ts";
+import { cssMatrix, fromCorner } from "../persp.ts";
 import { playerScripts } from "./scripts.ts";
 import { StaticRenderer } from "./static.ts";
 import { hasFieldExtras, outlineText, textField, textNode } from "./text.ts";
@@ -179,6 +180,10 @@ export function renderPlayer(
 			tr: TRANSFORM_PROPS.map((k) => track(it.transform[k], ctx.precision.instance(it, space)[k])),
 		};
 		if (it.name) p.nm = it.name;
+		if (it.persp?.box) {
+			const b = it.persp.box;
+			p.p3 = { b, r: it.persp.rests.map((r) => cssMatrix(fromCorner(r, b[0], b[1]))), t: track(it.persp.track, 0) };
+		}
 		const acc = accAttrs(it.acc, it.symbolType === "button");
 		if (acc) {
 			p.ac = acc;
@@ -384,7 +389,7 @@ export function renderPlayer(
 	}
 	svg.children.push(el("script", { type: "application/json" }, [cdata(JSON.stringify(P).replace(/</g, "\\u003c"))]));
 	// the runtime with morphs also animates filters (shape tweens, filters with changing numbers)
-	const morphs = Object.values(P.tl).some((t) => t.ly.some((l) => l.it.some((i) => (i.k === "q" && i.mp) || (i.k === "i" && i.fa))));
+	const morphs = Object.values(P.tl).some((t) => t.ly.some((l) => l.it.some((i) => (i.k === "q" && i.mp) || (i.k === "i" && (i.fa || i.p3)))));
 	// mouse handlers and the start triggers share a build
 	const events = s.begin === "visible" || s.begin === "scroll" || Object.values(P.tl).some((t) => t.ev);
 	const build = (Object.keys(P.snd).length ? 1 : 0) + (morphs ? 2 : 0);

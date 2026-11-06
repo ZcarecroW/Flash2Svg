@@ -96,6 +96,13 @@ export type PSound = string | [string, number, number];
  * envelope: flat [t, left, right, ...], t in seconds from the start of playback (it runs on
  * across loops), volumes 0..1; absent = full volume.
  */
+/** Seen in perspective: where the content is, the CSS transforms, which of them over time. */
+export interface PPersp {
+	b: [number, number, number, number];
+	r: string[];
+	t: PTrack;
+}
+
 export type PFrameSound = [number, string, number, number, number, number?, number?, number[]?];
 
 export interface PLayer {
@@ -172,6 +179,7 @@ export interface PInst extends PBase {
 	/** 0 movie clip, 1 graphic, 2 button */
 	t: 0 | 1 | 2;
 	/** instance name */
+	p3?: PPersp;
 	nm?: string;
 	/** ARIA attributes (Accessibility panel) and description */
 	ac?: Record<string, string>;

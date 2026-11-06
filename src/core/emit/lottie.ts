@@ -1281,6 +1281,7 @@ class LottieWriter {
 	}
 
 	private instance(n: BakedInstance, vis: Interval[], mode: Mode, W: number): LayerOut[] {
+		if (n.persp) this.warn("Lottie has no perspective: 3D instances are drawn through the closest flat transform");
 		if (!n.item.visible || !n.child) return [];
 		if (blendHides(n.item.blendMode)) return [];
 		const child = n.child;

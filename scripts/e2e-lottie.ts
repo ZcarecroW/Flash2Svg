@@ -26,6 +26,9 @@ const threshold = parseFloat(opt("threshold", "0.0015"));
 const steps = args.includes("--steps");
 // Known differences (measured 2026-10-30, set just above), by fixture or "fixture/player".
 const TOLERANCE: Record<string, number> = {
+	// (Lottie has no perspective: 3D comes out flat, as close as that can be, and warned)
+	"f63-3d": 0.02,
+	"f64-3d2": 0.025,
 	// Animate's layer "fx" filter: left out (warned)
 	"f22-layers": 0.002,
 	// Lottie has no subtract blend: drawn as multiply by the inverted colours (warned); a solid box

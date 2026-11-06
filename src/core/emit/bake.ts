@@ -91,6 +91,8 @@ export interface BakedInstance extends NodeBase {
 	color: Record<ColorProp, GTrack> | null;
 	filters: { t: number; filters: FilterData[] }[];
 	child: BakedTimeline | null;
+	/** In perspective: which of the item's homographies, over time. */
+	persp?: GTrack;
 	/** Buttons: Over and Down states (Up is `child`). */
 	states?: BakedTimeline[];
 	/** Buttons with states: what takes the pointer (the Hit frame, or Up without one). */
@@ -406,6 +408,11 @@ class Baker {
 					if (child.animated) bt.animated = true;
 				}
 				const node: BakedInstance = { kind: "instance", item, vis, uid: item.uid, transform, color, filters, child };
+				if (item.persp) {
+					node.persp = this.mapTrack(item.persp.track, runs);
+					// (a <use> can't hold a foreignObject: this has to stay in place)
+					bt.animated = true;
+				}
 				if (item.motion) {
 					node.motion = { curve: item.motion.curve, at: this.mapTrack(item.motion.at, runs) };
 					if (item.motion.rot) node.motion.rot = this.mapTrack(item.motion.rot, runs);

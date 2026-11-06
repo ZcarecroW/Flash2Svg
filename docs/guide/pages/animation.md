@@ -80,5 +80,5 @@ Other conditions always run (warned), and a jump to a label that doesn't exist i
 - **Layer parenting** (Animate 2020+): children follow their parent's rig frame by frame.
 - **Advanced layers** with layer effects: a colour effect, filters and a blend mode on a whole layer.
 - **9-slice scaling** of movie clips: corners keep their size, also in tweens (rotated instances scale normally, as in Flash).
-- **3D rotations** (rotation X/Y) export as their 2D projection.
+- **3D** (rotation X/Y, translation in Z, 3D motion tweens, view angle, vanishing point) exports in real perspective in SMIL, CSS and the JS player. Lottie has no perspective: there it comes out flat, as close as flat can be.
 - **Video components** (FLVPlayback, HTML5 Canvas *Video*) become an HTML `<video>` over their place, the file copied next to the SVG.

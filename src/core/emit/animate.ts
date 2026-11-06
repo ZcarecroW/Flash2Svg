@@ -8,7 +8,8 @@ import { fmt, fmtMatrix, nearestAngle } from "../geom.ts";
 import { simplify } from "../tracks.ts";
 import type { Mat } from "../model.ts";
 import { channelNumbers, channelText, channelVaries, matrixScale, type MorphChannel } from "../morph.ts";
-import { fromProps, type ColorProp, type TransformProp } from "../program.ts";
+import { cssMatrix, fromCorner } from "../persp.ts";
+import { fromProps, type ColorProp, type InstancePersp, type TransformProp } from "../program.ts";
 import { el, serialize, walk, type XmlNode } from "../xml.ts";
 import {
 	bake,
@@ -26,7 +27,7 @@ import {
 	type Horizon,
 	type Interval,
 } from "./bake.ts";
-import { OutputDoc, svgRoot, withAcc } from "./document.ts";
+import { OutputDoc, perspectiveNode, svgRoot, withAcc } from "./document.ts";
 import { blendHides, blendSubtract, blendWhite, colorMatrix, cssBlendMode, isAlphaOnly, matrixString, type ColorMatrixValues } from "./filters.ts";
 import { alignTracks, encodeKeyframes, groupFrames, withLegacyTiming, type MKey } from "./keyframes.ts";
 import { StaticRenderer } from "./static.ts";
@@ -483,6 +484,8 @@ class Writer {
 			// one frame: nothing changes, but it is a button (the Hit area is its drawing)
 			inner = el("g", { style: "cursor:pointer" }, [inner]);
 		}
+
+		if (n.persp && n.item.persp?.box) inner = this.perspective(n.item.persp, n.persp, inner);
 
 		// transform components, innermost first: translate(-tp) scale skewX rotate translate(x,y)
 		// (along a motion guide the position, and with orient to path the curve's direction, come
@@ -1109,6 +1112,22 @@ class Writer {
 		this.cssRule(node, name, groupFrames(frames), "step-end", tail);
 	}
 
+	/** What is left of perspective, on HTML: CSS whatever the format (SMIL can't animate it). */
+	private perspective(p: InstancePersp, at: GTrack, inner: XmlNode): XmlNode {
+		const box = p.box!;
+		const css = (i: number) => cssMatrix(fromCorner(p.rests[i]!, box[0], box[1]));
+		const first = at[0]?.v ?? 0;
+		const { node, holder } = perspectiveNode(inner, box, css(first));
+		if (at.length > 1)
+			this.cssDiscrete(
+				holder,
+				"transform",
+				at.map((k) => ({ t: k.t, v: css(k.v) })),
+				css(first),
+			);
+		return node;
+	}
+
 	/** Each animated element gets one class; all its animations go into that class's rule. */
 	private cssClass(node: XmlNode): string {
 		const existing = /(?:^|\s)(a\d+)(?:\s|$)/.exec(node.attrs.class ?? "");
@@ -1164,6 +1183,12 @@ class Writer {
 		}
 		const begin = this.opts.begin;
 		const range = this.opts.scrollRange ?? "visible";
+		if (!this.css && this.keyframes.length) {
+			// (perspective changing in a SMIL document: its CSS runs from the start)
+			const rules = this.rules.map((cls) => `#${this.svgId} .${cls}{animation:${this.ruleOf.get(cls)!.join(",")}}`);
+			this.doc.styles.push([...this.keyframes, ...rules].join("\n"));
+			if (begin !== "auto") this.warn("3D that changes over time starts with the page in SMIL output, whatever Start says");
+		}
 		if (this.css && (this.keyframes.length || this.rules.length)) {
 			const play =
 				begin === "auto"

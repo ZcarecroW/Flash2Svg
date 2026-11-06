@@ -41,6 +41,9 @@ const list = args.find((a) => !a.startsWith("--"));
 // doesn't (fallback font metrics; our live text doesn't wrap), it underlines links as in authoring
 // (Flash Player doesn't) and its field border sits a pixel off (1.54 %).
 const TOLERANCE: Record<string, number> = {
+	// (Flash draws 3D through a bitmap: its edges are softer, by up to a pixel; the places are the same)
+	"f63-3d": 0.01,
+	"f64-3d2": 0.005,
 	"f22-layers": 0.006,
 	"f31-text2": 0.008,
 	"f35-edge": 0.005,

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **3D in real perspective** (roadmap package 13): movie clips turned or moved with the 3D tools, 3D motion tweens, view angle and vanishing point. SVG can't draw perspective, so an instance goes through the flat transform closest to it, and what is left goes on HTML in a `<foreignObject>` as a CSS `matrix3d`: f63 and f64 match Animate within its softer edges (0.8 and 0.3 % of pixels) in SMIL, CSS and the player, in a page, as a file and in `<img>`, in Edge and Firefox. Where that isn't honoured (WebKit's test build; Lottie has no perspective, warned) the flat transform alone is drawn, as close as flat can be.
 - **The camera's colour effects export** (tint and Adjust Color, also while they change), in every format: on all layers through one wrapper, the stage colour behind them untouched.
 - **Strokes keep a round pen under an uneven scale**, as in Animate: SVG and Lottie stretch a stroke with its drawing (6 px at the sides and 2 px at the top where Animate draws 4.9 px all around). Also *Horizontal* and *Vertical* stroke scale, which came out like *Normal* before. Measured widths: Normal width x sqrt((sx² + sy²) / 2), Horizontal x sx, Vertical x sy. f83: 0.00 % against Animate in SMIL, CSS, the player, lottie-web, dotLottie and Skottie. Scale that changes over time keeps the plain stroke.
 - **Frame scripts run in the JS player** (roadmap package 12), in AS3 and in HTML5 Canvas documents, wherever scripts run: inline, as a file of its own, in an `<object>`.

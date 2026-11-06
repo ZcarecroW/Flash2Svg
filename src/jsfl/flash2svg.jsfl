@@ -392,6 +392,7 @@
 			job.queue.unshift(nextTimeline);
 			return;
 		}
+		if (job.has3D) readView3D();
 		// All timelines read: build the atlas
 		job.phase = "atlas";
 		job.message = "Collecting artwork";
@@ -538,7 +539,9 @@
 		var baked = {};
 		for (var li = 0; li < tl.layers.length; li++) {
 			var layer = tl.layers[li];
-			if (get(layer, "animationType", "none") != "IK pose") continue;
+			var kind = get(layer, "animationType", "none");
+			// (a 3D motion tween too: its frames have no other way out)
+			if (kind != "IK pose" && !motion3D(layer)) continue;
 			if (layer.locked) layer.locked = false;
 			tl.currentLayer = li;
 			tl.setSelectedLayers(li);
@@ -547,7 +550,7 @@
 				var frame = layer.frames[f];
 				if (!frame) break;
 				var span = Math.max(1, frame.duration);
-				if (frame.tweenType == "IK pose") {
+				if (frame.tweenType == "IK pose" || (frame.tweenType == "motion object" && get(frame.elements[0], "is3D", false))) {
 					try {
 						frame.convertToFrameByFrameAnimation();
 						baked[li] = true;
@@ -559,6 +562,35 @@
 			}
 		}
 		return baked;
+	}
+
+	function motion3D(layer) {
+		if (get(layer, "animationType", "none") != "motion object") return false;
+		for (var f = 0; f < layer.frameCount; f += Math.max(1, layer.frames[f].duration))
+			if (layer.frames[f].tweenType == "motion object" && get(layer.frames[f].elements[0], "is3D", false)) return true;
+		return false;
+	}
+
+	/** 3D: the view angle and vanishing point are only in the file. A copy as XFL shows them. */
+	function readView3D() {
+		var dir = job.outDir + "/_view";
+		var view = { angle: null, x: job.model.doc.width / 2, y: job.model.doc.height / 2 };
+		try {
+			FLfile.createFolder(dir);
+			job.doc.saveAsCopy(dir + "/_view.xfl");
+			var head = (FLfile.read(dir + "/DOMDocument.xml") || "").substr(0, 4000);
+			var at = function (name, def) {
+				var m = new RegExp(name + '="([-\\d.]+)"').exec(head);
+				return m ? parseFloat(m[1]) : def;
+			};
+			view.angle = at("viewAngle3D", view.angle);
+			view.x = at("vanishingPoint3DX", view.x);
+			view.y = at("vanishingPoint3DY", view.y);
+		} catch (e) {
+			warn("Could not read the 3D view angle: " + e);
+		}
+		try { FLfile.remove(dir); } catch (e2) {}
+		job.model.doc.view3D = view;
 	}
 
 	function readLayer(tlId, tl, layers, li, armature) {
@@ -861,7 +893,10 @@
 				}
 				if (get(el, "is3D", false)) {
 					d.is3D = true;
-					warn("3D transforms are exported as 2D (" + el.libraryItem.name + ")");
+					var q = el.matrix3D;
+					d.m3 = [q.m00, q.m01, q.m02, q.m10, q.m11, q.m12, q.m20, q.m21, q.m22, q.m30, q.m31, q.m32];
+					for (var qi = 0; qi < 12; qi++) d.m3[qi] = Math.round(d.m3[qi] * 1e6) / 1e6;
+					job.has3D = true;
 				}
 				return d;
 			}

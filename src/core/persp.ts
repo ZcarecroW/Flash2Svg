@@ -34,6 +34,25 @@ export function homographyOf(m: number[], p: Perspective): Homography {
 	return h.map((v) => v / s) as Homography;
 }
 
+/**
+ * The focal length of a view angle, which documents store for their stage's width. Without one the
+ * focal length is what layer depth has: on a stage 400 wide the file says 41.47 degrees for that.
+ */
+export function focalOf(angle: number | null | undefined, width: number): number {
+	return angle ? width / 2 / Math.tan((angle * Math.PI) / 360) : DEFAULT_FOCAL;
+}
+
+export function unproject(h: Homography, u: number, v: number): [number, number] {
+	const a = h[0] - u * h[6],
+		b = h[1] - u * h[7],
+		c = u * h[8] - h[2],
+		d = h[3] - v * h[6],
+		e = h[4] - v * h[7],
+		f = v * h[8] - h[5];
+	const det = a * e - b * d || 1e-9;
+	return [(c * e - b * f) / det, (a * f - c * d) / det];
+}
+
 export function project(h: Homography, x: number, y: number): [number, number] {
 	const w = h[6] * x + h[7] * y + h[8];
 	return [(h[0] * x + h[1] * y + h[2]) / w, (h[3] * x + h[4] * y + h[5]) / w];

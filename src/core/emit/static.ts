@@ -16,9 +16,10 @@ import {
 	type ProgramLayer,
 	type TransformProp,
 } from "../program.ts";
+import { cssMatrix, fromCorner } from "../persp.ts";
 import { valueAt } from "../tracks.ts";
 import { clone, el, type XmlNode } from "../xml.ts";
-import { OutputDoc, svgRoot, withAcc } from "./document.ts";
+import { OutputDoc, perspectiveNode, svgRoot, withAcc } from "./document.ts";
 import { blendHides, blendSubtract, blendWhite, cssBlendMode, isAlphaOnly, type ColorMatrixValues } from "./filters.ts";
 import { outlineText, textField, textNode } from "./text.ts";
 import { clickLink } from "../snippets.ts";
@@ -245,6 +246,13 @@ export class StaticRenderer {
 		if (blend) style.push(`mix-blend-mode:${blend}`);
 		if (item.blendMode === "layer") style.push("isolation:isolate");
 		let node: XmlNode = el("use", attrs);
+		// (only at the top: inside a shared symbol a <use> would drop the foreignObject)
+		if (item.persp?.box && depth === 0) {
+			const box = item.persp.box;
+			const rest = item.persp.rests[valueAt(item.persp.track, frame)]!;
+			const { "xlink:href": href, ...outer } = attrs;
+			node = el("g", outer, [perspectiveNode(el("use", { "xlink:href": href }), box, cssMatrix(fromCorner(rest, box[0], box[1]))).node]);
+		}
 		if (filter) {
 			const opacity = attrs.opacity;
 			delete node.attrs.opacity;

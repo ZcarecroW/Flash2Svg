@@ -2741,12 +2741,13 @@
 		t.insertFrames(23, false, 1);
 		try {
 			t.setSelectedLayers(li);
-			t.createMotionObjectTween(0, 23);
+			t.createMotionObject(0, 23);
 			t.currentFrame = 23;
 			var e2 = t.layers[li].frames[23].elements[0];
 			doc.selectNone();
 			doc.selection = [e2];
-			doc.rotate3DSelection({ x: 0, y: 170, z: 0 }, true);
+			// (at the end of a motion tween the angle comes out in degrees where it went in as radians)
+			doc.rotate3DSelection({ x: 0, y: 70 * 180 / Math.PI, z: 0 }, true);
 			log.push("f64 tween: " + t.layers[li].frames[0].tweenType);
 		} catch (ex2) { log.push("f64 motion tween: " + ex2); }
 		layer("still");
