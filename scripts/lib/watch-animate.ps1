@@ -4,7 +4,8 @@
 # never OK); one that survives that is reported as "stuck". Windows shown while Animate works
 # (progress) are left alone. Adobe's dialogs don't expose their
 # message (neither as window text nor through UI Automation): a picture of each one is saved.
-param([int]$AnimatePid)
+# -Snapshot: saves a picture of the main window, prints its path and ends.
+param([int]$AnimatePid, [switch]$Snapshot)
 $ErrorActionPreference = "SilentlyContinue"
 Add-Type -TypeDefinition @"
 using System;
@@ -52,6 +53,54 @@ public static class F2sWin {
 	}
 }
 "@
+# A picture of a window, saved under %TEMP%\flash2svg-dialogs; its path, or "".
+function Save-Picture([IntPtr]$h, [string]$kind) {
+	try {
+		Add-Type -AssemblyName System.Drawing
+		$r = New-Object F2sWin+RECT
+		[void][F2sWin]::GetWindowRect($h, [ref]$r)
+		$w = $r.Right - $r.Left; $hh = $r.Bottom - $r.Top
+		if ($w -le 0 -or $hh -le 0) { return "" }
+		$dir = Join-Path $env:TEMP "flash2svg-dialogs"
+		[void](New-Item -ItemType Directory -Force $dir)
+		$file = Join-Path $dir ($kind + "-" + (Get-Date -Format "yyyyMMdd-HHmmss") + "-" + $h.ToInt64() + ".png")
+		$bmp = New-Object System.Drawing.Bitmap $w, $hh
+		$g = [System.Drawing.Graphics]::FromImage($bmp)
+		$hdc = $g.GetHdc()
+		$ok = [F2sWin]::PrintWindow($h, $hdc, 2)
+		$g.ReleaseHdc($hdc)
+		if ($ok) { $bmp.Save($file, [System.Drawing.Imaging.ImageFormat]::Png) } else { $file = "" }
+		$g.Dispose(); $bmp.Dispose()
+		return $file
+	} catch { return "" }
+}
+
+# The text in a picture (Windows' own OCR): Adobe's dialogs show their message to no API.
+function Read-Picture([string]$file) {
+	try {
+		Add-Type -AssemblyName System.Runtime.WindowsRuntime
+		[void][Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType = WindowsRuntime]
+		[void][Windows.Graphics.Imaging.BitmapDecoder, Windows.Foundation, ContentType = WindowsRuntime]
+		[void][Windows.Storage.StorageFile, Windows.Foundation, ContentType = WindowsRuntime]
+		$asTask = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq "AsTask" -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' })[0]
+		function Wait-Op($op, [type]$t) { $task = $asTask.MakeGenericMethod($t).Invoke($null, @($op)); [void]$task.Wait(5000); $task.Result }
+		$sf = Wait-Op ([Windows.Storage.StorageFile]::GetFileFromPathAsync($file)) ([Windows.Storage.StorageFile])
+		$stream = Wait-Op ($sf.OpenAsync([Windows.Storage.FileAccessMode]::Read)) ([Windows.Storage.Streams.IRandomAccessStream])
+		$decoder = Wait-Op ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)) ([Windows.Graphics.Imaging.BitmapDecoder])
+		$bitmap = Wait-Op ($decoder.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
+		$engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()
+		$result = Wait-Op ($engine.RecognizeAsync($bitmap)) ([Windows.Media.Ocr.OcrResult])
+		$stream.Dispose()
+		return $result.Text
+	} catch { return "" }
+}
+
+if ($Snapshot) {
+	$main = (Get-Process -Id $AnimatePid).MainWindowHandle
+	if ($main -ne [IntPtr]::Zero) { Save-Picture $main "main" }
+	exit
+}
+
 $started = Get-Date
 $seen = @{}
 $texts = @{}
@@ -75,30 +124,22 @@ while ($p -and -not $p.HasExited) {
 		elseif ($seen[$h] -ge 5) { $state = "stuck" }
 		$text = $d[2]
 		if ($seen[$h] -eq 1) {
-			try {
-				Add-Type -AssemblyName System.Drawing
-				$r = New-Object F2sWin+RECT
-				[void][F2sWin]::GetWindowRect([IntPtr]$h, [ref]$r)
-				$w = $r.Right - $r.Left; $hh = $r.Bottom - $r.Top
-				if ($w -gt 0 -and $hh -gt 0) {
-					$dir = Join-Path $env:TEMP "flash2svg-dialogs"
-					[void](New-Item -ItemType Directory -Force $dir)
-					$file = Join-Path $dir ("dialog-" + (Get-Date -Format "yyyyMMdd-HHmmss") + "-" + $h + ".png")
-					$bmp = New-Object System.Drawing.Bitmap $w, $hh
-					$g = [System.Drawing.Graphics]::FromImage($bmp)
-					$hdc = $g.GetHdc()
-					$ok = [F2sWin]::PrintWindow([IntPtr]$h, $hdc, 2)
-					$g.ReleaseHdc($hdc)
-					if ($ok) { $bmp.Save($file, [System.Drawing.Imaging.ImageFormat]::Png) } else { $file = "" }
-					$g.Dispose(); $bmp.Dispose()
-					if ($file) { $text = ($text, "picture: $file" | Where-Object { $_ }) -join " | " }
-				}
-			} catch {}
+			$file = Save-Picture ([IntPtr]$h) "dialog"
+			if ($file) {
+				$said = Read-Picture $file
+				$text = ($text, $said, "picture: $file" | Where-Object { $_ }) -join " | "
+			}
 			$texts[$h] = $text
 		}
 		$dialogs += @{ title = $d[1]; text = $texts[$h]; state = $state }
 	}
-	$crash = @(Get-Process | Where-Object { $_.ProcessName -match "crash|WerFault" -and $_.StartTime -gt $started } | ForEach-Object { $_.ProcessName })
+	# crash handling of this Animate, not of whatever else crashes on the computer
+	$crash = @()
+	if (Get-Process | Where-Object { $_.ProcessName -match "crash|WerFault" -and $_.StartTime -gt $started }) {
+		$crash = @(Get-CimInstance Win32_Process -Filter "Name LIKE '%crash%' OR Name = 'WerFault.exe'" | Where-Object {
+			$_.ParentProcessId -eq $AnimatePid -or $_.CommandLine -match "-p $AnimatePid\b"
+		} | ForEach-Object { $_.Name })
+	}
 	@{ cpu = $cpu; dialogs = $dialogs; crash = $crash } | ConvertTo-Json -Compress -Depth 4
 	Start-Sleep -Seconds 2
 }
