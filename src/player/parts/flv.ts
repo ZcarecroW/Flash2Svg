@@ -87,7 +87,8 @@ export default function flv(L: any): Record<string, unknown> {
 				const t = v.currentTime;
 				for (const c of this._cues)
 					if (c["time"] > this._past && c["time"] <= t) this.dispatchEvent(new MetadataEvent(MetadataEvent.CUE_POINT, false, false, { name: c.name, "time": c["time"], type: c.type, parameters: c.parameters }));
-				this._past = t;
+				// (WebKit's clock can step back a little while it plays: seeking is what moves it back)
+				this._past = Math.max(this._past, t);
 			};
 			const beat = () => {
 				if (this._state !== VideoState.PLAYING) return;
