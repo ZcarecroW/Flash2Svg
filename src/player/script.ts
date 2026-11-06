@@ -8,7 +8,39 @@
  * (Public names listed in INTERNAL of scripts/build-runtime.mjs are written quoted: they aren't mangled.)
  */
 import type { Clip, Inst, Player } from "./runtime.ts";
-import type { PInst, PItem, PTimeline, PTrack } from "./format.ts";
+import type { PInst, PItem, PRef, PScene, PTextExtras, PTimeline, PTrack } from "./format.ts";
+import { buildFilters } from "../core/emit/filters.ts";
+import type { FilterData } from "../core/model.ts";
+import type { XmlNode } from "../core/xml.ts";
+import {
+	ArgumentError,
+	asFlashError,
+	BevelFilter,
+	BlurFilter,
+	ColorMatrixFilter,
+	DropShadowFilter,
+	EASINGS,
+	EOFError,
+	fail,
+	FByteArray,
+	FColorTransform,
+	FFilter,
+	FMatrix,
+	FPoint,
+	FRectangle,
+	FTextFormat,
+	GlowFilter,
+	inverse,
+	IOError,
+	mul,
+	PACKAGES,
+	SecurityError,
+	toTwips,
+	twips,
+	URLRequest,
+	URLVariables,
+	type Mat,
+} from "./flash-lib.ts";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Fn = (...a: any[]) => any;
@@ -24,7 +56,6 @@ export interface Frozen {
 
 const RAD = Math.PI / 180;
 const SVGNS = "http://www.w3.org/2000/svg";
-const num = (v: unknown, d = 0) => (typeof v === "number" && !isNaN(v) ? v : d);
 
 function svgEl(name: string, attrs?: Record<string, string>): SVGElement {
 	const e = document.createElementNS(SVGNS, name) as SVGElement;
@@ -51,6 +82,12 @@ class FEvent {
 	static UNLOAD = "unload";
 	static SOUND_COMPLETE = "soundComplete";
 	static MOUSE_LEAVE = "mouseLeave";
+	static INIT = "init";
+	static CANCEL = "cancel";
+	static SCROLL = "scroll";
+	static SELECT = "select";
+	static TAB_INDEX_CHANGE = "tabIndexChange";
+	static FULLSCREEN = "fullScreen";
 	static ACTIVATE = "activate";
 	static DEACTIVATE = "deactivate";
 	target: any = null;
@@ -206,6 +243,135 @@ function run(fn: () => void) {
 
 // ------------------------------------------------------------------ display objects
 
+interface Box {
+	l: number;
+	t: number;
+	r: number;
+	b: number;
+}
+const noBox = (): Box => ({ l: Infinity, t: Infinity, r: -Infinity, b: -Infinity });
+
+function addPoint(out: Box, x: number, y: number) {
+	if (x < out.l) out.l = x;
+	if (x > out.r) out.r = x;
+	if (y < out.t) out.t = y;
+	if (y > out.b) out.b = y;
+}
+/** Grows `out` by the box `s` seen through `m`. */
+function addBox(out: Box, m: Mat, s: Box) {
+	addPoint(out, m[0] * s.l + m[2] * s.t + m[4], m[1] * s.l + m[3] * s.t + m[5]);
+	addPoint(out, m[0] * s.r + m[2] * s.t + m[4], m[1] * s.r + m[3] * s.t + m[5]);
+	addPoint(out, m[0] * s.l + m[2] * s.b + m[4], m[1] * s.l + m[3] * s.b + m[5]);
+	addPoint(out, m[0] * s.r + m[2] * s.b + m[4], m[1] * s.r + m[3] * s.b + m[5]);
+}
+
+const ONE: Mat = [1, 0, 0, 1, 0, 0];
+const fromMat = (m: Mat): Frozen => {
+	const r = Math.atan2(m[1], m[0]) / RAD;
+	return { x: m[4], y: m[5], r, k: Math.atan2(-m[2], m[3]) / RAD - r, sx: Math.hypot(m[0], m[1]), sy: Math.hypot(m[2], m[3]) };
+};
+const matOf = (f: Frozen): Mat => {
+	const r = f.r * RAD,
+		q = (f.r + f.k) * RAD;
+	return [Math.cos(r) * f.sx, Math.sin(r) * f.sx, -Math.sin(q) * f.sy, Math.cos(q) * f.sy, f.x, f.y];
+};
+const matrixText = (m: Mat) => `matrix(${m.map((n) => Math.round(n * 1e4) / 1e4).join(",")})`;
+/** Alpha and the colour multipliers are kept in 1/256ths. */
+const eighths = (v: number) => Math.trunc(v * 256) / 256;
+
+/** The half of the widest stroke of a drawing (Flash counts strokes into its bounds). */
+const strokes = new WeakMap<Element, number>();
+function strokeOf(n: Element): number {
+	let w = strokes.get(n);
+	if (w !== undefined) return w;
+	w = 0;
+	const see = (e: Element) => {
+		const s = e.getAttribute("stroke");
+		if (s && s !== "none") w = Math.max(w!, +(e.getAttribute("stroke-width") ?? 1) / 2);
+		const h = e.localName === "use" && (e.getAttribute("href") ?? e.getAttribute("xlink:href"));
+		const to = h ? document.getElementById(h.slice(1)) : null;
+		if (to) see(to);
+		for (const c of e.children) see(c);
+	};
+	see(n);
+	strokes.set(n, w);
+	return w;
+}
+
+/** The box of a drawing in its node's space (its node's own transform left out). */
+function drawnBox(n: Element, stroke: boolean): Box | null {
+	let b: DOMRect;
+	try {
+		b = (n as SVGGraphicsElement).getBBox();
+	} catch {
+		return null;
+	}
+	if (!b.width && !b.height) return null;
+	const s = stroke ? strokeOf(n) : 0;
+	return { l: b.x - s, t: b.y - s, r: b.x + b.width + s, b: b.y + b.height + s };
+}
+
+let pen: CanvasRenderingContext2D | null = null;
+const canvas2d = () => (pen ??= document.createElement("canvas").getContext("2d")!);
+
+/** Whether a drawing covers the point, given in the space it is put down in (`inside`: in its own). */
+function covers(e: Element, x: number, y: number, inside = false): boolean {
+	const list = (e as SVGGraphicsElement).transform?.baseVal;
+	if (list?.numberOfItems && !inside) {
+		const m = list.consolidate()!.matrix;
+		const i = inverse([m.a, m.b, m.c, m.d, m.e, m.f]);
+		[x, y] = [i[0] * x + i[2] * y + i[4], i[1] * x + i[3] * y + i[5]];
+	}
+	switch (e.localName) {
+		case "defs":
+			return false;
+		case "use": {
+			const h = e.getAttribute("href") ?? e.getAttribute("xlink:href");
+			const to = h ? document.getElementById(h.slice(1)) : null;
+			return !!to && covers(to, x - +(e.getAttribute("x") ?? 0), y - +(e.getAttribute("y") ?? 0));
+		}
+		case "path": {
+			const d = e.getAttribute("d");
+			if (!d) return false;
+			const p = new Path2D(d);
+			const c = canvas2d();
+			if (e.getAttribute("fill") !== "none" && c.isPointInPath(p, x, y, e.getAttribute("fill-rule") === "evenodd" ? "evenodd" : "nonzero")) return true;
+			const s = e.getAttribute("stroke");
+			if (!s || s === "none") return false;
+			c.lineWidth = +(e.getAttribute("stroke-width") ?? 1);
+			return c.isPointInStroke(p, x, y);
+		}
+		case "image":
+		case "rect":
+		case "text": {
+			const b = (e as SVGGraphicsElement).getBBox?.();
+			return !!b && x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height;
+		}
+	}
+	for (const c of e.children) if ((c as SVGElement).style?.display !== "none" && covers(c, x, y)) return true;
+	return false;
+}
+
+const BLENDS: Record<string, string> = { hardlight: "hard-light", add: "plus-lighter", subtract: "difference", invert: "difference", layer: "", alpha: "", erase: "", shader: "" };
+
+/** A filter of the API as the core's FilterData. */
+function filterData(f: any): FilterData {
+	const hex = (c: number, a: number) => colorOf(c) + Math.round(a * 255).toString(16).padStart(2, "0");
+	const d: FilterData = { ...f, name: f._t, enabled: true, quality: ["low", "low", "medium", "high"][Math.min(3, f.quality ?? 1)], strength: (f.strength ?? 1) * 100 };
+	if (f.color !== undefined) d.color = hex(f.color, f.alpha);
+	if (f.highlightColor !== undefined) {
+		d.highlightColor = hex(f.highlightColor, f.highlightAlpha);
+		d.shadowColor = hex(f.shadowColor, f.shadowAlpha);
+	}
+	return d;
+}
+
+function toDom(n: XmlNode): SVGElement {
+	const e = svgEl(n.name, n.attrs);
+	for (const c of n.children) e.appendChild(typeof c === "string" ? document.createTextNode(c) : toDom(c));
+	return e;
+}
+
 class DisplayObject extends Dispatcher {
 	/** The timeline instance, if it is one. */
 	_i: Inst | null = null;
@@ -216,18 +382,33 @@ class DisplayObject extends Dispatcher {
 	_gone = false;
 	_m: Frozen = { x: 0, y: 0, r: 0, k: 0, sx: 1, sy: 1 };
 	_alpha = 1;
-	_name = "";
-	mouseEnabled = true;
-	tabEnabled = false;
+	_name: string | null = null;
+	_g: FGraphics | null = null;
+	_ct: FColorTransform | null = null;
+	_fl: FFilter[] = [];
+	_fx: SVGElement | null = null;
+	_vis = true;
+	_mask: DisplayObject | null = null;
+	_masks = 0;
+	_blend = "normal";
+	_sr: FRectangle | null = null;
+	_clip: SVGElement | null = null;
 	cacheAsBitmap = false;
-	useHandCursor = true;
+	opaqueBackground: number | null = null;
+	scale9Grid: FRectangle | null = null;
+	accessibilityProperties: unknown = null;
+	z = 0;
+	rotationX = 0;
+	rotationY = 0;
+	rotationZ = 0;
+	scaleZ = 1;
 	constructor(node?: SVGElement) {
 		super();
 		this._node = node ?? svgEl("g");
 	}
 	get name() {
 		// (instances without a name have one made up, as in Flash)
-		return (this._i ? (this._i.it as PInst).nm : "") || (this._name ||= `instance${++current.uid}`);
+		return (this._i ? (this._i.it as PInst).nm : "") || (this._name ??= `instance${++current.uid}`);
 	}
 	set name(v: string) {
 		this._name = v;
@@ -235,36 +416,51 @@ class DisplayObject extends Dispatcher {
 	get parent() {
 		return this._gone ? null : this._parent;
 	}
-	get root() {
-		return current.rootObj;
+	get root(): DisplayObject | null {
+		return this._onStage() ? current.rootObj : null;
 	}
 	get stage(): FStage | null {
 		return this._onStage() ? current.stage : null;
 	}
+	get loaderInfo() {
+		return this._onStage() ? current.info : null;
+	}
 	_onStage(): boolean {
-		for (let o: any = this; o; o = o._parent) if (o === current.stage) return true;
+		for (let o: any = this; o; o = o.parent) if (o === current.stage) return true;
 		return false;
 	}
-	/** Its matrix now: the script's, or the timeline's at this frame. */
+	/** Its transform now: the script's, or the timeline's at this frame. */
 	_get(): Frozen {
 		const i = this._i;
 		if (!i) return this._m;
-		if (i.ov) return i.ov;
-		return decompose(current, i);
+		return i.ov ?? decompose(current, i);
 	}
 	/** Takes the transform from the timeline: from now on it is the script's. */
 	_own(): Frozen {
 		const i = this._i;
 		if (!i) return this._m;
 		if (!i.ov) {
-			i.ov = { ...decompose(current, i) };
+			i.ov = decompose(current, i);
 			free(i);
 		}
 		return i.ov;
 	}
+	_mat(): Mat {
+		return matOf(this._get());
+	}
+	/** The matrix its children are seen through. */
+	_inner(): Mat {
+		const m = this._mat();
+		return this._sr ? mul(m, [1, 0, 0, 1, -this._sr.x, -this._sr.y]) : m;
+	}
+	/** From its space to the stage's. */
+	_world(): Mat {
+		let m = this._mat();
+		for (let o = this.parent; o && o !== (current.stage as unknown); o = o.parent) m = mul(o._inner(), m);
+		return m;
+	}
 	_apply() {
-		const m = this._i?.ov ?? this._m;
-		const t = matrixText(m);
+		const t = matrixText(this._inner());
 		if (this._i) place(this._i, t);
 		else this._node.setAttribute("transform", t);
 		current.touched();
@@ -273,14 +469,14 @@ class DisplayObject extends Dispatcher {
 		return this._get().x;
 	}
 	set x(v: number) {
-		this._own().x = +v;
+		this._own().x = toTwips(+v);
 		this._apply();
 	}
 	get y() {
 		return this._get().y;
 	}
 	set y(v: number) {
-		this._own().y = +v;
+		this._own().y = toTwips(+v);
 		this._apply();
 	}
 	get rotation() {
@@ -307,130 +503,244 @@ class DisplayObject extends Dispatcher {
 	}
 	get alpha() {
 		const i = this._i;
-		if (i && i.ovAlpha === undefined) return alphaNow(i) / 100;
+		if (i && i.ovAlpha === undefined) return eighths(alphaNow(i) / 100);
 		return i ? i.ovAlpha! : this._alpha;
 	}
 	set alpha(v: number) {
-		const a = Math.max(0, Math.min(1, +v));
+		const a = eighths(+v);
 		if (this._i) {
 			free(this._i);
 			this._i.ovAlpha = a;
 		} else this._alpha = a;
-		this._node.setAttribute("opacity", String(a));
+		this._node.setAttribute("opacity", String(Math.max(0, Math.min(1, a))));
 		current.touched();
 	}
 	get visible() {
-		return this._node.style.display !== "none";
+		return this._vis;
 	}
 	set visible(v: boolean) {
-		this._node.style.display = v ? "" : "none";
+		this._vis = !!v;
+		this._show();
+	}
+	/** Hidden if it isn't visible, or masks something (a mask doesn't draw). */
+	_show() {
+		this._node.style.visibility = this._vis && !this._masks ? "" : "hidden";
 		current.touched();
 	}
-	/** The box of what it draws, in its parent's space. */
-	_box() {
-		let b: DOMRect | { x: number; y: number; width: number; height: number };
-		try {
-			b = (this._node as unknown as SVGGraphicsElement).getBBox();
-		} catch {
-			b = { x: 0, y: 0, width: 0, height: 0 };
-		}
-		const m = this._get();
-		const cos = Math.cos(m.r * RAD),
-			sin = Math.sin(m.r * RAD),
-			ck = Math.cos((m.r + m.k) * RAD),
-			sk = Math.sin((m.r + m.k) * RAD);
-		const a = cos * m.sx,
-			bb = sin * m.sx,
-			c = -sk * m.sy,
-			d = ck * m.sy;
-		const xs = [b.x, b.x + b.width],
-			ys = [b.y, b.y + b.height];
-		let l = Infinity,
-			t = Infinity,
-			r = -Infinity,
-			o = -Infinity;
-		for (const x of xs)
-			for (const y of ys) {
-				const px = a * x + c * y + m.x,
-					py = bb * x + d * y + m.y;
-				l = Math.min(l, px);
-				r = Math.max(r, px);
-				t = Math.min(t, py);
-				o = Math.max(o, py);
-			}
-		return { l, t, r, o, w: b.width, h: b.height };
+	/** The box of what it draws itself, children aside, in its own space. */
+	_self(stroke: boolean): Box | null {
+		if (this._g) return this._g._box(stroke);
+		return this._i && !this._c ? drawnBox(this._node, stroke) : null;
+	}
+	/** Grows `out` by what it draws; `m` leads from its space to the one asked about. */
+	_collect(m: Mat, stroke: boolean, out: Box) {
+		if (this._sr) return addBox(out, m, { l: 0, t: 0, r: this._sr.width, b: this._sr.height });
+		const s = this._self(stroke);
+		if (s) addBox(out, m, s);
+	}
+	/** The box, in twips, in a space `m` leads to. */
+	_boxIn(m: Mat, stroke: boolean): Box | null {
+		const b = noBox();
+		this._collect(m, stroke, b);
+		return b.l === Infinity ? null : { l: twips(b.l), t: twips(b.t), r: twips(b.r), b: twips(b.b) };
+	}
+	_rect(space: DisplayObject | undefined, stroke: boolean) {
+		const m = !space || space === this ? ONE : mul(inverse(space._world()), this._world());
+		const b = this._boxIn(m, stroke);
+		return b ? new FRectangle(b.l, b.t, b.r - b.l, b.b - b.t) : new FRectangle();
+	}
+	getBounds(space?: DisplayObject) {
+		return this._rect(space, true);
+	}
+	getRect(space?: DisplayObject) {
+		return this._rect(space, false);
 	}
 	get width() {
-		const b = this._box();
-		return b.r - b.l;
+		const b = this._boxIn(this._mat(), true);
+		return b ? b.r - b.l : 0;
+	}
+	/** The box around a turned object is what is set, in a way that changes both scales. */
+	_size(v: number, wide: boolean) {
+		const b = this._boxIn(ONE, true);
+		const w = b ? b.r - b.l : 0,
+			h = b ? b.b - b.t : 0;
+		if (!w || !h) return;
+		const f = this._get();
+		const c = Math.abs(Math.cos(f.r * RAD)),
+			s = Math.abs(Math.sin(f.r * RAD));
+		const ratio = wide ? h / w : w / h;
+		const tx = v / w,
+			ty = v / h;
+		const set = (ratio * ((wide ? c : s) * tx + (wide ? s : c) * ty)) / ((c + ratio * s) * (ratio * c + s));
+		const keep = wide ? (s * f.sx + ratio * c * f.sy) / (ratio * c + s) : (ratio * c * f.sx + s * f.sy) / (ratio * c + s);
+		const o = this._own();
+		o.sx = wide ? set : keep;
+		o.sy = wide ? keep : set;
+		this._apply();
 	}
 	set width(v: number) {
-		const w = this._box().w;
-		if (w) this.scaleX = +v / w;
+		this._size(+v, true);
 	}
 	get height() {
-		const b = this._box();
-		return b.o - b.t;
+		const b = this._boxIn(this._mat(), true);
+		return b ? b.b - b.t : 0;
 	}
 	set height(v: number) {
-		const h = this._box().h;
-		if (h) this.scaleY = +v / h;
+		this._size(+v, false);
+	}
+	_mouse(): [number, number] {
+		const [x, y] = stagePoint(current.client[0], current.client[1]);
+		const i = inverse(this._world());
+		return [twips(i[0] * x + i[2] * y + i[4]), twips(i[1] * x + i[3] * y + i[5])];
 	}
 	get mouseX() {
-		return local(this._node, current.client[0], current.client[1])[0];
+		return this._mouse()[0];
 	}
 	get mouseY() {
-		return local(this._node, current.client[0], current.client[1])[1];
+		return this._mouse()[1];
 	}
 	get blendMode() {
-		return this._node.style.mixBlendMode || "normal";
+		return this._blend;
 	}
 	set blendMode(v: string) {
-		this._node.style.mixBlendMode = v === "normal" ? "" : v;
+		this._blend = v;
+		this._node.style.mixBlendMode = BLENDS[v] ?? (v === "normal" ? "" : v);
+		current.touched();
 	}
 	get filters() {
-		return [];
+		return this._fl.map((f) => f.clone());
 	}
-	set filters(_v: unknown) {}
+	set filters(v: FFilter[]) {
+		this._fl = (v ?? []).map((f) => f.clone());
+		this._paint();
+	}
+	/** The colour transform and filters, as one SVG filter (they replace the timeline's, as in Flash). */
+	_paint() {
+		const n = this._node;
+		const cm = this._i?.cm;
+		const ct = this._ct && !this._ct._plain() ? this._ct : null;
+		if (cm) cm.setAttribute("values", (this._ct ?? new FColorTransform())._values());
+		const prims: SVGElement[] = [];
+		if (ct && !cm) prims.push(svgEl("feColorMatrix", { type: "matrix", values: ct._values() }));
+		let reach = 0;
+		for (const f of this._fl) {
+			if (f._t === "colorMatrix") {
+				const v = (f as ColorMatrixFilter).matrix.map((x, i) => (i % 5 === 4 ? x / 255 : x));
+				prims.push(svgEl("feColorMatrix", { type: "matrix", values: v.join(" ") }));
+			}
+		}
+		const rest = this._fl.filter((f) => f._t !== "colorMatrix");
+		if (rest.length) {
+			const w = this._world();
+			const built = buildFilters(rest.map(filterData), { x: Math.hypot(w[0], w[1]), y: Math.hypot(w[2], w[3]) }, () => {});
+			prims.push(...built.primitives.map(toDom));
+			reach = Math.max(built.margin.x, built.margin.y);
+		}
+		if (!prims.length) {
+			this._fx?.remove();
+			this._fx = null;
+			n.removeAttribute("filter");
+		} else {
+			const f = (this._fx ??= current.player.defs.appendChild(svgEl("filter", { id: `${current.player.svg.id}_s${current.uid++}`, "color-interpolation-filters": "sRGB", filterUnits: "userSpaceOnUse" })));
+			f.replaceChildren(...prims);
+			const b = this._boxIn(ONE, true) ?? { l: 0, t: 0, r: 0, b: 0 };
+			f.setAttribute("x", String(b.l - reach - 1));
+			f.setAttribute("y", String(b.t - reach - 1));
+			f.setAttribute("width", String(b.r - b.l + 2 * reach + 2));
+			f.setAttribute("height", String(b.b - b.t + 2 * reach + 2));
+			n.setAttribute("filter", `url(#${f.id})`);
+		}
+		current.touched();
+	}
 	get transform() {
 		return new FTransform(this);
 	}
 	set transform(v: FTransform) {
-		this.transform.colorTransform = v.colorTransform;
+		this._ct = v.colorTransform;
+		this.alpha = this._ct!.alphaMultiplier;
+		this._paint();
+		const t = this.transform;
+		t.matrix = v.matrix;
 	}
-	getBounds(space?: DisplayObject) {
-		const a = this._node.getBoundingClientRect();
-		const p = local((space ?? this)._node, a.left, a.top),
-			q = local((space ?? this)._node, a.right, a.bottom);
-		return new FRectangle(p[0], p[1], q[0] - p[0], q[1] - p[1]);
+	get mask() {
+		return this._mask;
 	}
-	getRect(space?: DisplayObject) {
-		return this.getBounds(space);
+	set mask(o: DisplayObject | null) {
+		const old = this._mask;
+		if (old === o) return;
+		if (old) {
+			old._masks--;
+			old._show();
+			this._node.removeAttribute("mask");
+		}
+		this._mask = o;
+		if (o) {
+			o._masks++;
+			o._show();
+			current.masked.add(this);
+		} else current.masked.delete(this);
+		current.touched();
 	}
-	localToGlobal(pt: FPoint) {
-		const m = (this._node as unknown as SVGGraphicsElement).getScreenCTM();
-		if (!m) return new FPoint(pt.x, pt.y);
-		const s = stagePoint(m.a * pt.x + m.c * pt.y + m.e, m.b * pt.x + m.d * pt.y + m.f);
-		return new FPoint(s[0], s[1]);
+	/** The mask, as it is now, in this object's space. */
+	_maskNow(id: string) {
+		const o = this._mask!;
+		let m = document.getElementById(id);
+		if (!m) {
+			m = current.player.defs.appendChild(svgEl("mask", { id, maskUnits: "userSpaceOnUse", x: "-16384", y: "-16384", width: "32768", height: "32768" })) as unknown as HTMLElement;
+			this._node.setAttribute("mask", `url(#${id})`);
+		}
+		const copy = o._node.cloneNode(true) as SVGElement;
+		copy.style.visibility = "";
+		copy.removeAttribute("opacity");
+		const g = svgEl("g", { transform: matrixText(mul(inverse(this._world()), o._world())) });
+		copy.removeAttribute("transform");
+		if (current.P.mf) copy.setAttribute("filter", `url(#${current.P.mf})`);
+		g.appendChild(copy);
+		m.replaceChildren(g);
 	}
-	globalToLocal(pt: FPoint) {
-		const c = clientOf(pt.x, pt.y);
-		const p = local(this._node, c[0], c[1]);
-		return new FPoint(p[0], p[1]);
+	get scrollRect() {
+		return this._sr?.clone() ?? null;
+	}
+	set scrollRect(r: FRectangle | null) {
+		this._sr = r?.clone() ?? null;
+		if (r) {
+			const c = (this._clip ??= current.player.defs.appendChild(svgEl("clipPath", { id: `${current.player.svg.id}_c${current.uid++}` }, )));
+			c.replaceChildren(svgEl("rect", { x: String(r.x), y: String(r.y), width: String(r.width), height: String(r.height) }));
+			this._node.setAttribute("clip-path", `url(#${c.id})`);
+		} else {
+			this._clip?.remove();
+			this._clip = null;
+			this._node.removeAttribute("clip-path");
+		}
+		this._apply();
+	}
+	localToGlobal(p: FPoint) {
+		const m = this._world();
+		return new FPoint(twips(m[0] * p.x + m[2] * p.y + m[4]), twips(m[1] * p.x + m[3] * p.y + m[5]));
+	}
+	globalToLocal(p: FPoint) {
+		const m = inverse(this._world());
+		return new FPoint(twips(m[0] * p.x + m[2] * p.y + m[4]), twips(m[1] * p.x + m[3] * p.y + m[5]));
 	}
 	hitTestObject(o: DisplayObject) {
-		const a = this._node.getBoundingClientRect(),
-			b = o._node.getBoundingClientRect();
-		return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+		const a = this._boxIn(this._world(), true),
+			b = o._boxIn(o._world(), true);
+		return !!a && !!b && a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
 	}
 	hitTestPoint(x: number, y: number, shape = false) {
-		const c = clientOf(x, y);
-		if (shape) {
-			const e = document.elementFromPoint(c[0], c[1]);
-			return !!e && this._node.contains(e);
+		if (!shape) {
+			const b = this._boxIn(this._world(), true);
+			return !!b && x >= b.l && x <= b.r && y >= b.t && y <= b.b;
 		}
-		const a = this._node.getBoundingClientRect();
-		return c[0] >= a.left && c[0] <= a.right && c[1] >= a.top && c[1] <= a.bottom;
+		return this._covers(x, y);
+	}
+	/** Whether what it draws covers a point of the stage. */
+	_covers(x: number, y: number): boolean {
+		const i = inverse(this._world());
+		const lx = i[0] * x + i[2] * y + i[4],
+			ly = i[1] * x + i[3] * y + i[5];
+		if (this._g) return this._g._covers(lx, ly);
+		return !!this._i && !this._c && covers(this._node, lx, ly, true);
 	}
 	override _listening(type: string) {
 		current.hear(type, this);
@@ -469,33 +779,47 @@ class FTransform {
 		this.o = o;
 	}
 	get colorTransform() {
-		return (this.o as any)._ct ?? new FColorTransform();
+		const o = this.o;
+		const i = o._i;
+		let c = o._ct;
+		// (what the timeline gives: multipliers in percent, offsets)
+		const v = !c && i && (i.it as PInst).c;
+		if (v) c = new FColorTransform(...([0, 1, 2, 3, 4, 5, 6, 7].map((k) => trackValue(i!.owner.P, v[k], i!.owner.frame, k < 4 ? 100 : 0) / (k < 4 ? 100 : 1)) as [number, number, number, number, number, number, number, number]));
+		c = c ? c._copy() : new FColorTransform();
+		c.alphaMultiplier = o.alpha;
+		return c;
 	}
 	set colorTransform(c: FColorTransform) {
-		(this.o as any)._ct = c;
-		const id = `${current.player.svg.id}_s${current.uid++}`;
-		const f = svgEl("filter", { id, "color-interpolation-filters": "sRGB" });
-		const v = [c.redMultiplier, 0, 0, 0, c.redOffset / 255, 0, c.greenMultiplier, 0, 0, c.greenOffset / 255, 0, 0, c.blueMultiplier, 0, c.blueOffset / 255, 0, 0, 0, c.alphaMultiplier, c.alphaOffset / 255];
-		f.appendChild(svgEl("feColorMatrix", { type: "matrix", values: v.join(" ") }));
-		current.player.defs.appendChild(f);
-		this.o._node.setAttribute("filter", `url(#${id})`);
-		current.touched();
+		const o = this.o;
+		o._ct = c._copy();
+		if (o._i && o._i.ovAlpha === undefined) free(o._i);
+		o.alpha = c.alphaMultiplier;
+		o._paint();
 	}
 	get matrix() {
-		const m = this.o._get();
-		const cos = Math.cos(m.r * RAD),
-			sin = Math.sin(m.r * RAD);
-		return new FMatrix(cos * m.sx, sin * m.sx, -sin * m.sy, cos * m.sy, m.x, m.y);
+		return new FMatrix(...this.o._mat());
 	}
 	set matrix(v: FMatrix) {
-		const o = this.o._own();
-		o.x = v.tx;
-		o.y = v.ty;
-		o.r = Math.atan2(v.b, v.a) / RAD;
-		o.k = Math.atan2(-v.c, v.d) / RAD - o.r;
-		o.sx = Math.hypot(v.a, v.b);
-		o.sy = Math.hypot(v.c, v.d);
+		const f = fromMat(v._m());
+		f.x = toTwips(f.x);
+		f.y = toTwips(f.y);
+		Object.assign(this.o._own(), f);
 		this.o._apply();
+	}
+	/** (Flash Player places things on quarter pixels: what it says here is rounded so.) */
+	get concatenatedMatrix() {
+		const m = this.o._world();
+		m[4] = Math.round(m[4] * 4) / 4;
+		m[5] = Math.round(m[5] * 4) / 4;
+		return new FMatrix(...m);
+	}
+	get concatenatedColorTransform() {
+		const c = this.colorTransform;
+		for (let o = this.o.parent; o; o = o.parent) if (o !== current.stage) c.concat(o.transform.colorTransform);
+		return c;
+	}
+	get pixelBounds() {
+		return this.o._rect(current.stage, true);
 	}
 }
 
@@ -504,33 +828,52 @@ class DisplayObjectContainer extends DisplayObject {
 	tabChildren = true;
 	/** Children added by scripts, on top of the timeline's. */
 	_dyn: DisplayObject[] = [];
-	/** The children in stacking order: the order of their nodes. */
+	private _lc: DisplayObject[] | null = null;
+	private _lv = -1;
+	/** The children in stacking order: the order of their nodes (as long as nothing changed). */
 	_list(): DisplayObject[] {
+		if (this._lc && this._lv === current.ver) return this._lc;
 		const out = [...timelineChildren(this), ...this._dyn.filter((o) => !o._i || o._i.owner.items.get(o._i.it) === o._i)];
-		return out.sort((a, b) => (a._node.compareDocumentPosition(b._node) & 4 ? -1 : 1));
+		out.sort((a, b) => (a._node.compareDocumentPosition(b._node) & 4 ? -1 : 1));
+		this._lv = current.ver;
+		return (this._lc = out);
+	}
+	override _collect(m: Mat, stroke: boolean, out: Box) {
+		super._collect(m, stroke, out);
+		if (!this._sr) for (const c of this._list()) c._collect(mul(m, c._mat()), stroke, out);
+	}
+	override _covers(x: number, y: number) {
+		return super._covers(x, y) || this._list().some((c) => c._covers(x, y));
 	}
 	get numChildren() {
 		return this._list().length;
 	}
 	getChildAt(i: number) {
 		const o = this._list()[i];
-		if (!o) throw new RangeError("The supplied index is out of bounds.");
+		if (!o) throw fail(RangeError, 2006, "The supplied index is out of bounds.");
 		return o;
 	}
 	getChildByName(n: string) {
 		return this._list().find((o) => o.name === n) ?? null;
 	}
 	getChildIndex(o: DisplayObject) {
-		return this._list().indexOf(o);
+		const i = this._list().indexOf(o);
+		if (i < 0) throw fail(ArgumentError, 2025, "The supplied DisplayObject must be a child of the caller.");
+		return i;
 	}
 	contains(o: DisplayObject) {
-		for (let x: any = o; x; x = x._parent) if (x === this) return true;
+		for (let x: any = o; x; x = x.parent) if (x === this) return true;
 		return false;
 	}
 	addChild(o: any) {
+		if (!o) throw fail(TypeError, 2007, "Parameter child must be non-null.");
 		return this.addChildAt(o, this._list().filter((x) => x !== o).length);
 	}
 	addChildAt(o: any, index: number) {
+		if (!o) throw fail(TypeError, 2007, "Parameter child must be non-null.");
+		if (o === this) throw fail(ArgumentError, 2024, "An object cannot be added as a child of itself.");
+		if (o.contains?.(this)) throw fail(ArgumentError, 2150, "An object cannot be added as a child to one of it's children (or children's children, etc.).");
+		if (index < 0 || index > this._list().filter((x) => x !== o).length) throw fail(RangeError, 2006, "The supplied index is out of bounds.");
 		const on = o._onStage();
 		const same = o._parent === this && !o._gone;
 		if (o._parent && !same) o._parent.removeChild(o);
@@ -552,12 +895,14 @@ class DisplayObjectContainer extends DisplayObject {
 		if (o._i) o._i.moved = true;
 		if (next) next._node.parentNode!.insertBefore(o._node, next._node);
 		else this._host().appendChild(o._node);
+		current.ver++;
 	}
 	_host(): Element {
 		return this._c ? this._c.node : this._node;
 	}
 	removeChild(o: any) {
-		if (o._parent !== this) throw new Error("The supplied DisplayObject must be a child of the caller.");
+		if (!o) throw fail(TypeError, 2007, "Parameter child must be non-null.");
+		if (o.parent !== this) throw fail(ArgumentError, 2025, "The supplied DisplayObject must be a child of the caller.");
 		o.dispatchEvent(new FEvent(FEvent.REMOVED, true));
 		if (o._onStage()) o.dispatchEvent(new FEvent(FEvent.REMOVED_FROM_STAGE));
 		const a = this._dyn.indexOf(o);
@@ -568,6 +913,7 @@ class DisplayObjectContainer extends DisplayObject {
 		else o._parent = null;
 		// (taken off the stage, a movie clip plays on)
 		if (o._c && !o._i) current.orphans.add(o._c);
+		current.ver++;
 		current.touched();
 		return o;
 	}
@@ -575,9 +921,16 @@ class DisplayObjectContainer extends DisplayObject {
 		return this.removeChild(this.getChildAt(i));
 	}
 	removeChildren(a = 0, b = 0x7fffffff) {
+		const n = this._list().length;
+		if (a < 0 || a > n || (b !== 0x7fffffff && b >= n) || b < a) {
+			if (n || a || b !== 0x7fffffff) throw fail(RangeError, 2006, "The supplied index is out of bounds.");
+		}
 		for (const o of this._list().slice(a, b + 1)) this.removeChild(o);
 	}
 	setChildIndex(o: any, i: number) {
+		const n = this._list().length;
+		if (i < 0 || i >= n) throw fail(RangeError, 2006, "The supplied index is out of bounds.");
+		this.getChildIndex(o);
 		this._place(o, i);
 		current.touched();
 	}
@@ -595,41 +948,82 @@ class DisplayObjectContainer extends DisplayObject {
 class Sprite extends DisplayObjectContainer {
 	override _cls = "Sprite";
 	buttonMode = false;
-	_g: FGraphics | null = null;
+	useHandCursor = true;
+	doubleClickEnabled = false;
+	tabEnabled = false;
+	tabIndex = -1;
+	focusRect: unknown = null;
+	mouseEnabled = true;
+	hitArea: Sprite | null = null;
+	dropTarget: DisplayObject | null = null;
+	soundTransform = new FSoundTransform();
 	get graphics() {
 		return (this._g ??= new FGraphics(this._node));
 	}
 	startDrag(lock = false, bounds: FRectangle | null = null) {
 		const s = current;
-		const p = this._parent?._node ?? this._node;
-		const [px, py] = local(p, s.client[0], s.client[1]);
+		const [px, py] = s.parentMouse(this);
 		const m = this._own();
 		s.drag = { o: this, dx: lock ? 0 : m.x - px, dy: lock ? 0 : m.y - py, b: bounds };
 	}
 	stopDrag() {
-		current.drag = null;
+		const s = current;
+		if (s.drag?.o === this) s.drag = null;
+		this.dropTarget = s.objectAt(s.client[0], s.client[1], this);
 	}
-	get dropTarget() {
-		return current.objectAt(current.client[0], current.client[1], this);
+}
+
+class FFrameLabel {
+	name: string;
+	frame: number;
+	constructor(name: string, frame: number) {
+		this.name = name;
+		this.frame = frame;
 	}
-	get hitArea() {
-		return null;
+}
+
+class FScene {
+	name: string;
+	numFrames: number;
+	labels: FFrameLabel[];
+	constructor(name: string, numFrames: number, labels: FFrameLabel[]) {
+		this.name = name;
+		this.numFrames = numFrames;
+		this.labels = labels;
 	}
-	set hitArea(_v: unknown) {}
 }
 
 class MovieClip extends Sprite {
 	override _cls = "MovieClip";
 	enabled = true;
-	_t(): Clip {
-		return this._c as Clip;
+	trackAsMenu = false;
+	/** Its scene, if it is the root timeline: name, first frame, frames. */
+	_scene(): PScene | null {
+		const c = this._c;
+		const list = c && c.kind === -1 ? current.P.sc : undefined;
+		if (!list) return null;
+		let s = list[0]!;
+		for (const x of list) if (x[1] <= c!.frame) s = x;
+		return s;
 	}
-	_frame(f: number | string) {
-		const c = this._t();
-		return c.resolve(typeof f === "number" ? f - (current.base || 1) : f);
+	_target(f: number | string, sceneName?: string): number {
+		const c = this._c!;
+		let s = this._scene();
+		if (sceneName !== undefined && sceneName !== null) {
+			const to = current.P.sc?.find((x) => x[0] === sceneName);
+			if (!to) throw fail(ArgumentError, 2108, `Scene ${sceneName} was not found.`);
+			s = to;
+		}
+		const at = s ? s[1] : 0;
+		if (typeof f === "number" || /^\d+$/.test(f as string)) return c.resolve(Math.max(+f - current.base, 0) + at);
+		const lb = c.tl.lb ?? {};
+		// (labels that are in several scenes carry their scene's name)
+		for (const k of [`${s?.[0]}/${f}`, f]) if (Object.prototype.hasOwnProperty.call(lb, k)) return lb[k]!;
+		if (!current.base) return c.frame;
+		throw fail(ArgumentError, 2109, `Frame label ${f} not found in scene ${s ? s[0] : ""}.`);
 	}
 	get currentFrame() {
-		return this._c ? this._c.frame + current.base : 1;
+		return this._c ? this._c.frame - (this._scene()?.[1] ?? 0) + current.base : 1;
 	}
 	get totalFrames() {
 		return this._c ? this._c.tl.n : 1;
@@ -637,17 +1031,33 @@ class MovieClip extends Sprite {
 	get framesLoaded() {
 		return this.totalFrames;
 	}
-	get isPlaying() {
-		return !!this._c?.playing;
+	/** (Flash Player's flag: what play() and stop() said last, not whether the clip moves.) */
+	isPlaying = false;
+	/** The labels between two frames, numbered from the first of them. */
+	_labels(from: number, n: number) {
+		const lb = this._c?.tl.lb ?? {};
+		const out: FFrameLabel[] = [];
+		for (const k in lb) if (lb[k]! >= from && lb[k]! < from + n) out.push(new FFrameLabel(k.slice(k.indexOf("/") + 1), lb[k]! - from + 1));
+		return out.sort((a, b) => a.frame - b.frame);
 	}
 	get currentLabels() {
-		const lb = this._c?.tl.lb ?? {};
-		return Object.keys(lb)
-			.map((name) => ({ name, frame: lb[name]! + 1 }))
-			.sort((a, b) => a.frame - b.frame);
+		const s = this._scene();
+		return s ? this._labels(s[1], s[2]) : this._labels(0, this.totalFrames);
+	}
+	get currentScene() {
+		const s = this._scene();
+		return s ? new FScene(s[0], s[2], this._labels(s[1], s[2])) : new FScene("", this.totalFrames, this._labels(0, this.totalFrames));
+	}
+	get scenes() {
+		const list = this._c?.kind === -1 ? current.P.sc : undefined;
+		return list ? list.map((s) => new FScene(s[0], s[2], this._labels(s[1], s[2]))) : [this.currentScene];
 	}
 	get currentFrameLabel() {
-		return this._c?.labelAt(this._c.frame) ?? null;
+		const c = this._c;
+		if (!c) return null;
+		const lb = c.tl.lb ?? {};
+		for (const k in lb) if (lb[k] === c.frame) return k.slice(k.indexOf("/") + 1);
+		return null;
 	}
 	get currentLabel() {
 		const c = this._c;
@@ -656,12 +1066,13 @@ class MovieClip extends Sprite {
 			at = -1;
 		const lb = c.tl.lb ?? {};
 		for (const k in lb) if (lb[k]! <= c.frame && lb[k]! > at) (best = k), (at = lb[k]!);
-		return best;
+		return best && best.slice(best.indexOf("/") + 1);
 	}
 	play() {
 		const c = this._c;
 		if (!c) return;
 		c.playing = true;
+		this.isPlaying = c.tl.n > 1;
 		c.updateAdvance();
 		current.touched();
 	}
@@ -669,29 +1080,45 @@ class MovieClip extends Sprite {
 		const c = this._c;
 		if (!c) return;
 		c.playing = false;
+		this.isPlaying = false;
 		c.updateAdvance();
 		current.touched();
 	}
-	gotoAndPlay(f: number | string, _scene?: string) {
+	gotoAndPlay(f: number | string, scene?: string) {
 		if (!this._c) return;
-		current.go(this._c, this._frame(f), true);
+		current.go(this._c, this._target(f, scene), true);
+		this.isPlaying = this._c.tl.n > 1;
 		current.touched();
 	}
-	gotoAndStop(f: number | string, _scene?: string) {
+	gotoAndStop(f: number | string, scene?: string) {
 		if (!this._c) return;
-		current.go(this._c, this._frame(f), false);
+		current.go(this._c, this._target(f, scene), false);
 		current.touched();
 	}
 	nextFrame() {
 		const c = this._c;
-		if (c) this.gotoAndStop(Math.min(c.tl.n - 1, c.frame + 1) + current.base);
+		if (!c) return;
+		current.go(c, Math.min(c.tl.n - 1, c.frame + 1), false);
+		current.touched();
 	}
 	prevFrame() {
 		const c = this._c;
-		if (c) this.gotoAndStop(Math.max(0, c.frame - 1) + current.base);
+		if (!c) return;
+		current.go(c, Math.max(0, c.frame - 1), false);
+		current.touched();
 	}
-	nextScene() {}
-	prevScene() {}
+	nextScene() {
+		const s = this._scene();
+		const list = current.P.sc;
+		const to = s && list?.[list.indexOf(s) + 1];
+		if (to) this.gotoAndPlay(current.base, to[0]);
+	}
+	prevScene() {
+		const s = this._scene();
+		const list = current.P.sc;
+		const to = s && list?.[list.indexOf(s) - 1];
+		if (to) this.gotoAndPlay(current.base, to[0]);
+	}
 	addFrameScript(...a: (number | Fn)[]) {
 		const c = this._c;
 		if (!c) return;
@@ -699,43 +1126,82 @@ class MovieClip extends Sprite {
 	}
 }
 
-/** Shapes, bitmaps, buttons on a timeline. */
+/** Drawings on a timeline, or a Shape a script made. */
 class Shape extends DisplayObject {
 	override _cls = "Shape";
-	_g: FGraphics | null = null;
 	get graphics() {
 		return (this._g ??= new FGraphics(this._node));
 	}
 }
 
-class SimpleButton extends DisplayObjectContainer {
+class SimpleButton extends MovieClip {
 	override _cls = "SimpleButton";
-	enabled = true;
 }
 
 class FStage extends DisplayObjectContainer {
 	override _cls = "Stage";
 	scaleMode = "showAll";
 	align = "";
-	quality = "high";
-	displayState = "normal";
+	private _quality = "HIGH";
 	focus: unknown = null;
-	stageFocusRect = false;
+	stageFocusRect = true;
+	color = 0;
+	allowsFullScreen = false;
+	mouseEnabled = true;
+	mouseLock = false;
+	get quality() {
+		return this._quality;
+	}
+	set quality(v: string) {
+		this._quality = String(v).toUpperCase();
+	}
+	get displayState() {
+		return document.fullscreenElement ? "fullScreen" : "normal";
+	}
+	set displayState(v: string) {
+		if (v === "normal") void document.exitFullscreen?.().catch(() => {});
+		else void (current.player.svg as unknown as Element).requestFullscreen?.().catch(() => {});
+	}
 	get stageWidth() {
 		return current.P.w;
 	}
 	get stageHeight() {
 		return current.P.h;
 	}
-	get frameRate() {
-		return current.P.fps;
+	get fullScreenWidth() {
+		return screen.width;
 	}
-	set frameRate(_v: number) {}
+	get fullScreenHeight() {
+		return screen.height;
+	}
+	get frameRate() {
+		return current.rate;
+	}
+	set frameRate(v: number) {
+		current.rate = +v;
+		current.player.speed = +v / current.P.fps;
+	}
+	override get name() {
+		return null as unknown as string;
+	}
+	override set name(_v: string) {}
+	override get stage() {
+		return this;
+	}
+	override get root() {
+		return this as DisplayObject;
+	}
 	override get mouseX() {
-		return stagePoint(current.client[0], current.client[1])[0];
+		return twips(stagePoint(current.client[0], current.client[1])[0]);
 	}
 	override get mouseY() {
-		return stagePoint(current.client[0], current.client[1])[1];
+		return twips(stagePoint(current.client[0], current.client[1])[1]);
+	}
+	override _mat() {
+		return ONE;
+	}
+	override _world() {
+		return ONE;
 	}
 	override _onStage() {
 		return true;
@@ -746,9 +1212,20 @@ class FStage extends DisplayObjectContainer {
 	override _listening(type: string) {
 		current.hear(type, this);
 	}
+	invalidate() {}
 	// (CreateJS's stage)
 	enableMouseOver() {}
 	update() {}
+}
+
+/** One line of a text field: its characters, and how it is drawn. */
+interface TextLine {
+	from: number;
+	to: number;
+	width: number;
+	ascent: number;
+	descent: number;
+	leading: number;
 }
 
 /** A text field: on a timeline (its drawing is live text), or made by a script. */
@@ -757,173 +1234,450 @@ class TextField extends DisplayObject {
 	multiline = false;
 	wordWrap = false;
 	selectable = true;
-	autoSize = "none";
 	type = "dynamic";
 	maxChars = 0;
 	displayAsPassword = false;
 	embedFonts = false;
-	_format = new FTextFormat("Arial", 12, 0);
+	restrict: string | null = null;
+	alwaysShowSelection = false;
+	antiAliasType = "normal";
+	gridFitType = "pixel";
+	condenseWhite = false;
+	mouseWheelEnabled = true;
+	mouseEnabled = true;
+	tabEnabled = false;
+	tabIndex = -1;
+	sharpness = 0;
+	thickness = 0;
+	styleSheet: unknown = null;
+	scrollH = 0;
+	selectionBeginIndex = 0;
+	selectionEndIndex = 0;
+	caretIndex = 0;
+	_def: FTextFormat;
 	_text = "";
+	/** Each character's format. */
+	_chars: FTextFormat[] = [];
+	_lines: TextLine[] = [];
+	_auto = "none";
 	_w = 100;
 	_h = 100;
 	_back: SVGElement | null = null;
-	_bg = -1;
-	_br = -1;
-	constructor(node?: SVGElement) {
+	_bgOn = false;
+	_bg = 0xffffff;
+	_brOn = false;
+	_br = 0;
+	_html: string | null = null;
+	_v = 1;
+	constructor(node?: SVGElement, extras?: PTextExtras) {
 		super(node);
-		if (node) this._text = this._field()?.textContent ?? "";
-		else this._draw();
+		this._def = new FTextFormat("Times New Roman", 12, 0, false, false, false, "", "", "left", 0, 0, 0, 0);
+		this._def.letterSpacing = 0;
+		this._def.blockIndent = 0;
+		this._def.kerning = false;
+		this._def.bullet = false;
+		this._def.tabStops = [];
+		const t = node && this._field();
+		if (t) {
+			// the look of the field in Animate
+			const s = t.querySelector("[font-size]");
+			const f = this._def;
+			f.size = +(s?.getAttribute("font-size") ?? 12);
+			f.font = (s?.getAttribute("font-family") ?? "Arial").split(",")[0]!.replace(/['"]/g, "");
+			f.color = parseInt((s?.getAttribute("fill") ?? "#000000").slice(1), 16);
+			f.bold = s?.getAttribute("font-weight") === "bold";
+			f.italic = s?.getAttribute("font-style") === "italic";
+			f.align = extras?.[2] ?? "left";
+			this._text = [...t.children].map((l) => l.textContent).join("\r");
+			this._chars = Array.from(this._text, () => f);
+			// the field's box is its space: the text's own matrix points inside the gutter
+			const list = t.transform.baseVal;
+			const m = list.numberOfItems ? list.consolidate()!.matrix : null;
+			const v: Mat = m ? [m.a, m.b, m.c, m.d, m.e, m.f] : ONE;
+			node!.setAttribute("transform", matrixText(mul(v, [1, 0, 0, 1, -2, -2])));
+			t.setAttribute("transform", "translate(2 2)");
+			if (extras) {
+				this._w = extras[0] / (Math.abs(v[0]) || 1);
+				this._h = extras[1] / (Math.abs(v[3]) || 1);
+				this.type = extras[3] ?? "dynamic";
+				this.selectable = !!extras[4];
+				this.multiline = !!extras[5];
+				this.wordWrap = !!extras[5];
+			}
+			this._lay();
+		} else this._draw();
 	}
 	_field(): SVGTextElement | null {
-		return this._node.querySelector("text");
+		return (this._node.localName === "text" ? this._node : this._node.querySelector("text")) as SVGTextElement | null;
 	}
+	private fontOf(f: FTextFormat) {
+		return `${f.italic ? "italic " : ""}${f.bold ? "bold " : ""}${f.size}px "${f.font}", sans-serif`;
+	}
+	/** Breaks the text into lines and measures them. */
+	_lay() {
+		const c = canvas2d();
+		const text = this._text;
+		const room = this._w - 4;
+		const lines: TextLine[] = [];
+		let from = 0;
+		const close = (to: number, width: number) => {
+			let asc = 0,
+				desc = 0,
+				lead = 0;
+			for (let i = from; i < Math.max(to, from + 1); i++) {
+				const f = this._chars[i] ?? this._def;
+				c.font = this.fontOf(f);
+				const m = c.measureText("Mg");
+				asc = Math.max(asc, m.fontBoundingBoxAscent ?? f.size! * 0.905);
+				desc = Math.max(desc, m.fontBoundingBoxDescent ?? f.size! * 0.212);
+				lead = Math.max(lead, f.leading ?? 0);
+				if (this._chars[i] === this._chars[i + 1] && i + 1 < to) {
+					// (a run of one format: its first character tells)
+					while (i + 1 < to && this._chars[i + 1] === f) i++;
+				}
+			}
+			lines.push({ from, to, width, ascent: asc, descent: desc, leading: lead });
+		};
+		let x = 0,
+			space = -1,
+			widthAtSpace = 0;
+		for (let i = 0; i <= text.length; i++) {
+			const ch = text[i];
+			if (i === text.length || ch === "\r") {
+				close(i, x);
+				from = i + 1;
+				x = 0;
+				space = -1;
+				continue;
+			}
+			const f = this._chars[i] ?? this._def;
+			c.font = this.fontOf(f);
+			const w = c.measureText(ch!).width + (f.letterSpacing ?? 0);
+			if (this.wordWrap && x + w > room && i > from) {
+				if (space >= from) {
+					close(space + 1, widthAtSpace);
+					from = space + 1;
+					x -= widthAtSpace;
+				} else {
+					close(i, x);
+					from = i;
+					x = 0;
+				}
+				space = -1;
+			}
+			x += w;
+			if (ch === " " || ch === "\t") {
+				space = i;
+				widthAtSpace = x;
+			}
+		}
+		this._lines = lines;
+		if (this._auto !== "none") this._fit();
+	}
+	/** autoSize: the box around the text. */
+	private _fit() {
+		const w = this.textWidth + 4,
+			h = this.textHeight + 4;
+		if (!this.wordWrap) {
+			const dx = this._w - w;
+			if (this._auto === "center") this.x += dx / 2;
+			else if (this._auto === "right") this.x += dx;
+			this._w = w;
+		}
+		this._h = h;
+	}
+	/** Draws the lines from the first one scrolled to. */
 	_draw() {
+		this._lay();
 		const n = this._node;
 		let t = this._field();
 		if (!t) n.appendChild((t = svgEl("text", { "xml:space": "preserve" }) as SVGTextElement));
-		const f = this._format;
-		t.setAttribute("font-family", f.font);
-		t.setAttribute("font-size", String(f.size));
-		t.setAttribute("fill", colorOf(f.color as number));
-		t.setAttribute("font-weight", f.bold ? "bold" : "normal");
-		t.setAttribute("font-style", f.italic ? "italic" : "normal");
-		const lines = this._text.split(/\r\n|\r|\n/);
-		t.replaceChildren(
-			...lines.map((l, i) => {
-				const s = svgEl("tspan", { x: "2", y: String(2 + f.size * (i + 1)) });
-				s.textContent = l;
-				return s;
-			}),
-		);
-		if (this._bg >= 0 || this._br >= 0) {
+		t.removeAttribute("text-anchor");
+		t.removeAttribute("transform");
+		const parts: SVGElement[] = [];
+		const box = this._w;
+		let y = 2;
+		const hide = this.displayAsPassword;
+		for (let l = this._v - 1; l < this._lines.length; l++) {
+			const line = this._lines[l]!;
+			y += line.ascent;
+			const first = this._chars[line.from] ?? this._def;
+			const align = first.align ?? "left";
+			const row = svgEl("tspan", { x: String(align === "center" ? box / 2 : align === "right" ? box - 2 : 2 + (first.leftMargin ?? 0)), y: String(y), "text-anchor": align === "center" ? "middle" : align === "right" ? "end" : "start" });
+			for (let i = line.from; i < line.to; ) {
+				const f = this._chars[i]!;
+				let e = i + 1;
+				while (e < line.to && this._chars[e] === f) e++;
+				const s = svgEl("tspan", { "font-family": `'${f.font}', sans-serif`, "font-size": String(f.size), fill: colorOf(f.color ?? 0) });
+				if (f.bold) s.setAttribute("font-weight", "bold");
+				if (f.italic) s.setAttribute("font-style", "italic");
+				if (f.underline) s.setAttribute("text-decoration", "underline");
+				if (f.letterSpacing) s.setAttribute("letter-spacing", String(f.letterSpacing));
+				s.textContent = hide ? "*".repeat(e - i) : this._text.slice(i, e);
+				row.appendChild(s);
+				i = e;
+			}
+			parts.push(row);
+			y += line.descent + line.leading;
+			if (y > this._h && !this._i) break;
+		}
+		t.replaceChildren(...parts);
+		if (this._bgOn || this._brOn) {
 			const r = (this._back ??= n.insertBefore(svgEl("rect"), n.firstChild) as SVGElement);
 			r.setAttribute("width", String(this._w));
 			r.setAttribute("height", String(this._h));
-			r.setAttribute("fill", this._bg >= 0 ? colorOf(this._bg) : "none");
-			r.setAttribute("stroke", this._br >= 0 ? colorOf(this._br) : "none");
-		} else this._back?.remove();
+			r.setAttribute("fill", this._bgOn ? colorOf(this._bg) : "none");
+			r.setAttribute("stroke", this._brOn ? colorOf(this._br) : "none");
+		} else {
+			this._back?.remove();
+			this._back = null;
+		}
+		current.touched();
+	}
+	override _self(): Box {
+		return { l: 0, t: 0, r: this._w, b: this._h };
+	}
+	override _covers(x: number, y: number) {
+		const b = this._boxIn(this._world(), true);
+		return !!b && x >= b.l && x <= b.r && y >= b.t && y <= b.b;
 	}
 	get text() {
 		return this._text;
 	}
 	set text(v: string) {
-		this._text = v === null || v === undefined ? "" : String(v);
-		const t = this._field();
-		if (this._i && t) {
-			// the field keeps its look: the first run takes the new text
-			const s = t.querySelector("tspan");
-			if (s) {
-				for (const o of [...t.querySelectorAll("tspan")]) if (o !== s) o.remove();
-				s.textContent = this._text;
-			} else t.textContent = this._text;
-		} else this._draw();
-		current.touched();
+		this._text = (v === null || v === undefined ? "" : String(v)).replace(/\n/g, "\r");
+		this._html = null;
+		const f = this._def;
+		this._chars = Array.from({ length: this._text.length }, () => f);
+		this._draw();
 	}
 	get htmlText() {
-		return this.text;
+		return this._html ?? this._text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 	}
 	set htmlText(v: string) {
-		this.text = String(v).replace(/<[^>]*>/g, "");
+		const html = String(v);
+		let text = "";
+		const chars: FTextFormat[] = [];
+		const stack = [this._def];
+		const put = (s: string) => {
+			const f = stack[stack.length - 1]!;
+			for (const ch of s.replace(/&(lt|gt|amp|quot|apos|nbsp);/g, (_m, e: string) => ({ lt: "<", gt: ">", amp: "&", quot: '"', apos: "'", nbsp: " " })[e]!)) {
+				text += ch;
+				chars.push(f);
+			}
+		};
+		for (const m of html.matchAll(/<(\/?)([a-zA-Z]+)([^>]*)>|[^<]+/g)) {
+			if (!m[2]) {
+				put(m[0].replace(/[\r\n]+/g, this.multiline ? "\r" : ""));
+				continue;
+			}
+			const tag = m[2].toLowerCase();
+			if (m[1]) {
+				if (tag !== "br") stack.length = Math.max(1, stack.length - 1);
+				if (tag === "p" || tag === "li") put("\r");
+				continue;
+			}
+			if (tag === "br") {
+				put("\r");
+				continue;
+			}
+			const at = (k: string) => new RegExp(`\\b${k}\\s*=\\s*["']([^"']*)`, "i").exec(m[3]!)?.[1];
+			const f = new FTextFormat();
+			if (tag === "b") f.bold = true;
+			if (tag === "i") f.italic = true;
+			if (tag === "u") f.underline = true;
+			if (tag === "font") {
+				f.font = at("face") ?? null;
+				const s = at("size");
+				f.size = s ? +s : null;
+				const c = at("color");
+				f.color = c ? parseInt(c.slice(1), 16) : null;
+			}
+			if (tag === "p") f.align = at("align")?.toLowerCase() ?? null;
+			if (tag === "a") {
+				f.url = at("href") ?? null;
+				f.target = at("target") ?? null;
+			}
+			stack.push(stack[stack.length - 1]!._with(f));
+		}
+		if (text.endsWith("\r") && /<\/p>\s*$/i.test(html)) {
+			text = text.slice(0, -1);
+			chars.pop();
+		}
+		this._text = text;
+		this._chars = chars;
+		this._html = html;
+		this._draw();
 	}
 	appendText(s: string) {
-		this.text = this._text + s;
+		const start = this._text.length;
+		const add = String(s).replace(/\n/g, "\r");
+		const f = this._chars[start - 1] ?? this._def;
+		this._text += add;
+		for (let i = 0; i < add.length; i++) this._chars.push(f);
+		this._draw();
+	}
+	replaceText(a: number, b: number, s: string) {
+		const add = String(s).replace(/\n/g, "\r");
+		const f = this._chars[a] ?? this._def;
+		this._text = this._text.slice(0, a) + add + this._text.slice(b);
+		this._chars.splice(a, b - a, ...Array.from({ length: add.length }, () => f));
+		this._draw();
+	}
+	replaceSelectedText(s: string) {
+		this.replaceText(this.selectionBeginIndex, this.selectionEndIndex, s);
+	}
+	setSelection(a: number, b: number) {
+		this.selectionBeginIndex = a;
+		this.selectionEndIndex = b;
 	}
 	get length() {
 		return this._text.length;
 	}
+	get numLines() {
+		return Math.max(1, this._lines.length);
+	}
 	get textWidth() {
-		return this._field()?.getComputedTextLength?.() ?? 0;
+		return this._lines.reduce((w, l) => Math.max(w, l.width), 0);
 	}
 	get textHeight() {
-		return this._format.size * 1.2;
+		return this._lines.reduce((h, l) => h + l.ascent + l.descent + l.leading, 0);
+	}
+	get scrollV() {
+		return this._v;
+	}
+	set scrollV(v: number) {
+		this._v = Math.max(1, Math.min(this.maxScrollV, +v));
+		this._draw();
+	}
+	get maxScrollV() {
+		let h = 0,
+			n = this._lines.length;
+		while (n > 0) {
+			const l = this._lines[n - 1]!;
+			h += l.ascent + l.descent + l.leading;
+			if (h > this._h - 4) break;
+			n--;
+		}
+		return Math.max(1, n + 1);
+	}
+	get bottomScrollV() {
+		let h = 0,
+			n = this._v - 1;
+		while (n < this._lines.length) {
+			const l = this._lines[n]!;
+			h += l.ascent + l.descent + l.leading;
+			if (h > this._h - 4) break;
+			n++;
+		}
+		return Math.max(1, n);
+	}
+	get maxScrollH() {
+		return Math.max(0, this.textWidth - this._w + 4);
+	}
+	getLineText(i: number) {
+		const l = this._lines[i];
+		if (!l) throw fail(RangeError, 2006, "The supplied index is out of bounds.");
+		return this._text.slice(l.from, Math.min(this._text.length, l.to + 1));
+	}
+	getLineLength(i: number) {
+		return this.getLineText(i).length;
+	}
+	getLineOffset(i: number) {
+		this.getLineText(i);
+		return this._lines[i]!.from;
+	}
+	getLineMetrics(i: number) {
+		this.getLineText(i);
+		const l = this._lines[i]!;
+		return { x: 2, width: l.width, height: l.ascent + l.descent + l.leading, ascent: l.ascent, descent: l.descent, leading: l.leading };
 	}
 	get textColor() {
-		return this._format.color as number;
+		return this._def.color as number;
 	}
 	set textColor(v: number) {
-		this._format.color = v;
-		this._field()?.setAttribute("fill", colorOf(v));
+		this.setTextFormat(new FTextFormat(null, null, v));
+		this._def = this._def._with(new FTextFormat(null, null, v));
 	}
 	get defaultTextFormat() {
-		return this._format;
+		return this._def._copy();
 	}
 	set defaultTextFormat(f: FTextFormat) {
-		this.setTextFormat(f);
+		this._def = this._def._with(f);
 	}
-	setTextFormat(f: FTextFormat) {
-		const m = this._format;
-		if (f.font !== undefined) m.font = f.font;
-		if (f.size !== undefined) m.size = f.size;
-		if (f.color !== undefined) m.color = f.color;
-		if (f.bold !== undefined) m.bold = f.bold;
-		if (f.italic !== undefined) m.italic = f.italic;
+	getTextFormat(a = -1, b = -1) {
+		const from = a < 0 ? 0 : a,
+			to = a < 0 ? this._text.length : b < 0 ? a + 1 : b;
+		const first = this._chars[from];
+		if (!first) return this._def._copy();
+		const out = first._copy() as any;
+		for (let i = from + 1; i < to; i++) {
+			const f = this._chars[i] as any;
+			if (f === first) continue;
+			for (const k in out) if (out[k] !== f[k]) out[k] = null;
+		}
+		return out as FTextFormat;
+	}
+	setTextFormat(f: FTextFormat, a = -1, b = -1) {
+		const from = a < 0 ? 0 : a,
+			to = a < 0 ? this._text.length : b < 0 ? a + 1 : b;
+		const made = new Map<FTextFormat, FTextFormat>();
+		for (let i = from; i < to; i++) {
+			const o = this._chars[i]!;
+			let n = made.get(o);
+			if (!n) made.set(o, (n = o._with(f)));
+			this._chars[i] = n;
+		}
+		this._draw();
+	}
+	get autoSize() {
+		return this._auto;
+	}
+	set autoSize(v: string) {
+		this._auto = v;
 		this._draw();
 	}
 	get background() {
-		return this._bg >= 0;
+		return this._bgOn;
 	}
 	set background(v: boolean) {
-		this._bg = v ? Math.max(this._bg, 0xffffff) : -1;
+		this._bgOn = !!v;
 		this._draw();
 	}
 	get backgroundColor() {
-		return Math.max(this._bg, 0);
+		return this._bg;
 	}
 	set backgroundColor(v: number) {
 		this._bg = v;
 		this._draw();
 	}
 	get border() {
-		return this._br >= 0;
+		return this._brOn;
 	}
 	set border(v: boolean) {
-		this._br = v ? Math.max(this._br, 0) : -1;
+		this._brOn = !!v;
 		this._draw();
 	}
 	get borderColor() {
-		return Math.max(this._br, 0);
+		return this._br;
 	}
 	set borderColor(v: number) {
 		this._br = v;
 		this._draw();
 	}
 	override get width() {
-		return this._i ? super.width : this._w;
+		return this._w * Math.abs(this.scaleX);
 	}
 	override set width(v: number) {
-		if (this._i) super.width = v;
-		else {
-			this._w = +v;
-			this._draw();
-		}
+		this._w = +v / (Math.abs(this.scaleX) || 1);
+		this._draw();
 	}
 	override get height() {
-		return this._i ? super.height : this._h;
+		return this._h * Math.abs(this.scaleY);
 	}
 	override set height(v: number) {
-		if (this._i) super.height = v;
-		else {
-			this._h = +v;
-			this._draw();
-		}
-	}
-}
-
-class FTextFormat {
-	font: string;
-	size: number;
-	color: unknown;
-	bold: boolean;
-	italic: boolean;
-	underline: boolean;
-	align = "left";
-	constructor(font = "Arial", size = 12, color: unknown = 0, bold = false, italic = false, underline = false) {
-		this.font = font;
-		this.size = size;
-		this.color = color;
-		this.bold = bold;
-		this.italic = italic;
-		this.underline = underline;
+		this._h = +v / (Math.abs(this.scaleY) || 1);
+		this._draw();
 	}
 }
 
@@ -934,15 +1688,48 @@ class FGraphics {
 	private stroke = "none";
 	private sw = 1;
 	private so = 1;
+	private cap = "round";
+	private join = "round";
+	private miter = 3;
+	private keep = false;
+	private x = 0;
+	private y = 0;
 	private layer: SVGElement | null = null;
 	private host: SVGElement;
+	/** What it covers, without and with its lines. */
+	private inner = noBox();
+	private outer = noBox();
 	constructor(host: SVGElement) {
 		this.host = host;
 	}
+	_box(stroke: boolean): Box | null {
+		const b = stroke ? this.outer : this.inner;
+		return b.l === Infinity ? null : b;
+	}
+	_covers(x: number, y: number) {
+		this._end();
+		return !!this.layer && covers(this.layer, x, y);
+	}
+	private pt(x: number, y: number) {
+		addPoint(this.inner, x, y);
+		const h = this.stroke === "none" ? 0 : this.sw / 2;
+		addPoint(this.outer, x - h, y - h);
+		addPoint(this.outer, x + h, y + h);
+	}
 	private flush() {
 		if (this.d) {
-			const p = svgEl("path", { d: this.d, fill: this.fill, "fill-opacity": String(this.fo), stroke: this.stroke, "stroke-width": String(this.sw), "stroke-opacity": String(this.so), "stroke-linecap": "round", "stroke-linejoin": "round" });
-			(this.layer ??= this.host.insertBefore(svgEl("g"), this.host.firstChild) as SVGElement).appendChild(p);
+			const a: Record<string, string> = { d: this.d, fill: this.fill };
+			if (this.fo !== 1) a["fill-opacity"] = String(this.fo);
+			if (this.stroke !== "none") {
+				a.stroke = this.stroke;
+				a["stroke-width"] = String(this.sw || 1);
+				if (this.so !== 1) a["stroke-opacity"] = String(this.so);
+				a["stroke-linecap"] = this.cap;
+				a["stroke-linejoin"] = this.join;
+				if (this.join === "miter") a["stroke-miterlimit"] = String(this.miter);
+				if (this.keep || !this.sw) a["vector-effect"] = "non-scaling-stroke";
+			}
+			(this.layer ??= this.host.insertBefore(svgEl("g"), this.host.firstChild) as SVGElement).appendChild(svgEl("path", a));
 			this.d = "";
 			current.touched();
 		}
@@ -951,17 +1738,51 @@ class FGraphics {
 		this.layer?.replaceChildren();
 		this.d = "";
 		this.fill = this.stroke = "none";
+		this.inner = noBox();
+		this.outer = noBox();
+		this.x = this.y = 0;
+		current.touched();
 	}
-	lineStyle(w = NaN, color = 0, alpha = 1) {
+	lineStyle(w = NaN, color = 0, alpha = 1, _hinting = false, scale = "normal", caps: string | null = null, joints: string | null = null, miter = 3) {
 		this.flush();
 		this.stroke = isNaN(w) ? "none" : colorOf(color);
-		this.sw = Math.max(w, 0.1);
+		this.sw = Math.max(w, 0);
 		this.so = alpha;
+		this.cap = caps === "none" ? "butt" : caps ?? "round";
+		this.join = joints ?? "round";
+		this.miter = miter;
+		this.keep = scale === "none";
+		if (this.d) this.d += `M${this.x} ${this.y}`;
 	}
 	beginFill(color: number, alpha = 1) {
 		this.flush();
 		this.fill = colorOf(color);
 		this.fo = alpha;
+	}
+	beginGradientFill(type: string, colors: number[], alphas: number[], ratios: number[], matrix: FMatrix | null = null, spread = "pad", interp = "rgb", focal = 0) {
+		this.flush();
+		const id = `${current.player.svg.id}_g${current.uid++}`;
+		const linear = type === "linear";
+		const m = matrix ?? new FMatrix();
+		const e = svgEl(linear ? "linearGradient" : "radialGradient", { id, gradientUnits: "userSpaceOnUse", gradientTransform: matrixText(m._m()), spreadMethod: spread, ...(interp === "linearRGB" ? { "color-interpolation": "linearRGB" } : {}) });
+		if (linear) for (const [k, v] of [["x1", -819.2], ["y1", 0], ["x2", 819.2], ["y2", 0]] as const) e.setAttribute(k, String(v));
+		else for (const [k, v] of [["cx", 0], ["cy", 0], ["r", 819.2], ["fx", focal * 819.2], ["fy", 0]] as const) e.setAttribute(k, String(v));
+		colors.forEach((c, i) => e.appendChild(svgEl("stop", { offset: String(ratios[i]! / 255), "stop-color": colorOf(c), "stop-opacity": String(alphas[i]) })));
+		current.player.defs.appendChild(e);
+		this.fill = `url(#${id})`;
+		this.fo = 1;
+	}
+	beginBitmapFill(bd: FBitmapData, matrix: FMatrix | null = null, repeat = true, smooth = false) {
+		this.flush();
+		const id = `${current.player.svg.id}_p${current.uid++}`;
+		const p = svgEl("pattern", { id, patternUnits: "userSpaceOnUse", width: String(repeat ? bd.width : 32768), height: String(repeat ? bd.height : 32768) });
+		if (matrix) p.setAttribute("patternTransform", matrixText(matrix._m()));
+		const img = svgEl("image", { width: String(bd.width), height: String(bd.height), href: bd._url() });
+		if (!smooth) img.style.imageRendering = "pixelated";
+		p.appendChild(img);
+		current.player.defs.appendChild(p);
+		this.fill = `url(#${id})`;
+		this.fo = 1;
 	}
 	endFill() {
 		this.flush();
@@ -969,29 +1790,68 @@ class FGraphics {
 	}
 	moveTo(x: number, y: number) {
 		this.d += `M${x} ${y}`;
+		this.x = x;
+		this.y = y;
+	}
+	private start() {
+		if (!this.d) this.d = `M${this.x} ${this.y}`;
+		this.pt(this.x, this.y);
 	}
 	lineTo(x: number, y: number) {
+		this.start();
 		this.d += `L${x} ${y}`;
+		this.pt(x, y);
+		this.x = x;
+		this.y = y;
+	}
+	/** A quadratic curve's extent: where its slope is level, on either axis. */
+	private bend(p: number, c: number, e: number, axis: (t: number, v: number) => void) {
+		const n = p - 2 * c + e;
+		if (!n) return;
+		const t = (p - c) / n;
+		if (t > 0 && t < 1) axis(t, (1 - t) ** 2 * p + 2 * (1 - t) * t * c + t * t * e);
 	}
 	curveTo(a: number, b: number, x: number, y: number) {
+		this.start();
 		this.d += `Q${a} ${b} ${x} ${y}`;
+		this.bend(this.x, a, x, (_t, v) => this.pt(v, y));
+		this.bend(this.y, b, y, (_t, v) => this.pt(x, v));
+		this.pt(x, y);
+		this.x = x;
+		this.y = y;
 	}
 	cubicCurveTo(a: number, b: number, c: number, d: number, x: number, y: number) {
+		this.start();
 		this.d += `C${a} ${b} ${c} ${d} ${x} ${y}`;
+		// (its control points hold it; closer than that, the path's own box tells)
+		this.pt(a, b);
+		this.pt(c, d);
+		this.pt(x, y);
+		this.x = x;
+		this.y = y;
+	}
+	private box(x: number, y: number, w: number, h: number) {
+		this.pt(x, y);
+		this.pt(x + w, y + h);
+		this.x = x;
+		this.y = y;
 	}
 	drawRect(x: number, y: number, w: number, h: number) {
 		this.d += `M${x} ${y}h${w}v${h}h${-w}Z`;
+		this.box(x, y, w, h);
 		return this;
 	}
 	drawRoundRect(x: number, y: number, w: number, h: number, ew: number, eh = ew) {
 		const r = ew / 2,
 			s = eh / 2;
 		this.d += `M${x + r} ${y}h${w - ew}a${r} ${s} 0 0 1 ${r} ${s}v${h - eh}a${r} ${s} 0 0 1 ${-r} ${s}h${ew - w}a${r} ${s} 0 0 1 ${-r} ${-s}v${eh - h}a${r} ${s} 0 0 1 ${r} ${-s}Z`;
+		this.box(x, y, w, h);
 	}
 	drawEllipse(x: number, y: number, w: number, h: number) {
 		const r = w / 2,
 			s = h / 2;
 		this.d += `M${x} ${y + s}a${r} ${s} 0 1 0 ${w} 0a${r} ${s} 0 1 0 ${-w} 0Z`;
+		this.box(x, y, w, h);
 	}
 	drawCircle(x: number, y: number, r: number) {
 		this.drawEllipse(x - r, y - r, r * 2, r * 2);
@@ -1001,123 +1861,224 @@ class FGraphics {
 	}
 }
 
-class FPoint {
-	x: number;
-	y: number;
-	constructor(x = 0, y = 0) {
-		this.x = x;
-		this.y = y;
-	}
-	static distance(a: FPoint, b: FPoint) {
-		return Math.hypot(a.x - b.x, a.y - b.y);
-	}
-	static interpolate(a: FPoint, b: FPoint, f: number) {
-		return new FPoint(b.x + (a.x - b.x) * f, b.y + (a.y - b.y) * f);
-	}
-	static polar(r: number, a: number) {
-		return new FPoint(r * Math.cos(a), r * Math.sin(a));
-	}
-	get length() {
-		return Math.hypot(this.x, this.y);
-	}
-	add(o: FPoint) {
-		return new FPoint(this.x + o.x, this.y + o.y);
-	}
-	subtract(o: FPoint) {
-		return new FPoint(this.x - o.x, this.y - o.y);
-	}
-	clone() {
-		return new FPoint(this.x, this.y);
-	}
-	equals(o: FPoint) {
-		return this.x === o.x && this.y === o.y;
-	}
-	toString() {
-		return `(x=${this.x}, y=${this.y})`;
-	}
-}
-
-class FRectangle {
-	x: number;
-	y: number;
-	width: number;
-	height: number;
-	constructor(x = 0, y = 0, w = 0, h = 0) {
-		this.x = x;
-		this.y = y;
+/** Pixels: the numbers are the truth, a canvas turns them into a picture when one is shown. */
+class FBitmapData {
+	readonly width: number;
+	readonly height: number;
+	readonly transparent: boolean;
+	/** ARGB of each pixel; none yet for a picture not read. */
+	_px: Uint32Array | null;
+	/** A picture to start from, and where it is shown. */
+	_href: string | null = null;
+	_shown = new Set<Bitmap>();
+	_gone = false;
+	constructor(w: number, h: number, transparent = true, fill = 0xffffffff) {
+		w = Math.trunc(w);
+		h = Math.trunc(h);
+		if (!(w > 0 && h > 0 && w <= 8191 && h <= 8191 && w * h <= 16777215)) throw fail(ArgumentError, 2015, "Invalid BitmapData.");
 		this.width = w;
 		this.height = h;
+		this.transparent = transparent;
+		this._px = new Uint32Array(w * h).fill(transparent ? fill >>> 0 : (fill | 0xff000000) >>> 0);
 	}
-	get left() {
-		return this.x;
+	static _picture(href: string, w: number, h: number, transparent: boolean, proto: object) {
+		const b = Object.create(proto) as FBitmapData;
+		Object.assign(b, { width: w, height: h, transparent, _px: null, _href: href, _shown: new Set(), _gone: false });
+		return b;
 	}
-	get top() {
-		return this.y;
+	private live(): Uint32Array {
+		if (this._gone) throw fail(ArgumentError, 2015, "Invalid BitmapData.");
+		if (!this._px) {
+			const px = new Uint32Array(this.width * this.height);
+			this._px = px;
+			const img = new Image();
+			img.crossOrigin = "anonymous";
+			img.src = this._href!;
+			// (a picture that isn't decoded yet reads as empty: browsers have no way to wait for it here)
+			if (img.complete && img.naturalWidth) this.read(img);
+			else img.onload = () => this.read(img);
+		}
+		return this._px;
 	}
-	get right() {
-		return this.x + this.width;
+	private read(img: HTMLImageElement) {
+		const c = document.createElement("canvas");
+		c.width = this.width;
+		c.height = this.height;
+		const x = c.getContext("2d")!;
+		x.drawImage(img, 0, 0);
+		const d = x.getImageData(0, 0, this.width, this.height).data;
+		const px = this._px!;
+		for (let i = 0; i < px.length; i++) px[i] = ((d[i * 4 + 3]! << 24) | (d[i * 4]! << 16) | (d[i * 4 + 1]! << 8) | d[i * 4 + 2]!) >>> 0;
 	}
-	get bottom() {
-		return this.y + this.height;
+	get rect() {
+		return new FRectangle(0, 0, this.width, this.height);
 	}
-	contains(x: number, y: number) {
-		return x >= this.x && x < this.right && y >= this.y && y < this.bottom;
+	private changed() {
+		this._href = null;
+		current.bitmaps.add(this);
+		current.touched();
 	}
-	containsPoint(p: FPoint) {
-		return this.contains(p.x, p.y);
+	/** Where the picture is: a file or a data URL of the pixels. */
+	_url(): string {
+		if (this._href) return this._href;
+		const px = this.live();
+		const c = document.createElement("canvas");
+		c.width = this.width;
+		c.height = this.height;
+		const x = c.getContext("2d")!;
+		const img = x.createImageData(this.width, this.height);
+		for (let i = 0; i < px.length; i++) {
+			const p = px[i]!;
+			img.data[i * 4] = (p >> 16) & 255;
+			img.data[i * 4 + 1] = (p >> 8) & 255;
+			img.data[i * 4 + 2] = p & 255;
+			img.data[i * 4 + 3] = p >>> 24;
+		}
+		x.putImageData(img, 0, 0);
+		return (this._href = c.toDataURL());
 	}
-	intersects(o: FRectangle) {
-		return this.x < o.right && o.x < this.right && this.y < o.bottom && o.y < this.bottom;
+	/** Shows the pixels as they are now. */
+	_show() {
+		const u = this._url();
+		for (const b of this._shown) b._image.setAttribute("href", u);
 	}
+	getPixel32(x: number, y: number) {
+		const px = this.live();
+		return x >= 0 && y >= 0 && x < this.width && y < this.height ? px[y * this.width + x]! : 0;
+	}
+	getPixel(x: number, y: number) {
+		return this.getPixel32(x, y) & 0xffffff;
+	}
+	setPixel32(x: number, y: number, c: number) {
+		const px = this.live();
+		if (x < 0 || y < 0 || x >= this.width || y >= this.height) return;
+		px[y * this.width + x] = this.transparent ? c >>> 0 : (c | 0xff000000) >>> 0;
+		this.changed();
+	}
+	setPixel(x: number, y: number, c: number) {
+		const a = this.getPixel32(x, y) & 0xff000000;
+		this.setPixel32(x, y, (a | (c & 0xffffff)) >>> 0);
+	}
+	fillRect(r: FRectangle, c: number) {
+		const px = this.live();
+		const v = this.transparent ? c >>> 0 : (c | 0xff000000) >>> 0;
+		const x0 = Math.max(0, r.x),
+			y0 = Math.max(0, r.y),
+			x1 = Math.min(this.width, r.right),
+			y1 = Math.min(this.height, r.bottom);
+		for (let y = y0; y < y1; y++) px.fill(v, y * this.width + x0, y * this.width + x1);
+		this.changed();
+	}
+	copyPixels(from: FBitmapData, r: FRectangle, to: FPoint) {
+		const px = this.live(),
+			src = from.live();
+		for (let y = 0; y < r.height; y++)
+			for (let x = 0; x < r.width; x++) {
+				const sx = r.x + x,
+					sy = r.y + y,
+					dx = to.x + x,
+					dy = to.y + y;
+				if (sx >= 0 && sy >= 0 && sx < from.width && sy < from.height && dx >= 0 && dy >= 0 && dx < this.width && dy < this.height) px[dy * this.width + dx] = src[sy * from.width + sx]!;
+			}
+		this.changed();
+	}
+	/** Only of pixels: a browser can't read back what it draws of a display object at once. */
+	draw(src: FBitmapData | Bitmap) {
+		const b = src instanceof Bitmap ? src.bitmapData : src;
+		if (b instanceof FBitmapData) this.copyPixels(b, b.rect, new FPoint());
+	}
+	scroll(dx: number, dy: number) {
+		const copy = this.clone();
+		this.copyPixels(copy, copy.rect, new FPoint(dx, dy));
+	}
+	colorTransform(r: FRectangle, c: FColorTransform) {
+		const px = this.live();
+		const clamp = (v: number) => Math.max(0, Math.min(255, Math.trunc(v)));
+		for (let y = Math.max(0, r.y); y < Math.min(this.height, r.bottom); y++)
+			for (let x = Math.max(0, r.x); x < Math.min(this.width, r.right); x++) {
+				const p = px[y * this.width + x]!;
+				const a = clamp((p >>> 24) * c.alphaMultiplier + c.alphaOffset),
+					rr = clamp(((p >> 16) & 255) * c.redMultiplier + c.redOffset),
+					g = clamp(((p >> 8) & 255) * c.greenMultiplier + c.greenOffset),
+					b = clamp((p & 255) * c.blueMultiplier + c.blueOffset);
+				px[y * this.width + x] = ((a << 24) | (rr << 16) | (g << 8) | b) >>> 0;
+			}
+		this.changed();
+	}
+	noise(seed: number, low = 0, high = 255) {
+		const px = this.live();
+		let s = seed >>> 0 || 1;
+		const next = () => (s = Math.imul(s, 1103515245) + 12345) >>> 16;
+		for (let i = 0; i < px.length; i++) {
+			const v = () => low + (next() % (high - low + 1));
+			px[i] = ((255 << 24) | (v() << 16) | (v() << 8) | v()) >>> 0;
+		}
+		this.changed();
+	}
+	getVector(r: FRectangle) {
+		const out: number[] = [];
+		for (let y = r.y; y < r.bottom; y++) for (let x = r.x; x < r.right; x++) out.push(this.getPixel32(x, y));
+		return out;
+	}
+	setVector(r: FRectangle, v: number[]) {
+		let i = 0;
+		for (let y = r.y; y < r.bottom; y++) for (let x = r.x; x < r.right; x++) this.setPixel32(x, y, v[i++]!);
+	}
+	lock() {}
+	unlock() {}
 	clone() {
-		return new FRectangle(this.x, this.y, this.width, this.height);
+		const px = this.live();
+		const b = new FBitmapData(this.width, this.height, this.transparent, 0);
+		b._px!.set(px);
+		return b;
+	}
+	["dispose"]() {
+		this._gone = true;
+		this._px = null;
+		this._href = null;
 	}
 }
 
-class FMatrix {
-	a: number;
-	b: number;
-	c: number;
-	d: number;
-	tx: number;
-	ty: number;
-	constructor(a = 1, b = 0, c = 0, d = 1, tx = 0, ty = 0) {
-		this.a = a;
-		this.b = b;
-		this.c = c;
-		this.d = d;
-		this.tx = tx;
-		this.ty = ty;
+class Bitmap extends DisplayObject {
+	override _cls = "Bitmap";
+	pixelSnapping: string;
+	_image: SVGElement;
+	private _bd: FBitmapData | null = null;
+	private _smooth = false;
+	constructor(bd: FBitmapData | null = null, snapping = "auto", smoothing = false) {
+		super();
+		this.pixelSnapping = snapping;
+		this._image = this._node.appendChild(svgEl("image"));
+		this.smoothing = smoothing;
+		this.bitmapData = bd;
 	}
-}
-
-class FColorTransform {
-	redMultiplier: number;
-	greenMultiplier: number;
-	blueMultiplier: number;
-	alphaMultiplier: number;
-	redOffset: number;
-	greenOffset: number;
-	blueOffset: number;
-	alphaOffset: number;
-	constructor(r = 1, g = 1, b = 1, a = 1, ro = 0, go = 0, bo = 0, ao = 0) {
-		this.redMultiplier = r;
-		this.greenMultiplier = g;
-		this.blueMultiplier = b;
-		this.alphaMultiplier = a;
-		this.redOffset = ro;
-		this.greenOffset = go;
-		this.blueOffset = bo;
-		this.alphaOffset = ao;
+	get smoothing() {
+		return this._smooth;
 	}
-	get color() {
-		return (this.redOffset << 16) | (this.greenOffset << 8) | this.blueOffset;
+	set smoothing(v: boolean) {
+		this._smooth = v;
+		this._image.style.imageRendering = v ? "" : "pixelated";
 	}
-	set color(v: number) {
-		this.redMultiplier = this.greenMultiplier = this.blueMultiplier = 0;
-		this.redOffset = (v >> 16) & 255;
-		this.greenOffset = (v >> 8) & 255;
-		this.blueOffset = v & 255;
+	get bitmapData() {
+		return this._bd;
+	}
+	set bitmapData(b: FBitmapData | null) {
+		this._bd?._shown.delete(this);
+		this._bd = b;
+		if (b) {
+			b._shown.add(this);
+			this._image.setAttribute("href", b._url());
+			this._image.setAttribute("width", String(b.width));
+			this._image.setAttribute("height", String(b.height));
+		} else this._image.removeAttribute("href");
+		current.touched();
+	}
+	override _self(): Box | null {
+		return this._bd ? { l: 0, t: 0, r: this._bd.width, b: this._bd.height } : null;
+	}
+	override _covers(x: number, y: number) {
+		const b = this._boxIn(this._world(), false);
+		return !!b && x >= b.l && x <= b.r && y >= b.t && y <= b.b;
 	}
 }
 
@@ -1241,10 +2202,10 @@ class CText extends TextField {
 	constructor(text = "", font = "12px Arial", color = "#000") {
 		super();
 		const m = /(\d+(?:\.\d+)?)px\s*(.*)/.exec(font);
-		this._format.size = m ? +m[1]! : 12;
-		this._format.font = m?.[2] || "Arial";
-		this._format.bold = /bold/.test(font);
-		this._format.color = parseInt(String(color).replace(/^#/, "").padEnd(6, "0"), 16) || 0;
+		this._def.size = m ? +m[1]! : 12;
+		this._def.font = m?.[2] || "Arial";
+		this._def.bold = /bold/.test(font);
+		this._def.color = parseInt(String(color).replace(/^#/, "").padEnd(6, "0"), 16) || 0;
 		this.text = text;
 		this._field()?.setAttribute("fill", String(color));
 	}
@@ -1382,107 +2343,554 @@ class FTimer extends Dispatcher {
 	}
 }
 
-class FSoundChannel extends Dispatcher {
-	_v: { stop(): void; pos(): number } | null = null;
-	stop() {
-		this._v?.stop();
-		this._v = null;
-	}
-	get position() {
-		return (this._v?.pos() ?? 0) * 1000;
-	}
-	soundTransform = new FSoundTransform();
-}
-
 class FSoundTransform {
 	volume: number;
 	pan: number;
-	constructor(v = 1, p = 0) {
-		this.volume = v;
-		this.pan = p;
+	constructor(volume = 1, pan = 0) {
+		this.volume = volume;
+		this.pan = pan;
+	}
+	_copy() {
+		return new FSoundTransform(this.volume, this.pan);
 	}
 }
 
-/** A sound of the library (by class name) or from a URL. */
+class FSoundChannel extends Dispatcher {
+	/** The voice playing: what the player's mixer gives. */
+	_v: any = null;
+	_at = 0;
+	_st = new FSoundTransform();
+	leftPeak = 0;
+	rightPeak = 0;
+	get position() {
+		return this._v ? Math.max(0, this._v.pos()) * 1000 : this._at;
+	}
+	get soundTransform() {
+		return this._st._copy();
+	}
+	set soundTransform(t: FSoundTransform) {
+		this._st = t._copy();
+		const v = this._v;
+		if (v) {
+			v.vol = t.volume;
+			v.pan = t.pan;
+			if (v.fx) {
+				v.fx[0].gain.value = t.volume;
+				v.fx[1].pan.value = t.pan;
+			}
+		}
+	}
+	stop() {
+		const v = this._v;
+		if (!v) return;
+		this._at = this.position;
+		this._v = null;
+		v.ended = null;
+		v.stop();
+	}
+}
+
 class FSound extends Dispatcher {
 	_id = "";
 	_el: HTMLAudioElement | null = null;
-	constructor(req?: { url: string }) {
+	url: string | null = null;
+	id3 = {};
+	isBuffering = false;
+	bytesLoaded = 0;
+	bytesTotal = 0;
+	constructor(req?: URLRequest) {
 		super();
 		if (req) this.load(req);
 	}
-	load(req: { url: string }) {
-		this._el = new Audio(req.url);
+	load(req: URLRequest) {
+		this.url = req.url;
+		const a = (this._el = new Audio(req.url));
+		a.preload = "auto";
+		a.onloadedmetadata = () => current.safely(() => this.dispatchEvent(new FEvent(FEvent.COMPLETE)));
+		a.onerror = () => current.safely(() => this.dispatchEvent(ioError(FIOErrorEvent.IO_ERROR, 2032, `Stream Error. URL: ${req.url}`)));
 	}
-	play(start = 0, loops = 0) {
+	play(start = 0, loops = 0, transform: FSoundTransform | null = null) {
 		const c = new FSoundChannel();
 		const m = current.player.mixer;
 		if (this._id && m) {
-			const v = m.voice([0, this._id, 0, Math.max(1, loops + 1), 0], start / 1000);
+			const v = m.voice([0, this._id, 0, Math.max(1, loops + 1), 0], start / 1000) as any;
 			c._v = v;
+			const stop = v.stop;
+			// the voice ends by itself: the channel says so
+			v.ended = () => current.safely(() => c.dispatchEvent(new FEvent(FEvent.SOUND_COMPLETE)));
+			v.stop = function () {
+				stop.call(v);
+				const e = v.ended;
+				v.ended = null;
+				e?.();
+			};
 		} else if (this._el) {
 			const a = this._el.cloneNode() as HTMLAudioElement;
 			a.currentTime = start / 1000;
 			a.loop = loops > 0;
 			void a.play().catch(() => {});
+			a.onended = () => current.safely(() => c.dispatchEvent(new FEvent(FEvent.SOUND_COMPLETE)));
 			c._v = { stop: () => a.pause(), pos: () => a.currentTime };
 		}
+		if (transform) c.soundTransform = transform;
 		return c;
 	}
+	close() {
+		this._el?.pause();
+	}
 	get length() {
-		return (this._el?.duration ?? 0) * 1000;
+		const s = this._id ? current.P.snd[this._id] : null;
+		return (Array.isArray(s) ? s[1] : (this._el?.duration ?? 0)) * 1000;
 	}
 }
 
-class FLoader extends DisplayObject {
-	contentLoaderInfo = new Dispatcher();
-	content: unknown = null;
-	load(req: { url: string }) {
-		const img = svgEl("image") as SVGImageElement;
-		img.setAttribute("href", req.url);
-		img.addEventListener("load", () => {
-			const i = new Image();
-			i.onload = () => {
-				img.setAttribute("width", String(i.naturalWidth));
-				img.setAttribute("height", String(i.naturalHeight));
-				current.safely(() => this.contentLoaderInfo.dispatchEvent(new FEvent(FEvent.COMPLETE)));
-			};
-			i.src = req.url;
-		});
-		this._node.replaceChildren(img);
-		this.content = img;
+/** The soundMixer of a player: all it plays. */
+const soundMixer = {
+	["stopAll"]: () => current.player.mixer?.stopAll(),
+	bufferTime: 0,
+	areSoundsInaccessible: () => false,
+	computeSpectrum: () => {},
+	_t: new FSoundTransform(),
+	get soundTransform() {
+		return this._t._copy();
+	},
+	set soundTransform(t: FSoundTransform) {
+		this._t = t._copy();
+		const out = (current.player.mixer as any)?.out;
+		if (out) out.gain.value = t.volume;
+	},
+};
+
+class FIOErrorEvent extends FEvent {
+	static IO_ERROR = "ioError";
+	text = "";
+	errorID = 0;
+}
+
+class FProgressEvent extends FEvent {
+	static PROGRESS = "progress";
+	static SOCKET_DATA = "socketData";
+	bytesLoaded = 0;
+	bytesTotal = 0;
+}
+
+class FNetStatusEvent extends FEvent {
+	static NET_STATUS = "netStatus";
+	info: unknown = null;
+}
+
+class FHTTPStatusEvent extends FEvent {
+	static HTTP_STATUS = "httpStatus";
+	status = 0;
+}
+
+function ioError(type: string, id: number, text: string) {
+	const e = new FIOErrorEvent(type);
+	e.errorID = id;
+	e.text = `Error #${id}: ${text}`;
+	return e;
+}
+
+class FLoaderInfo extends Dispatcher {
+	url: string | null = null;
+	width = 0;
+	height = 0;
+	bytesLoaded = 0;
+	bytesTotal = 0;
+	contentType: string | null = null;
+	content: DisplayObject | null = null;
+	loader: FLoader | null = null;
+	parameters: Record<string, string> = {};
+	actionScriptVersion = 3;
+	swfVersion = 40;
+	sameDomain = true;
+	childAllowsParent = true;
+	parentAllowsChild = true;
+	get frameRate() {
+		return current.rate;
+	}
+}
+
+const MIME: Record<string, string> = { png: "image/png", gif: "image/gif", jpg: "image/jpeg", jpeg: "image/jpeg", svg: "image/svg+xml", webp: "image/webp" };
+
+class FLoader extends DisplayObjectContainer {
+	override _cls = "Loader";
+	contentLoaderInfo = new FLoaderInfo();
+	content: DisplayObject | null = null;
+	load(req: URLRequest) {
+		const info = this.contentLoaderInfo;
+		info.url = req.url;
+		info.loader = this;
+		const img = new Image();
+		const say = (e: FEvent) => current.safely(() => info.dispatchEvent(e));
+		queueMicrotask(() => say(new FEvent(FEvent.OPEN)));
+		img.onload = () => {
+			const w = img.naturalWidth,
+				h = img.naturalHeight;
+			const b = new Bitmap(FBitmapData._picture(req.url, w, h, true, FBitmapData.prototype));
+			current.safely(() => {
+				this.addChild(b);
+				this.content = info.content = b;
+				info.width = w;
+				info.height = h;
+				info.contentType = MIME[(/\.(\w+)(?:[?#]|$)/.exec(req.url)?.[1] ?? "").toLowerCase()] ?? null;
+				info.dispatchEvent(new FEvent(FEvent.INIT));
+				info.dispatchEvent(new FEvent(FEvent.COMPLETE));
+			});
+		};
+		img.onerror = () => say(ioError(FIOErrorEvent.IO_ERROR, 2035, `URL Not Found. URL: ${req.url}`));
+		img.src = req.url;
 	}
 	unload() {
-		this._node.replaceChildren();
-		this.content = null;
+		const c = this.content;
+		if (!c) return;
+		this.removeChild(c);
+		this.content = this.contentLoaderInfo.content = null;
+		this.contentLoaderInfo.dispatchEvent(new FEvent(FEvent.UNLOAD));
 	}
 	unloadAndStop() {
 		this.unload();
 	}
+	close() {}
 }
+
+class URLLoader extends Dispatcher {
+	data: unknown = undefined;
+	dataFormat = "text";
+	bytesLoaded = 0;
+	bytesTotal = 0;
+	private ask: AbortController | null = null;
+	constructor(req?: URLRequest) {
+		super();
+		if (req) this.load(req);
+	}
+	load(req: URLRequest) {
+		const say = (e: FEvent) => current.safely(() => this.dispatchEvent(e));
+		this.ask = new AbortController();
+		const init: RequestInit = { method: req.method, signal: this.ask.signal };
+		let url = req.url;
+		if (req.data !== null && req.data !== undefined) {
+			const body = req.data instanceof FByteArray ? Uint8Array.from(req.data) : String(req.data);
+			if (req.method === "POST") {
+				init.body = body;
+				init.headers = { "content-type": req.contentType ?? "application/x-www-form-urlencoded", ...Object.fromEntries(req.requestHeaders.map((h) => [h.name, h.value])) };
+			} else url += (url.includes("?") ? "&" : "?") + body;
+		}
+		queueMicrotask(() => say(new FEvent(FEvent.OPEN)));
+		const failed = () => say(ioError(FIOErrorEvent.IO_ERROR, 2032, `Stream Error. URL: ${req.url}`));
+		fetch(url, init).then(
+			async (r) => {
+				const status = new FHTTPStatusEvent(FHTTPStatusEvent.HTTP_STATUS);
+				status.status = r.status;
+				say(status);
+				if (!r.ok) return failed();
+				const bytes = new Uint8Array(await r.arrayBuffer());
+				this.bytesLoaded = this.bytesTotal = bytes.length;
+				const p = new FProgressEvent(FProgressEvent.PROGRESS);
+				p.bytesLoaded = p.bytesTotal = bytes.length;
+				say(p);
+				if (this.dataFormat === "binary") {
+					const b = new FByteArray();
+					for (const x of bytes) b.push(x);
+					this.data = b;
+				} else {
+					const text = new TextDecoder().decode(bytes);
+					this.data = this.dataFormat === "variables" ? new URLVariables(text) : text;
+				}
+				say(new FEvent(FEvent.COMPLETE));
+			},
+			(e: Error) => {
+				if (e.name !== "AbortError") failed();
+			},
+		);
+	}
+	close() {
+		this.ask?.abort();
+	}
+}
+
+class NetConnection extends Dispatcher {
+	connected = false;
+	client: unknown = this;
+	connect() {
+		this.connected = true;
+		queueMicrotask(() => current.safely(() => this.dispatchEvent(netStatus("NetConnection.Connect.Success"))));
+	}
+	close() {
+		this.connected = false;
+	}
+}
+
+function netStatus(code: string) {
+	const e = new FNetStatusEvent(FNetStatusEvent.NET_STATUS);
+	e.info = { code, level: "status" };
+	return e;
+}
+
+/** A stream of a video a browser can play: a <video> element. */
+class NetStream extends Dispatcher {
+	client: any = {};
+	bufferTime = 0.1;
+	_el = document.createElement("video");
+	soundTransform = new FSoundTransform();
+	constructor(_c?: NetConnection) {
+		super();
+		const v = this._el;
+		v.playsInline = true;
+		const say = (code: string) => current.safely(() => this.dispatchEvent(netStatus(code)));
+		v.onplaying = () => say("NetStream.Play.Start");
+		v.onended = () => say("NetStream.Play.Stop");
+		v.onerror = () => say("NetStream.Play.StreamNotFound");
+		v.onloadedmetadata = () => current.safely(() => this.client?.onMetaData?.({ duration: v.duration, width: v.videoWidth, height: v.videoHeight }));
+	}
+	play(url: string) {
+		this._el.src = url;
+		void this._el.play().catch(() => {});
+	}
+	pause() {
+		this._el.pause();
+	}
+	resume() {
+		void this._el.play().catch(() => {});
+	}
+	togglePause() {
+		if (this._el.paused) this.resume();
+		else this.pause();
+	}
+	seek(t: number) {
+		this._el.currentTime = t;
+	}
+	close() {
+		this._el.pause();
+		this._el.removeAttribute("src");
+	}
+	get ["time"]() {
+		return this._el.currentTime;
+	}
+	get bytesLoaded() {
+		return this._el.buffered.length ? 1 : 0;
+	}
+	get bytesTotal() {
+		return 1;
+	}
+}
+
+class Video extends DisplayObject {
+	override _cls = "Video";
+	smoothing = false;
+	deblocking = 0;
+	private box: SVGElement;
+	private w: number;
+	private h: number;
+	private ns: NetStream | null = null;
+	constructor(w = 320, h = 240) {
+		super();
+		this.w = w;
+		this.h = h;
+		this.box = this._node.appendChild(svgEl("foreignObject", { width: String(w), height: String(h) }));
+	}
+	attachNetStream(s: NetStream | null) {
+		this.ns = s;
+		if (!s) return this.box.replaceChildren();
+		s._el.style.cssText = "width:100%;height:100%;display:block";
+		this.box.replaceChildren(s._el);
+	}
+	clear() {
+		this.box.replaceChildren();
+	}
+	get videoWidth() {
+		return this.ns?._el.videoWidth ?? 0;
+	}
+	get videoHeight() {
+		return this.ns?._el.videoHeight ?? 0;
+	}
+	override _self(): Box {
+		return { l: 0, t: 0, r: this.w, b: this.h };
+	}
+}
+
+class FTweenEvent extends FEvent {
+	static MOTION_START = "motionStart";
+	static MOTION_STOP = "motionStop";
+	static MOTION_RESUME = "motionResume";
+	static MOTION_FINISH = "motionFinish";
+	static MOTION_CHANGE = "motionChange";
+	static MOTION_LOOP = "motionLoop";
+	["time"] = 0;
+	position = 0;
+}
+
+/** fl.transitions.Tween: one property of an object over time, frame by frame. */
+class FTween extends Dispatcher {
+	obj: any;
+	prop: string;
+	func: (t: number, b: number, c: number, d: number) => number;
+	begin: number;
+	finish: number;
+	duration: number;
+	useSeconds: boolean;
+	looping = false;
+	isPlaying = false;
+	FPS: number;
+	private at = 0;
+	private started = 0;
+	private change = 0;
+	private beat = () => this.tick();
+	constructor(obj: any, prop: string, func: (t: number, b: number, c: number, d: number) => number, begin: number, finish: number, duration: number, useSeconds = false) {
+		super();
+		this.obj = obj;
+		this.prop = prop;
+		this.func = func ?? ((t, b, c, d) => (c * t) / d + b);
+		this.begin = begin;
+		this.finish = finish;
+		this.change = finish - begin;
+		this.duration = duration <= 0 ? 0.001 : duration;
+		this.useSeconds = useSeconds;
+		this.FPS = current.rate;
+		this.start();
+	}
+	private now() {
+		return this.useSeconds ? performance.now() / 1000 : current.ticks;
+	}
+	private send(type: string) {
+		const e = new FTweenEvent(type);
+		e["time"] = this.at;
+		e.position = this.position;
+		this.dispatchEvent(e);
+	}
+	get position() {
+		return this.func(Math.min(this.at, this.duration), this.begin, this.change, this.duration);
+	}
+	set position(v: number) {
+		this.obj[this.prop] = v;
+	}
+	get ["time"]() {
+		return this.at;
+	}
+	set ["time"](t: number) {
+		this.at = t;
+		this.started = this.now() - t;
+		this.obj[this.prop] = this.position;
+	}
+	private run() {
+		this.isPlaying = true;
+		current.stage.addEventListener(FEvent.ENTER_FRAME, this.beat);
+	}
+	private rest() {
+		this.isPlaying = false;
+		current.stage.removeEventListener(FEvent.ENTER_FRAME, this.beat);
+	}
+	private tick() {
+		this["time"] = this.now() - this.started;
+		if (this.at >= this.duration) {
+			if (this.looping) {
+				this["time"] = 0;
+				this.send(FTweenEvent.MOTION_LOOP);
+			} else {
+				this.at = this.duration;
+				this.obj[this.prop] = this.finish;
+				this.rest();
+				this.send(FTweenEvent.MOTION_FINISH);
+				return;
+			}
+		}
+		this.send(FTweenEvent.MOTION_CHANGE);
+	}
+	start() {
+		this["time"] = 0;
+		this.run();
+		this.send(FTweenEvent.MOTION_START);
+	}
+	stop() {
+		this.rest();
+		this.send(FTweenEvent.MOTION_STOP);
+	}
+	resume() {
+		this.started = this.now() - this.at;
+		this.run();
+		this.send(FTweenEvent.MOTION_RESUME);
+	}
+	rewind(t = 0) {
+		this["time"] = t;
+	}
+	fforward() {
+		this["time"] = this.duration;
+	}
+	nextFrame() {
+		this["time"] = this.at + 1;
+	}
+	prevFrame() {
+		this["time"] = this.at - 1;
+	}
+	yoyo() {
+		this.continueTo(this.begin, this.at);
+	}
+	continueTo(finish: number, duration: number) {
+		this.begin = this.position;
+		this.finish = finish;
+		this.change = finish - this.begin;
+		this.duration = duration <= 0 ? 0.001 : duration;
+		this.start();
+	}
+}
+
+/** flash.net.SharedObject: in the browser's local storage. */
+const sharedObject = {
+	getLocal(name: string) {
+		const key = `f2s-so:${location.pathname}:${name}`;
+		let data: Record<string, unknown> = {};
+		try {
+			data = JSON.parse(localStorage.getItem(key) ?? "{}");
+		} catch {}
+		return {
+			data,
+			get size() {
+				return JSON.stringify(data).length;
+			},
+			flush() {
+				try {
+					localStorage.setItem(key, JSON.stringify(data));
+					return "flushed";
+				} catch {
+					return "pending";
+				}
+			},
+			clear() {
+				this.data = data = {};
+				try {
+					localStorage.removeItem(key);
+				} catch {}
+			},
+			close() {},
+		};
+	},
+};
 
 // ------------------------------------------------------------------ helpers
 
 function decompose(s: Scripts, i: Inst): Frozen {
 	const it = i.it as PInst;
+	if (!it.tr) {
+		// a drawing or text put down once: its transform is in its node
+		const m = (i.node as unknown as SVGGraphicsElement).transform?.baseVal.consolidate()?.matrix;
+		return fromMat(m ? [m.a, m.b, m.c, m.d, m.e, m.f] : ONE);
+	}
 	const P = s.P,
 		t = i.owner.frame;
 	const v = (k: number, d: number) => trackValue(P, it.tr[k], t, d);
-	const r = v(2, 0),
-		k = v(3, 0),
-		sx = v(4, 1),
-		sy = v(5, 1);
-	const rad = r * RAD,
+	const rad = v(2, 0) * RAD,
 		cos = Math.cos(rad),
 		sin = Math.sin(rad),
-		sk = Math.tan(k * RAD);
+		sk = Math.tan(v(3, 0) * RAD),
+		sx = v(4, 1),
+		sy = v(5, 1);
 	const a = cos * sx,
 		b = sin * sx,
 		c = (cos * sk - sin) * sy,
 		d = (sin * sk + cos) * sy;
 	const tpx = v(6, 0),
 		tpy = v(7, 0);
-	return { x: v(0, 0) - (a * tpx + c * tpy), y: v(1, 0) - (b * tpx + d * tpy), r, k: Math.atan2(-c, d) / RAD - r, sx: Math.hypot(a, b), sy: Math.hypot(c, d) };
+	return fromMat([a, b, c, d, v(0, 0) - (a * tpx + c * tpy), v(1, 0) - (b * tpx + d * tpy)]);
 }
 
 let trackValue: (P: Scripts["P"], tr: PTrack | undefined, t: number, def: number) => number;
@@ -1506,13 +2914,6 @@ function place(i: Inst, matrix: string) {
 function alphaNow(i: Inst): number {
 	const it = i.it as PInst;
 	return it.c ? trackValue(i.owner.P, it.c[3], i.owner.frame, 100) : 100;
-}
-
-function matrixText(m: Frozen): string {
-	const r = m.r * RAD,
-		q = (m.r + m.k) * RAD;
-	const v = [Math.cos(r) * m.sx, Math.sin(r) * m.sx, -Math.sin(q) * m.sy, Math.cos(q) * m.sy, m.x, m.y];
-	return `matrix(${v.map((n) => Math.round(n * 1e4) / 1e4).join(",")})`;
 }
 
 function local(node: Element, cx: number, cy: number): [number, number] {
@@ -1572,6 +2973,17 @@ export class Scripts {
 	private down: DisplayObject | null = null;
 	readonly api: Record<string, unknown>;
 	readonly helpers: Record<string, unknown>;
+	/** Changes to any list of children count up: lists kept from before are out of date then. */
+	ver = 0;
+	/** Objects with a script's mask, and pixels changed: shown once per frame. */
+	masked = new Set<DisplayObject>();
+	bitmaps = new Set<FBitmapData>();
+	/** Frames per second, as scripts set it; frames gone by. */
+	rate: number;
+	ticks = 0;
+	info = new FLoaderInfo();
+	/** The classes of library items (their linkage). */
+	private made = new Map<string, unknown>();
 
 	readonly player: Player;
 	readonly ClipClass: new (p: Player, tl: PTimeline, kind: number) => Clip;
@@ -1585,6 +2997,8 @@ export class Scripts {
 		trackValue = track;
 		this.P = player.P;
 		this.base = this.P.zb ? 0 : 1;
+		this.rate = this.P.fps;
+		Object.assign(this.info, { url: location.href, width: this.P.w, height: this.P.h, parameters: Object.fromEntries(new URLSearchParams(location.search)) });
 		const advance = player.step.bind(player);
 		player.step = () => this.step(advance);
 		this.stage = new FStage(player.svg as unknown as SVGElement);
@@ -1602,7 +3016,21 @@ export class Scripts {
 			setInterval: (f: Fn, ms: number, ...a: unknown[]) => window.setInterval(() => self.safely(() => f(...a)), ms),
 			clearInterval: (i: number) => clearInterval(i),
 			fscommand: () => {},
-			getDefinitionByName: (n: string) => self.classOf(n.split(".").pop()!),
+			getDefinitionByName: (n: string) => {
+				const name = n.split(/[.:]/).pop()!;
+				const c = self.api[name] ?? self.classOf(name);
+				if (c === undefined) throw fail(ReferenceError, 1065, `Variable ${name} is not defined.`);
+				return c;
+			},
+			getQualifiedClassName: (v: unknown) => self.qualified(v),
+			getQualifiedSuperclassName: (v: unknown) => self.qualified(v, true),
+			int: { MAX_VALUE: 2147483647, MIN_VALUE: -2147483648 },
+			uint: { MAX_VALUE: 4294967295, MIN_VALUE: 0 },
+			ArgumentError,
+			IOError,
+			SecurityError,
+			EOFError,
+			EventDispatcher: Dispatcher,
 			DisplayObject,
 			DisplayObjectContainer,
 			InteractiveObject: DisplayObject,
@@ -1610,39 +3038,78 @@ export class Scripts {
 			MovieClip,
 			Shape,
 			SimpleButton,
-			Bitmap: Shape,
-			BitmapData: Object,
+			Bitmap,
+			BitmapData: FBitmapData,
+			FrameLabel: FFrameLabel,
+			Scene: FScene,
+			LoaderInfo: FLoaderInfo,
 			Stage: FStage,
 			Graphics: FGraphics,
 			StageAlign: { TOP_LEFT: "TL", TOP: "T", LEFT: "L", RIGHT: "R", BOTTOM: "B", TOP_RIGHT: "TR", BOTTOM_LEFT: "BL", BOTTOM_RIGHT: "BR" },
 			StageScaleMode: { NO_SCALE: "noScale", SHOW_ALL: "showAll", EXACT_FIT: "exactFit", NO_BORDER: "noBorder" },
 			StageDisplayState: { NORMAL: "normal", FULL_SCREEN: "fullScreen", FULL_SCREEN_INTERACTIVE: "fullScreenInteractive" },
+			StageQuality: { LOW: "low", MEDIUM: "medium", HIGH: "high", BEST: "best" },
+			BlendMode: Object.fromEntries("normal layer multiply screen lighten darken difference add subtract invert alpha erase overlay hardlight shader".split(" ").map((n) => [n.toUpperCase(), n])),
+			PixelSnapping: { NEVER: "never", ALWAYS: "always", AUTO: "auto" },
+			GradientType: { LINEAR: "linear", RADIAL: "radial" },
+			SpreadMethod: { PAD: "pad", REFLECT: "reflect", REPEAT: "repeat" },
+			InterpolationMethod: { RGB: "rgb", LINEAR_RGB: "linearRGB" },
+			LineScaleMode: { NORMAL: "normal", NONE: "none", VERTICAL: "vertical", HORIZONTAL: "horizontal" },
+			CapsStyle: { NONE: "none", ROUND: "round", SQUARE: "square" },
+			JointStyle: { MITER: "miter", ROUND: "round", BEVEL: "bevel" },
+			MouseCursor: { ARROW: "arrow", AUTO: "auto", BUTTON: "button", HAND: "hand", IBEAM: "ibeam" },
 			Event: FEvent,
 			MouseEvent: FMouseEvent,
 			KeyboardEvent: FKeyboardEvent,
 			TimerEvent: FTimerEvent,
-			FocusEvent: FEvent,
-			TextEvent: FEvent,
+			FocusEvent: Object.assign(class extends FEvent {}, { FOCUS_IN: "focusIn", FOCUS_OUT: "focusOut", KEY_FOCUS_CHANGE: "keyFocusChange", MOUSE_FOCUS_CHANGE: "mouseFocusChange" }),
+			TextEvent: Object.assign(class extends FEvent {}, { LINK: "link", TEXT_INPUT: "textInput" }),
+			ProgressEvent: FProgressEvent,
+			IOErrorEvent: FIOErrorEvent,
+			HTTPStatusEvent: FHTTPStatusEvent,
+			NetStatusEvent: FNetStatusEvent,
+			SecurityErrorEvent: Object.assign(class extends FEvent {}, { SECURITY_ERROR: "securityError" }),
+			AsyncErrorEvent: Object.assign(class extends FEvent {}, { ASYNC_ERROR: "asyncError" }),
 			Keyboard: KEYS,
 			Mouse: {
-				hide: () => void (player.svg.style.cursor = "none"),
-				show: () => void (player.svg.style.cursor = ""),
+				hide: () => self.cursor(true),
+				show: () => self.cursor(false),
+				supportsCursor: true,
 			},
 			Timer: FTimer,
 			TextField,
 			TextFormat: FTextFormat,
 			TextFieldAutoSize: { NONE: "none", LEFT: "left", CENTER: "center", RIGHT: "right" },
 			TextFieldType: { DYNAMIC: "dynamic", INPUT: "input" },
+			TextFormatAlign: { LEFT: "left", CENTER: "center", RIGHT: "right", JUSTIFY: "justify", START: "start", END: "end" },
+			AntiAliasType: { NORMAL: "normal", ADVANCED: "advanced" },
+			GridFitType: { NONE: "none", PIXEL: "pixel", SUBPIXEL: "subpixel" },
 			Sound: FSound,
 			SoundChannel: FSoundChannel,
 			SoundTransform: FSoundTransform,
-			SoundMixer: { ["stopAll"]: () => player.mixer?.stopAll() },
-			URLRequest: class {
-				url: string;
-				constructor(u = "") {
-					this.url = u;
-				}
+			SoundMixer: soundMixer,
+			Video,
+			URLRequest,
+			URLVariables,
+			URLLoader,
+			URLRequestMethod: { GET: "GET", POST: "POST", PUT: "PUT", DELETE: "DELETE", HEAD: "HEAD", OPTIONS: "OPTIONS" },
+			URLLoaderDataFormat: { TEXT: "text", BINARY: "binary", VARIABLES: "variables" },
+			sendToURL: (r: URLRequest) => void fetch(r.url, { method: r.method, mode: "no-cors" }).catch(() => {}),
+			NetConnection,
+			NetStream,
+			SharedObject: sharedObject,
+			ExternalInterface: {
+				available: true,
+				marshallExceptions: false,
+				objectID: player.svg.id,
+				call: (n: string, ...a: unknown[]) => (window as any)[n]?.(...a) ?? null,
+				addCallback: (n: string, f: Fn) => void ((window as any)[n] = (...a: unknown[]) => self.safely(() => f(...a))),
 			},
+			Security: { allowDomain() {}, allowInsecureDomain() {}, loadPolicyFile() {}, sandboxType: "remote" },
+			System: { setClipboard: (s: string) => void navigator.clipboard?.writeText(s).catch(() => {}), gc() {}, totalMemory: 0, useCodePage: false },
+			Tween: FTween,
+			TweenEvent: FTweenEvent,
+			...EASINGS,
 			Point: FPoint,
 			Rectangle: FRectangle,
 			Matrix: FMatrix,
@@ -1650,11 +3117,15 @@ export class Scripts {
 			Transform: FTransform,
 			Vector: Array,
 			Dictionary: Object,
-			ByteArray: Object,
+			ByteArray: FByteArray,
 			Capabilities: { playerType: "SVG", version: "WEB 32,0,0,0", os: navigator.platform, language: navigator.language, screenResolutionX: screen.width, screenResolutionY: screen.height },
-			BlurFilter: Object,
-			GlowFilter: Object,
-			DropShadowFilter: Object,
+			BlurFilter,
+			GlowFilter,
+			DropShadowFilter,
+			BevelFilter,
+			ColorMatrixFilter,
+			BitmapFilterQuality: { LOW: 1, MEDIUM: 2, HIGH: 3 },
+			BitmapFilterType: { INNER: "inner", OUTER: "outer", FULL: "full" },
 			Loader: FLoader,
 			ProLoader: FLoader,
 			// HTML5 Canvas documents
@@ -1680,6 +3151,9 @@ export class Scripts {
 			is: (x: unknown, c: unknown) => isType(x, c),
 			as: (x: unknown, c: unknown) => (isType(x, c) ? x : null),
 			cls: (n: string, t: Record<string, unknown>) => self.classOf(n) ?? t[n],
+			err: asFlashError,
+			key: dictKey,
+			keys: dictKeys,
 			sort: sortArray,
 			sortOn: (a: Record<string, unknown>[], f: string, o = 0) =>
 				sortArray(a, (x: Record<string, unknown>, y: Record<string, unknown>) => {
@@ -1696,22 +3170,83 @@ export class Scripts {
 		this.listen();
 	}
 
+	/** Hides the mouse pointer, whatever an object below it asks for. */
+	private hides: HTMLStyleElement | null = null;
+	cursor(hide: boolean) {
+		if (hide) (this.hides ??= document.head.appendChild(document.createElement("style"))).textContent = `#${this.player.svg.id},#${this.player.svg.id} *{cursor:none!important}`;
+		else this.hides?.remove(), (this.hides = null);
+	}
+
+	/** The name Flash has for a value's class (or the one it extends). */
+	qualified(v: any, sup = false): string | null {
+		if (v === null || v === undefined) return v === null ? "null" : "void";
+		const of = (name: string) => {
+			for (const p in PACKAGES) if (PACKAGES[p]!.split(" ").includes(name)) return `${p}::${name}`;
+			return name === "MainTimeline" ? `${this.P.dn ?? "main"}_fla::MainTimeline` : name;
+		};
+		const nameOf = (c: unknown) => {
+			if (c === Object) return "Object";
+			for (const k in this.api) if (this.api[k] === c) return k;
+			return null;
+		};
+		let c: any = typeof v === "function" ? v : v.constructor;
+		if (sup) {
+			c = Object.getPrototypeOf(c);
+			return c === Dispatcher ? "flash.events::EventDispatcher" : of(nameOf(c) ?? "Object");
+		}
+		if (typeof v === "number") return Number.isInteger(v) && Math.abs(v) < 2 ** 31 ? "int" : "Number";
+		if (typeof v === "string") return "String";
+		if (typeof v === "boolean") return "Boolean";
+		if (Array.isArray(v) && !(v instanceof FByteArray)) return "Array";
+		if (v._cls) return of(v._cls);
+		const name = nameOf(c);
+		if (name) return of(name);
+		for (const [n, k] of this.made) if (k === c) return n;
+		return "Object";
+	}
+
+	/** The mouse in the space an object is moved in. */
+	parentMouse(o: DisplayObject): [number, number] {
+		const [x, y] = stagePoint(this.client[0], this.client[1]);
+		const p = o.parent;
+		if (!p || p === this.stage) return [x, y];
+		const i = inverse(p._world());
+		return [i[0] * x + i[2] * y + i[4], i[1] * x + i[3] * y + i[5]];
+	}
+
 	/** The class of a library symbol or sound (its linkage). */
 	classOf(name: string): unknown {
-		const key = this.P.cl?.[name];
-		if (key === undefined) return undefined;
+		let c = this.made.get(name);
+		if (c) return c;
 		const self = this;
-		if (this.P.snd[key] !== undefined) {
-			return class extends FSound {
+		const pic = this.P.bd?.[name];
+		const key = this.P.cl?.[name] as string;
+		if (pic) {
+			const K: any = class extends FBitmapData {
 				constructor() {
-					super();
-					this._id = key as string;
+					super(1, 1);
+					return FBitmapData._picture(pic![0], pic![1], pic![2], !!pic![3], K.prototype);
 				}
 			};
+			c = K;
+		} else if (key === undefined) return undefined;
+		else if (this.P.snd[key] !== undefined) {
+			const s = this.P.snd[key];
+			c = class extends FSound {
+				constructor() {
+					super();
+					this._id = key;
+					this.bytesLoaded = this.bytesTotal = (Array.isArray(s) ? s[0] : s).length;
+				}
+			};
+		} else {
+			c = function () {
+				return self.newClip(self.P.tl[key]!);
+			};
+			Object.defineProperty(c, Symbol.hasInstance, { value: (x: any) => x?._cls === name });
 		}
-		return function () {
-			return self.newClip(self.P.tl[key]!);
-		};
+		this.made.set(name, c);
+		return c;
 	}
 
 	private newClip(tl: PTimeline): MovieClip {
@@ -1728,7 +3263,7 @@ export class Scripts {
 	objOfClip(c: Clip): MovieClip {
 		let o = this.clips.get(c);
 		if (o) return o;
-		const m = new MovieClip(c.node);
+		const m = c.inst && (c.inst.it as PInst).t === 2 ? new SimpleButton(c.node) : new MovieClip(c.node);
 		m._c = c;
 		m._cls = this.classNames.get(c.tl) ?? (c.kind === -1 ? "MainTimeline" : "MovieClip");
 		if (c.kind === -1) m._name = "root1";
@@ -1754,7 +3289,6 @@ export class Scripts {
 			// (the instance may still be being made: its node comes when asked for)
 			Object.defineProperty(m, "_node", { get: () => i.node ?? c.node });
 			m._parent = this.objOfClip(i.owner);
-			if ((i.it as PInst).t === 2) m._cls = "SimpleButton";
 			this.objs.set(i, o);
 		}
 		return o;
@@ -1765,8 +3299,7 @@ export class Scripts {
 		if (o) return o;
 		const it = i.it as PInst;
 		if (i.clip) return this.objOfClip(i.clip);
-		if ((i.it as PItem).k === "r" && i.node.querySelector("text")) o = new TextField(i.node);
-		else if (it.k === "i" && it.t === 2) o = new SimpleButton(i.node);
+		if ((i.it as PItem).k === "r" && i.node.querySelector("text")) o = new TextField(i.node, (i.it as PRef).tx);
 		else o = new Shape(i.node);
 		o._i = i;
 		o._parent = this.objOfClip(i.owner);
@@ -1777,6 +3310,7 @@ export class Scripts {
 	/** A new instance on stage: mouse events find it from its node. */
 	track(i: Inst) {
 		this.nodes.set(i.node, i);
+		this.ver++;
 	}
 
 	/** Frame functions of a timeline: its object, with the scripts bound to it. */
@@ -1894,6 +3428,7 @@ export class Scripts {
 	/** A frame of the player: timelines moved on, then ENTER_FRAME, then the frame gets built. */
 	step(advance: () => void) {
 		this.busy++;
+		this.ticks++;
 		advance();
 		for (const c of this.orphans) c.tick();
 		this.broadcast(FEvent.ENTER_FRAME);
@@ -1911,6 +3446,14 @@ export class Scripts {
 		const o = c.obj as DisplayObjectContainer | undefined;
 		if (o) for (const d of o._dyn) if (!d._i) d._c?.render(frac);
 		for (const d of (o?._dyn ?? []) as any[]) d._g?._end?.();
+		if (c.kind === -1) this.present();
+	}
+
+	/** What a frame shows of pixels and masks that scripts changed. */
+	private present() {
+		for (const b of this.bitmaps) if (!b._gone) b._show();
+		this.bitmaps.clear();
+		for (const o of this.masked) o._maskNow(`${this.player.svg.id}_m${this.uid}`);
 	}
 
 	/** What is under the page's point `x, y`. */
@@ -1942,7 +3485,7 @@ export class Scripts {
 	private mouse(type: string, target: DisplayObject, e: MouseEvent, bubbles = true, related: DisplayObject | null = null) {
 		const ev = new FMouseEvent(type, bubbles);
 		const [sx, sy] = stagePoint(e.clientX, e.clientY);
-		const [lx, ly] = local(target._node, e.clientX, e.clientY);
+		const [lx, ly] = target._mouse();
 		Object.assign(ev, { target, stageX: sx, stageY: sy, localX: lx, localY: ly, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, buttonDown: e.buttons > 0, relatedObject: related });
 		if (e instanceof WheelEvent) ev.delta = -Math.sign(e.deltaY) * 3;
 		if (!bubbles) return target._fire(ev);
@@ -1989,8 +3532,7 @@ export class Scripts {
 				this.client = [e.clientX, e.clientY];
 				const d = this.drag;
 				if (d) {
-					const p = d.o._parent?._node ?? d.o._node;
-					const [px, py] = local(p, e.clientX, e.clientY);
+					const [px, py] = this.parentMouse(d.o);
 					let x = px + d.dx,
 						y = py + d.dy;
 					if (d.b) {
@@ -2030,6 +3572,7 @@ export class Scripts {
 				ev.altKey = e.altKey;
 				this.stage._fire(ev);
 			});
+		window.addEventListener("resize", () => this.safely(() => this.stage.dispatchEvent(new FEvent(FEvent.RESIZE))));
 		window.addEventListener("keydown", key(FKeyboardEvent.KEY_DOWN));
 		window.addEventListener("keyup", key(FKeyboardEvent.KEY_UP));
 	}
@@ -2085,13 +3628,54 @@ function sortArray(a: unknown[], ...o: unknown[]): unknown[] {
 function traceText(v: unknown): string {
 	if (v === null) return "null";
 	if (v === undefined) return "undefined";
+	if (v instanceof Date) return v.toString().replace(/^(\w+ \w+ \d+) (\d+) ([\d:]+) (GMT[+-]\d+).*/, "$1 $3 $4 $2");
 	if (typeof v === "object" && Object.getPrototypeOf(v) === Object.prototype) return "[object Object]";
 	return String(v);
 }
+
+/** What Date has in AS3 and not in JavaScript: its parts as properties. */
+for (const n of ["FullYear", "Month", "Date", "Hours", "Minutes", "Seconds", "Milliseconds"])
+	for (const u of ["", "UTC"]) {
+		const k = (u ? n.toLowerCase() + u : n.charAt(0).toLowerCase() + n.slice(1)).replace("fullyearUTC", "fullYearUTC");
+		Object.defineProperty(Date.prototype, k, {
+			get(this: any) {
+				return this[`get${u}${n}`]();
+			},
+			set(this: any, v: number) {
+				this[`set${u}${n}`](v);
+			},
+			configurable: true,
+		});
+	}
+Object.defineProperties(Date.prototype, {
+	day: { get(this: Date) { return this.getDay(); }, configurable: true },
+	dayUTC: { get(this: Date) { return this.getUTCDay(); }, configurable: true },
+	time: { get(this: Date) { return this.getTime(); }, set(this: Date, v: number) { this.setTime(v); }, configurable: true },
+	timezoneOffset: { get(this: Date) { return this.getTimezoneOffset(); }, configurable: true },
+});
+(Error.prototype as any).errorID = 0;
+(Error.prototype as any).getStackTrace = function (this: Error) {
+	return this.stack ?? null;
+};
+
+/** Objects as keys of a Dictionary: JavaScript would make them strings. */
+const keyOf = new WeakMap<object, string>();
+const keyed = new Map<string, unknown>();
+let keys = 0;
+function dictKey(k: unknown): unknown {
+	if (typeof k !== "object" && typeof k !== "function") return k;
+	if (k === null) return k;
+	let s = keyOf.get(k as object);
+	if (!s) {
+		keyOf.set(k as object, (s = `\u0001${++keys}`));
+		keyed.set(s, k);
+	}
+	return s;
+}
+const dictKeys = (d: object) => Object.keys(d).map((k) => (keyed.has(k) ? keyed.get(k) : k));
 
 const KEYS: Record<string, number> = { BACKSPACE: 8, TAB: 9, ENTER: 13, SHIFT: 16, CONTROL: 17, ALTERNATE: 18, ESCAPE: 27, SPACE: 32, PAGE_UP: 33, PAGE_DOWN: 34, END: 35, HOME: 36, LEFT: 37, UP: 38, RIGHT: 39, DOWN: 40, INSERT: 45, DELETE: 46 };
 for (let i = 48; i <= 57; i++) KEYS[`NUMBER_${i - 48}`] = i;
 for (let i = 65; i <= 90; i++) KEYS[String.fromCharCode(i)] = i;
 for (let i = 1; i <= 12; i++) KEYS[`F${i}`] = 111 + i;
 
-void num;

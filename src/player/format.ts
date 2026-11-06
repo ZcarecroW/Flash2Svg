@@ -9,6 +9,12 @@
  */
 export type PTrack = number | number[];
 
+/** A scene of the root timeline, in documents whose scripts run: name, first frame, frames. */
+export type PScene = [string, number, number];
+
+/** A text field for scripts: width, height, alignment, type, selectable, multiline. */
+export type PTextExtras = [number, number, string, string, number, number];
+
 export interface PProgram {
 	v: 1;
 	fps: number;
@@ -32,6 +38,11 @@ export interface PProgram {
 	pf?: number;
 	/** scripts: library classes (linkage): name -> timeline or sound id */
 	cl?: Record<string, string>;
+	/** Library bitmaps scripts make: class name -> file or data, width, height, has transparency. */
+	bd?: Record<string, [string, number, number, number]>;
+	/** Scenes of the root timeline, and the document's name (for class names). */
+	sc?: PScene[];
+	dn?: string;
 	/** scripts: frames count from 0 (HTML5 Canvas) */
 	zb?: 1;
 }
@@ -117,6 +128,8 @@ export interface PRef extends PBase {
 	k: "r";
 	/** instance name (text fields, for scripts) */
 	nm?: string;
+	/** A text field for scripts. */
+	tx?: PTextExtras;
 	/** raw node markup (bitmaps, text) */
 	x: string;
 }

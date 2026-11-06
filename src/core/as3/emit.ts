@@ -69,6 +69,63 @@ export const FLASH_API = new Set([
 	"FocusEvent",
 	"TextEvent",
 	"Keyboard",
+	"int",
+	"uint",
+	"getQualifiedClassName",
+	"getQualifiedSuperclassName",
+	"ArgumentError",
+	"IOError",
+	"SecurityError",
+	"EOFError",
+	"EventDispatcher",
+	"FrameLabel",
+	"Scene",
+	"LoaderInfo",
+	"StageQuality",
+	"BlendMode",
+	"PixelSnapping",
+	"GradientType",
+	"SpreadMethod",
+	"InterpolationMethod",
+	"LineScaleMode",
+	"CapsStyle",
+	"JointStyle",
+	"MouseCursor",
+	"ProgressEvent",
+	"IOErrorEvent",
+	"HTTPStatusEvent",
+	"NetStatusEvent",
+	"SecurityErrorEvent",
+	"AsyncErrorEvent",
+	"TextFormatAlign",
+	"AntiAliasType",
+	"GridFitType",
+	"Video",
+	"URLVariables",
+	"URLLoader",
+	"URLRequestMethod",
+	"URLLoaderDataFormat",
+	"sendToURL",
+	"NetConnection",
+	"NetStream",
+	"SharedObject",
+	"ExternalInterface",
+	"Security",
+	"System",
+	"Tween",
+	"TweenEvent",
+	"None",
+	"Regular",
+	"Strong",
+	"Back",
+	"Bounce",
+	"Elastic",
+	"BevelFilter",
+	"ColorMatrixFilter",
+	"BitmapFilterQuality",
+	"BitmapFilterType",
+	"Loader",
+	"ProLoader",
 	"Mouse",
 	"Timer",
 	"TextField",
@@ -180,10 +237,16 @@ class Emitter {
 	private scope: Scope | null = null;
 	/** The timeline's members and their types. */
 	private members: Map<string, string>;
-	constructor(members: Map<string, string>) {
+	private linked: Set<string>;
+	constructor(members: Map<string, string>, linked: Set<string>) {
 		this.members = members;
+		this.linked = linked;
 	}
 	private ret = "*";
+
+	private isDictionary(x: Expr): boolean {
+		return x.k === "id" && (this.lookup(x.name) ?? this.members.get(x.name)) === "Dictionary";
+	}
 
 	private lookup(name: string): string | undefined {
 		for (let s = this.scope; s; s = s.up) {
@@ -199,7 +262,7 @@ class Emitter {
 		if (this.members.has(name)) return `$t.${safe(name) === name ? name : `["${name}"]`}`;
 		if (GLOBALS.has(name)) return name;
 		if (name === "Vector") return "Array";
-		if (FLASH_API.has(name)) return `$f.${name}`;
+		if (FLASH_API.has(name) && !this.linked.has(name)) return `$f.${name}`;
 		// a class of the library (linkage), or what the timeline has
 		if (/^[A-Z]/.test(name)) return `$r.cls("${name}",$t)`;
 		return `$t.${name}`;
@@ -281,7 +344,8 @@ class Emitter {
 			case "member":
 				return this.member(x.o, x.name);
 			case "index":
-				return `${this.expr(x.o)}[${this.expr(x.i)}]`;
+				// (a Dictionary's keys are objects)
+				return `${this.expr(x.o)}[${this.isDictionary(x.o) ? `$r.key(${this.expr(x.i)})` : this.expr(x.i)}]`;
 			case "call":
 				return this.call(x.f, x.args);
 			case "new":
@@ -386,6 +450,7 @@ class Emitter {
 			case "forin": {
 				const target = s.decl ? (top ? `$t.${s.decl.name}` : safe(s.decl.name)) : this.expr(s.left!);
 				const o = this.expr(s.o);
+				if (!s.each && this.isDictionary(s.o)) return `for(${target} of $r.keys(${o}))${this.branch(s.body, top)}`;
 				return s.each ? `for(${target} of $r.vals(${o}))${this.branch(s.body, top)}` : `for(${target} in ${o})${this.branch(s.body, top)}`;
 			}
 			case "switch":
@@ -404,7 +469,7 @@ class Emitter {
 				if (s.handler) {
 					const saved = this.scope;
 					this.scope = { vars: new Map([[s.param, "*"]]), up: saved };
-					out += `catch(${safe(s.param)}){${s.handler.map(body).join("")}}`;
+					out += `catch(${safe(s.param)}){${safe(s.param)}=$r.err(${safe(s.param)});${s.handler.map(body).join("")}}`;
 					this.scope = saved;
 				}
 				if (s.final) out += `finally{${s.final.map(body).join("")}}`;
@@ -422,7 +487,8 @@ class Emitter {
  * Compiles a timeline's frame scripts. A script that can't be parsed is left out and reported;
  * the others still run.
  */
-export function compileScripts(units: ScriptUnit[]): CompiledScripts {
+/** `linked`: class names of the library, which win over the Flash API's. */
+export function compileScripts(units: ScriptUnit[], linked: Set<string> = new Set()): CompiledScripts {
 	const failed: CompiledScripts["failed"] = [];
 	const parsed: { frame: number; body: Stmt[] }[] = [];
 	for (const u of units) {
@@ -436,7 +502,7 @@ export function compileScripts(units: ScriptUnit[]): CompiledScripts {
 	const members = new Map<string, string>();
 	const fns: FuncDecl[] = [];
 	for (const p of parsed) hoist(p.body, members, fns);
-	const em = new Emitter(members);
+	const em = new Emitter(members, linked);
 	let out = "function($t,$f,$r){";
 	for (const [name, type] of members) if (type !== "Function") out += `$t.${name}=${defaultOf(type)};`;
 	for (const f of fns) out += `$t.${f.name}=${em.func(f, false)};`;

@@ -1,13 +1,15 @@
 // E2E: frame scripts against Flash Player. The test documents' scripts trace what they see and quit;
 // Animate's own debug Flash Player runs the SWF and writes the traces to flashlog.txt (needs an
 // mm.cfg, which this script writes and takes away again); the JS player must trace the same lines.
-// tests/out/<name>/as3-expected.txt keeps Flash Player's log.
+// tests/out/<name>/as3-expected.txt keeps Flash Player's log. Files the scripts load lie next to the
+// SWF and the page.
 // Usage: node scripts/e2e-as3.ts [name,name,...] [--flash-only] [--no-flash]
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { dirname, join, normalize } from "node:path";
+import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { compileScene } from "../src/core/compile.ts";
 import type { SceneModel } from "../src/core/model.ts";
@@ -60,20 +62,43 @@ async function playerTraces(name: string, page: import("playwright-core").Page):
 	const file = join(out, name, "as3-player.html");
 	writeFileSync(file, `<!doctype html><html><body style="margin:0">${res.files[0]!.svg}</body></html>`);
 	const lines: string[] = [];
-	const onLog = (m: import("playwright-core").ConsoleMessage) => void lines.push(m.text());
+	// (what isn't there on purpose: the browser says so too)
+	const onLog = (m: import("playwright-core").ConsoleMessage) => void (m.text().startsWith("Failed to load") || lines.push(m.text()));
 	const onError = (e: Error) => void lines.push(`PAGE ERROR ${e.message}`);
 	page.on("console", onLog);
 	page.on("pageerror", onError);
-	await page.goto(pathToFileURL(file).href);
+	await page.goto(`${origin}/${name}/as3-player.html`);
 	for (let i = 0; i < 100 && !lines.includes("END"); i++) await page.waitForTimeout(100);
 	page.off("console", onLog);
 	page.off("pageerror", onError);
 	return lines;
 }
 
+/** What the scripts load, next to the SWF and the page. */
+function loadable(name: string) {
+	const dir = join(out, name);
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(join(dir, "note.txt"), "A note");
+	writeFileSync(join(dir, "vars.txt"), "a=1&b=two%20words");
+	copyFileSync(join(repo, "tests", "fixtures", "assets", "icon.png"), join(dir, "pic.png"));
+}
+
+// (a page's scripts can't load from file:)
+const server = createServer((req, res) => {
+	const file = normalize(join(out, decodeURIComponent(req.url!.split("?")[0]!)));
+	if (!file.startsWith(out) || !existsSync(file)) {
+		res.writeHead(404).end();
+		return;
+	}
+	res.writeHead(200, { "content-type": file.endsWith(".html") ? "text/html; charset=utf-8" : file.endsWith(".png") ? "image/png" : "text/plain" }).end(readFileSync(file));
+});
+await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+
 let failures = 0;
+for (const name of names) loadable(name);
 if (!noFlash) await publish();
-const browser = await chromium.launch({ channel: "msedge", headless: true });
+const browser = await chromium.launch({ channel: "msedge", headless: true, args: ["--autoplay-policy=no-user-gesture-required"] });
 const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
 for (const name of names) {
 	const expected = noFlash ? readFileSync(join(out, name, "as3-expected.txt"), "utf8").split(/\r?\n/).filter((l) => l && !l.startsWith("Warning:")) : flashTraces(name);
@@ -88,13 +113,15 @@ for (const name of names) {
 	const got = await playerTraces(name, page);
 	let bad = 0;
 	const n = Math.max(expected.length, got.length);
+	const shown = args.includes("--all") ? 1e9 : 14;
 	for (let i = 0; i < n; i++) {
 		if (expected[i] === got[i]) continue;
-		if (bad++ < 14) console.log(`  line ${i + 1}\n    Flash:  ${expected[i] ?? "(nothing)"}\n    player: ${got[i] ?? "(nothing)"}`);
+		if (bad++ < shown) console.log(`  line ${i + 1}\n    Flash:  ${expected[i] ?? "(nothing)"}\n    player: ${got[i] ?? "(nothing)"}`);
 	}
 	console.log(`${bad ? "FAIL" : "ok  "} ${name}: ${expected.length} lines from Flash Player, ${bad} differ`);
 	if (bad) failures++;
 }
 await browser.close();
+server.close();
 console.log(failures ? `\n${failures} document(s) differ` : "\nScripts behave as in Flash Player");
 process.exitCode = failures ? 1 : 0;

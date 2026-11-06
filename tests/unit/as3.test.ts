@@ -17,6 +17,7 @@ function run(code: string, frames: number[] = [0], t: Record<string, unknown> = 
 		as: (x: unknown, c: new () => unknown) => (x instanceof c ? x : null),
 		is: (x: unknown, c: unknown) => (typeof c === "string" ? typeof x === c.toLowerCase() || c === "int" : x instanceof (c as new () => unknown)),
 		cls: (n: string) => n,
+		err: (e: unknown) => e,
 		sort: (a: unknown[], ...o: unknown[]) => (o[0] === 16 ? a.sort((x, y) => (x as number) - (y as number)) : a.sort()),
 		sortOn: (a: unknown[]) => a,
 	};

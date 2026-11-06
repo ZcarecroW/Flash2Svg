@@ -65,6 +65,8 @@ export interface DocInfo {
 export type TimelineKind = "scene" | "movie clip" | "graphic" | "button";
 
 export interface TimelineData {
+	/** Joined scenes: name, first frame and frames of each. */
+	scenes?: [string, number, number][];
 	id: string;
 	name: string;
 	kind: TimelineKind;
@@ -111,6 +113,8 @@ export interface Keyframe {
 	index: number;
 	duration: number;
 	label?: { name: string; type: "name" | "comment" | "anchor" };
+	/** Joined scenes: the frame script as written (`script` then counts on the joined timeline). */
+	written?: string;
 	/** Frame script (AS3 or canvas JS), used to detect stop()/play()/gotoAndPlay(). */
 	script?: string;
 	tween?: TweenData;

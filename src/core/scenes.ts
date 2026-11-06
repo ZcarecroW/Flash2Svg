@@ -43,7 +43,7 @@ export function joinScenes(model: SceneModel): SceneModel {
 					...k,
 					index: k.index + off,
 					...(k.label ? { label: { ...k.label, name: k.label.type === "comment" ? k.label.name : label(t.name, k.label.name) } } : {}),
-					...(k.script ? { script: rewrite(k.script, { scene: t.name, offsets, label, zeroBased, next, prev }) } : {}),
+					...(k.script ? { script: rewrite(k.script, { scene: t.name, offsets, label, zeroBased, next, prev }), written: k.script } : {}),
 				})),
 				...(l.rig ? { rig: [...Array<null>(off).fill(null), ...l.rig] } : {}),
 				...(l.depth ? { depth: [...Array<number>(off).fill(0), ...l.depth] } : {}),
@@ -62,6 +62,7 @@ export function joinScenes(model: SceneModel): SceneModel {
 		kind: "scene",
 		frameCount: total,
 		layers,
+		scenes: scenes.map((t) => [t.name, offsets.get(t.name)!, t.frameCount]),
 		...(camera ? { camera: fillCamera(camera) } : {}),
 	};
 	if (scenes.filter((t) => t.layers.some((l) => l.type === "camera")).length > 1)

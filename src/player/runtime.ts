@@ -351,6 +351,7 @@ export class Clip {
 					inst.clip?.stopStreams();
 					inst.dispose();
 					this.items.delete(it);
+					if (__SCRIPTS__ && this.player.scripts) this.player.scripts.ver++;
 					inst = undefined;
 				}
 				// (a script may have taken it elsewhere)
@@ -435,7 +436,7 @@ export class Inst {
 	ovAlpha?: number;
 	moved?: boolean;
 	removed?: boolean;
-	private cm: SVGElement | null = null;
+	cm: SVGElement | null = null;
 	private seqIndex = -1;
 	/** shape tweens: the morph part drawn, copies of each part's drawing (and their elements) */
 	private mpart?: PMorph | null;
@@ -1320,6 +1321,10 @@ function hear(p: Player, e: Event) {
 
 /** One playing (or waiting) sound. Its position runs on the player's clock, so it can start late. */
 class Voice {
+	/** a script's volume and pan, and the nodes doing that */
+	vol?: number;
+	pan?: number;
+	fx?: [GainNode, StereoPannerNode];
 	src: AudioBufferSourceNode | null = null;
 	el: HTMLAudioElement | null = null;
 	done = false;
@@ -1480,7 +1485,16 @@ class Mixer {
 				src.loopEnd = skip + b;
 			}
 			const env = e[7];
-			(env ? this.envelope(ac, src, env, off, speed) : src).connect(this.out);
+			const tail = env ? this.envelope(ac, src, env, off, speed) : src;
+			if (__SCRIPTS__ && v.vol !== undefined) {
+				// (a script's volume and pan, which it can change while the sound plays)
+				const g = ac.createGain();
+				const p = ac.createStereoPanner();
+				g.gain.value = v.vol;
+				p.pan.value = v.pan ?? 0;
+				tail.connect(g).connect(p).connect(this.out);
+				v.fx = [g, p];
+			} else tail.connect(this.out);
 			src.onended = () => v.stop();
 			src.start(0, skip + at);
 			if (left) src.stop(ac.currentTime + left);

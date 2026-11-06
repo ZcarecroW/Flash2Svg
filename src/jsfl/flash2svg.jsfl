@@ -353,6 +353,7 @@
 		job.atlasJobs = [];
 		job.pendingTimelines = [];
 		job.seen = {};
+		job.linked = {};
 		for (i = 0; i < roots.length; i++) {
 			var id = roots[i].item ? "sym:" + roots[i].item : "scene:" + roots[i].scene;
 			job.model.roots.push(id);
@@ -416,7 +417,20 @@
 			if (!cls) continue;
 			var name = cls.substr(cls.lastIndexOf(".") + 1);
 			if (text.indexOf(name) < 0) continue;
-			if (item.itemType == "sound" || !item.timeline) continue;
+			if (job.linked[cls]) continue;
+			if (item.itemType == "bitmap") {
+				job.linked[cls] = true;
+				var bitmap = readBitmap(item);
+				if (bitmap) (job.model.linkage || (job.model.linkage = {}))[name] = bitmap;
+				continue;
+			}
+			if (item.itemType == "sound") {
+				job.linked[cls] = true;
+				var sound = readLinkedSound(item);
+				if (sound) (job.model.linkage || (job.model.linkage = {}))[name] = sound;
+				continue;
+			}
+			if (!item.timeline) continue;
 			var id = "sym:" + item.name;
 			(job.model.linkage || (job.model.linkage = {}))[name] = id;
 			if (!job.seen[id]) {
@@ -425,6 +439,17 @@
 			}
 		}
 		return more;
+	}
+
+	/** A sound no frame plays: on a frame for a moment, where its length can be read. */
+	function readLinkedSound(item) {
+		var tl = job.doc.getTimeline();
+		var at = tl.addNewLayer("f2s sound");
+		var frame = tl.layers[at].frames[0];
+		frame.soundLibraryItem = item;
+		var id = readSound(item, frame);
+		tl.deleteLayer(at);
+		return id;
 	}
 
 	/** Makes `id` the timeline being edited in the copy document and returns it. */

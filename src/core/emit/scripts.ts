@@ -67,15 +67,20 @@ export function actionsOnly(code: string, zeroBased: boolean): Set<string> | nul
 	}
 }
 
-/** The frame scripts of a timeline, by frame; those on one frame together, top layer first. */
-function unitsOf(tl: TimelineData | undefined): ScriptUnit[] {
+/**
+ * The frame scripts of a timeline, by frame; those on one frame together, top layer first.
+ * `written`: as the author wrote them, not as joining scenes rewrote them (scripts that run know
+ * their scene).
+ */
+function unitsOf(tl: TimelineData | undefined, written = false): ScriptUnit[] {
 	const byFrame = new Map<number, string[]>();
 	for (const layer of tl?.layers ?? [])
 		for (const kf of layer.keyframes) {
-			if (!kf.script) continue;
+			const code = written ? (kf.written ?? kf.script) : kf.script;
+			if (!code) continue;
 			const list = byFrame.get(kf.index);
-			if (list) list.push(kf.script);
-			else byFrame.set(kf.index, [kf.script]);
+			if (list) list.push(code);
+			else byFrame.set(kf.index, [code]);
 		}
 	return [...byFrame].sort((a, b) => a[0] - b[0]).map(([frame, list]) => ({ frame, code: list.join("\n") }));
 }
@@ -119,6 +124,8 @@ export interface PlayerScripts {
 	js: string;
 	/** Library classes the scripts use: name -> program or sound id. */
 	classes: Record<string, string>;
+	/** Library bitmaps the scripts use: name -> bitmap id. */
+	bitmaps: Record<string, string>;
 }
 
 /** The scripts of a document that have to run; null when the action lists say it all. */
@@ -129,7 +136,7 @@ export function playerScripts(ctx: Context, playerId: string, warn: (m: string) 
 	for (const id in ctx.programs) {
 		const tl = ctx.model.timelines[ctx.programs[id]!.source ?? id];
 		if (!tl || !timelineRuns(tl, canvas)) continue;
-		units.set(id, unitsOf(tl));
+		units.set(id, unitsOf(tl, true));
 		timelines.add(id);
 	}
 	if (!timelines.size) return null;
@@ -140,7 +147,7 @@ export function playerScripts(ctx: Context, playerId: string, warn: (m: string) 
 		if (canvas) {
 			js = canvasScripts(units.get(id)!, name, warn);
 		} else {
-			const c = compileScripts(units.get(id)!);
+			const c = compileScripts(units.get(id)!, new Set(Object.keys(ctx.model.linkage ?? {})));
 			for (const f of c.failed) warn(`${name}, frame ${f.frame + 1}: this script can't run (line ${f.line}: ${f.message})`);
 			js = c.js;
 		}
@@ -148,14 +155,21 @@ export function playerScripts(ctx: Context, playerId: string, warn: (m: string) 
 	}
 	const js = `(window.__f2s=window.__f2s||{})[${JSON.stringify(playerId)}]={${entries.join(",")}};`;
 	const classes: Record<string, string> = {};
+	const bitmaps: Record<string, string> = {};
 	const linkage = ctx.model.linkage ?? {};
-	for (const m of js.matchAll(/\$r\.cls\("([^"]+)"/g)) {
-		const to = linkage[m[1]!];
-		if (to) classes[m[1]!] = to;
-	}
+	const use = (name: string) => {
+		const to = linkage[name];
+		if (to) (ctx.model.bitmaps[to] ? bitmaps : classes)[name] = to;
+		return !!to;
+	};
+	const missing = new Set<string>();
+	for (const m of js.matchAll(/\$r\.cls\("([^"]+)"/g)) if (!use(m[1]!)) missing.add(m[1]!);
 	// (Canvas documents: lib.Name)
-	if (canvas) for (const m of js.matchAll(/\blib\.([A-Za-z_$][\w$]*)/g)) if (linkage[m[1]!]) classes[m[1]!] = linkage[m[1]!]!;
-	return { timelines, js, classes };
+	if (canvas) for (const m of js.matchAll(/\blib\.([A-Za-z_$][\w$]*)/g)) use(m[1]!);
+	// (getDefinitionByName: any name in the library may be asked for)
+	if (js.includes("getDefinitionByName")) for (const n in linkage) use(n);
+	for (const n of missing) warn(`Frame scripts use ${n}, which the player doesn't have and the library doesn't export for ActionScript`);
+	return { timelines, js, classes, bitmaps };
 }
 
 /** HTML5 Canvas: frame scripts are JavaScript with `this` the timeline, each frame on its own. */

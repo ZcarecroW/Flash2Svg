@@ -1,6 +1,6 @@
 import { fmt, fmtMatrix } from "../geom.ts";
 import type { EmbeddedFont } from "../fonts.ts";
-import type { FilterData, TextElement, TextRun } from "../model.ts";
+import type { FilterData, Mat, TextElement, TextRun } from "../model.ts";
 import { el, type XmlNode } from "../xml.ts";
 
 // Animate text fields have a 2 px gutter; the field's matrix already points inside it
@@ -14,6 +14,17 @@ export interface FontSet {
 interface Piece {
 	r: TextRun;
 	text: string;
+}
+
+/**
+ * The field's matrix, pointing inside its gutter. A field that grew or shrank around its alignment
+ * keeps its matrix, the box moves inside it (`left` in XFL, which JSFL doesn't show): the box
+ * tells where it is. (Turned fields: their box says too little.)
+ */
+export function fieldMatrix(t: TextElement): Mat {
+	const [a, b, c, d, , ] = t.matrix;
+	if (b || c || !t.bounds || a <= 0 || d <= 0) return t.matrix;
+	return [a, b, c, d, t.bounds.left + GUTTER * a, t.bounds.top + GUTTER * d];
 }
 
 /**
@@ -109,7 +120,7 @@ export function textNode(t: TextElement, digits: number, fonts?: FontSet): XmlNo
 	return el(
 		"text",
 		{
-			transform: fmtMatrix(t.matrix, digits) || undefined,
+			transform: fmtMatrix(fieldMatrix(t), digits) || undefined,
 			"text-anchor": anchor === "start" ? undefined : anchor,
 			"xml:space": "preserve",
 			// the instance name, for page scripts (not an id: names repeat across keyframes and
@@ -140,7 +151,7 @@ export function textField(
 	if (t.border) {
 		// the outline on the field's edge pixels (the matrix points inside the gutter)
 		const box = el("rect", {
-			transform: fmtMatrix(t.matrix, digits) || undefined,
+			transform: fmtMatrix(fieldMatrix(t), digits) || undefined,
 			x: fmt(0.5 - GUTTER, 2),
 			y: fmt(0.5 - GUTTER, 2),
 			width: fmt(t.width - 1, 2),

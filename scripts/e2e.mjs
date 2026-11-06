@@ -43,7 +43,7 @@ failed += run("e2e-browser.ts", [...(names ? [names] : []), "--formats=smil,css,
 failed += run("e2e-browser.ts", [...(names ? [names] : []), "--formats=smil,css,player", "--steps"]);
 if (!names) failed += run("e2e-player.ts");
 if (!names) failed += run("e2e-hit.ts");
-if (!names) failed += run("e2e-as3.ts", ["f74-as3lang,f75-as3timeline,f76-as3order", ...(args.includes("--skip-animate") ? ["--no-flash"] : [])]);
+if (!names) failed += run("e2e-as3.ts", ["f74-as3lang,f75-as3timeline,f76-as3order,f78-as3display", ...(args.includes("--skip-animate") ? ["--no-flash"] : [])]);
 if (!names) failed += run("e2e-scripts.ts");
 if (!names) failed += run("e2e-inline.ts");
 failed += run("e2e-lottie.ts", names ? [names] : []);

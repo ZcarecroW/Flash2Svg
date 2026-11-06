@@ -5,10 +5,11 @@
 import type { ExportSettings } from "../compile.ts";
 import type { Context } from "../context.ts";
 import { fmt } from "../geom.ts";
+import type { TextElement } from "../model.ts";
 import { COLOR_PROPS, TRANSFORM_PROPS, type InstanceItem, type Item, type Program } from "../program.ts";
 import { valueAt, type Track } from "../tracks.ts";
 import { cdata, serialize, el, walk, type XmlNode } from "../xml.ts";
-import type { PChannel, PFrameSound, PInst, PItem, PListener, PMorph, PProgram, PSeq, PTimeline, PTrack } from "../../player/format.ts";
+import type { PChannel, PFrameSound, PInst, PItem, PListener, PMorph, PProgram, PSeq, PTextExtras, PTimeline, PTrack } from "../../player/format.ts";
 import type { HandlerAction, InteractionEvent } from "../snippets.ts";
 import { channelNumbers, channelText, channelVaries, type MorphChannel } from "../morph.ts";
 import { audioMime } from "../mime.ts";
@@ -31,6 +32,12 @@ function actionCode(a: HandlerAction): (number | string)[] {
 	if (a.type === "visible") return [5, a.target, a.value ? 1 : 0];
 	if (a.type === "goto") return [2, a.target, typeof a.frame === "number" ? a.frame - 1 : a.frame, a.play ? 1 : 0];
 	return [{ stop: 0, play: 1, next: 3, prev: 4 }[a.type], a.target];
+}
+
+/** What scripts can ask a text field: width, height, alignment, type, selectable, multiline. */
+function textExtras(t: TextElement): PTextExtras {
+	const r = t.runs[0];
+	return [round(t.width, 2), round(t.height, 2), r?.alignment ?? "left", t.textType === "input" ? "input" : "dynamic", t.selectable ? 1 : 0, t.multiline ? 1 : 0];
 }
 
 export function renderPlayer(
@@ -149,7 +156,13 @@ export function renderPlayer(
 					const labelled = outlineText(it.element, el("use", {}));
 					return { k: "a", s: it.start, e: it.end, r: id, ...(labelled.name === "g" ? { ac: labelled.attrs as Record<string, string> } : {}) };
 				}
-				return { k: "r", s: it.start, e: it.end, x: raw(field(textNode(it.element, ctx.precision.space(space), doc.fonts))), ...(it.element.name ? { nm: it.element.name } : {}) };
+				return {
+					k: "r",
+					s: it.start,
+					e: it.end,
+					x: raw(field(textNode(it.element, ctx.precision.space(space), doc.fonts))),
+					...(scripts && it.element.name ? { nm: it.element.name, tx: textExtras(it.element) } : {}),
+				};
 			}
 			case "instance":
 				return instance(it);
@@ -210,6 +223,7 @@ export function renderPlayer(
 	};
 
 	const scripts = playerScripts(ctx, svgId, warn);
+	const rootTimeline = ctx.model.timelines[rootId];
 	const timeline = (prog: Program): PTimeline => {
 		const t: PTimeline = { n: prog.frameCount, ly: [] };
 		if (prog.labels.length) t.lb = Object.fromEntries(prog.labels.map((l) => [l.name, l.frame]));
@@ -325,7 +339,9 @@ export function renderPlayer(
 		let url = snd.file;
 		if (s.embedImages) url = `data:${audioMime(snd.file)};base64,${toBase64(ctx.files.readBinary(snd.file))}`;
 		else doc.assets.push({ path: snd.file, source: snd.file });
-		P.snd[sid] = snd.seconds !== undefined ? [url, round(snd.seconds, 4), round(snd.lead ?? 0, 5)] : url;
+		// (scripts ask how long a sound is)
+		const seconds = snd.seconds ?? (scripts && snd.samples ? snd.samples / 44100 : undefined);
+		P.snd[sid] = seconds !== undefined ? [url, round(seconds, 4), round(snd.lead ?? 0, 5)] : url;
 	}
 	P.mf = doc.maskFilter().slice(5, -1);
 
@@ -355,6 +371,16 @@ export function renderPlayer(
 	if (scripts) {
 		if (Object.keys(scripts.classes).length) P.cl = scripts.classes;
 		if (d.type !== "Flash") P.zb = 1;
+		const bitmaps = Object.entries(scripts.bitmaps);
+		if (bitmaps.length) {
+			P.bd = {};
+			for (const [name, id] of bitmaps) {
+				const b = doc.bitmap(id);
+				if (b) P.bd[name] = [b.href, b.width, b.height, /\.jpe?g$|image\/jpeg/i.test(b.href.slice(0, 40)) ? 0 : 1];
+			}
+		}
+		P.dn = (d.name ?? "main").replace(/\.\w+$/, "").replace(/\W/g, "_");
+		P.sc = rootTimeline?.scenes ?? [[rootTimeline?.name ?? "Scene 1", 0, rootTimeline?.frameCount ?? 1]];
 	}
 	svg.children.push(el("script", { type: "application/json" }, [cdata(JSON.stringify(P).replace(/</g, "\\u003c"))]));
 	// the runtime with morphs also animates filters (shape tweens, filters with changing numbers)
