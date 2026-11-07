@@ -25,10 +25,14 @@ import { fileURLToPath } from "node:url";
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const names = args.find((a) => !a.startsWith("--"));
+/** The steps that failed: said at the end, the log is long. */
+const bad = [];
 const run = (script, extra = []) => {
 	console.log(`\n=== ${script} ${extra.join(" ")}`);
 	const r = spawnSync(process.execPath, [join(repo, "scripts", script), ...extra], { stdio: "inherit", cwd: repo });
-	return r.status ?? 1;
+	const status = r.status ?? 1;
+	if (status) bad.push(`${script} ${extra.join(" ")}`.trim());
+	return status;
 };
 
 let failed = 0;
@@ -69,5 +73,5 @@ if (!names) failed += run("e2e-panel-ui.ts");
 if (!names) failed += run("e2e-compat.ts");
 failed += run("e2e-running.ts", names ? [names] : []);
 if (!names) failed += run("e2e-running.ts", ["--browser=webkit"]);
-console.log(failed ? `\nE2E: ${failed} step(s) reported failures` : "\nE2E: all good");
+console.log(failed ? `\nE2E: ${bad.length} step(s) reported failures:\n  ${bad.join("\n  ")}` : "\nE2E: all good");
 process.exitCode = failed ? 1 : 0;

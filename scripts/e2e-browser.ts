@@ -38,7 +38,8 @@ const every = parseInt(opt("every", "4"), 10);
 // Animated and static output come from the same compiler, so they must agree almost exactly:
 // 0.15% of the pixels is about a 15 px object on a 400x300 stage.
 const threshold = parseFloat(opt("threshold", "0.0015"));
-const TOLERANCE: Record<string, number> = {};
+// (f49's input fields: the animated formats have real fields, the still drawing it is compared with has SVG text)
+const TOLERANCE: Record<string, number> = { "f49-fonts/smil": 0.002, "f49-fonts/css": 0.002, "f49-fonts/player": 0.002 };
 const limit = (name: string, format: string) => TOLERANCE[`${name}/${format}`] ?? threshold;
 const steps = args.includes("--steps");
 const list = args.find((a) => !a.startsWith("--"));
