@@ -155,6 +155,8 @@ for (const name of names) {
 	}
 	for (const alone of [false, true]) {
 		const got = await playerTraces(name, page, alone);
+		// (Flash Player quits after END, the page plays on: what comes after the last line doesn't count)
+		got.length = Math.min(got.length, expected.length);
 		let bad = 0;
 		const n = Math.max(expected.length, got.length);
 		const shown = args.includes("--all") ? 1e9 : 14;
