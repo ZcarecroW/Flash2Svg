@@ -7,7 +7,7 @@ description: SMIL, CSS, the JS player, Automatic, still frames, GIF, WebP and AP
 
 The same timeline can be written in nine ways. They differ in where they play, what they can do and how big they get. The demo below is one export; switch the tabs to compare.
 
-::: demo gears smil,css,player,lottie,gif,webp Nested movie clips: a gear with its own 4 s turn, two smaller ones turning back twice as fast, and two blinking lights. Sizes after gzip.
+::: demo gears smil,css,player,lottie,gif,webp,apng,mp4,webm Nested movie clips: a gear with its own 4 s turn, two smaller ones turning back twice as fast, and two blinking lights. Sizes after gzip.
 
 ## At a glance
 
@@ -48,7 +48,7 @@ Picks for you: the **JS player** when the animation needs it (sounds, mouse hand
 
 One still SVG per frame (`hero_1.svg`, `hero_2.svg`, …), or one for *Current frame*. Good for design tools — the *Inkscape / Illustrator (static)* preset draws text as outlines too — and for sprite sheets.
 
-## GIF and WebP
+## GIF, WebP and APNG
 
 Animated pictures for places where SVG doesn't animate: e-mail clients, chat apps, old CMSes. **GIF** has 256 colours per frame and plays everywhere. **WebP** keeps full colour and transparency and is usually much smaller; current mail clients and browsers show it — lossless for flat drawings (exact, and smaller than lossy there), lossy at the image quality for gradients and photos, chosen by the export. Both hold the first pass of the animation as the SVG formats play it — movie clips that keep running on a one-frame timeline or after a `stop()` included — at most 1500 frames, and repeat it from the start (a part that plays once before a loop comes again; warned). Above 50 frames a second a GIF leaves out a picture now and then (browsers would show very short frames for a tenth of a second), keeping its length.
 

@@ -602,6 +602,126 @@
 		t.layers[t.currentLayer].frames[60].actionScript = "stop();";
 	});
 
+	// ------------------------------------------------------------------ game: a frame script runs the whole thing
+	build("game", function () {
+		newDoc(480, 240, 30);
+		symbol("disc", "movie clip", function () { radialOval(0, 0, 20, [WHITE, CORAL]); });
+		symbol("goal", "movie clip", function () { oval(0, 0, 40, 40, AMBER); oval(0, 0, 30, 30, "#22304F"); });
+		layer("goal");
+		place("goal", 370, 120, 0).name = "goal";
+		layer("ball");
+		place("disc", 90, 120, 0).name = "ball";
+		layer("score");
+		text(20, 14, 300, 44, "Drag the ball into the ring", 18, WHITE, { type: "dynamic", align: "left" }).name = "label";
+		layer("actions");
+		var t = tl();
+		t.layers[t.currentLayer].frames[0].actionScript = [
+			"var score:int = 0, held:Boolean = false, turn:Number = 0;",
+			"ball.buttonMode = true;",
+			"ball.addEventListener(MouseEvent.MOUSE_DOWN, function (e:MouseEvent):void {",
+			"\theld = true;",
+			"\tball.startDrag();",
+			"});",
+			"stage.addEventListener(MouseEvent.MOUSE_UP, function (e:MouseEvent):void {",
+			"\tif (!held) return;",
+			"\theld = false;",
+			"\tball.stopDrag();",
+			"\tif (ball.hitTestObject(goal)) label.text = \"Score \" + (++score);",
+			"\tball.x = 90;",
+			"\tball.y = 120;",
+			"});",
+			"addEventListener(Event.ENTER_FRAME, function (e:Event):void {",
+			"\tturn += 0.04;",
+			"\tgoal.y = 130 + Math.sin(turn) * 70;",
+			"});",
+			"stop();"
+		].join("\n");
+	});
+
+	// ------------------------------------------------------------------ quiz: input text, components, a script
+	build("quiz", function () {
+		newDoc(480, 300, 24, "#F4F6FB");
+		var add = function (kind, name, x, y, params, w) {
+			fl.componentsPanel.addItemToDocument({ x: x, y: y }, "User Interface", kind);
+			var e = doc.selection[0];
+			e.name = name;
+			if (w) e.width = w;
+			e.x = x;
+			e.y = y;
+			for (var i = 0; params && i < e.parameters.length; i++) {
+				var q = e.parameters[i];
+				if (params[q.name] !== undefined) q.value = params[q.name];
+			}
+			doc.selectNone();
+		};
+		layer("labels");
+		text(24, 16, 456, 48, "A small quiz", 24, NAVY, { bold: true, align: "left" });
+		text(24, 62, 220, 84, "Your name", 14, NAVY, { align: "left" });
+		text(24, 102, 220, 124, "The largest planet?", 14, NAVY, { align: "left" });
+		text(24, 142, 220, 164, "Is the Sun a star?", 14, NAVY, { align: "left" });
+		text(24, 182, 220, 204, "Moons of Mars?", 14, NAVY, { align: "left" });
+		layer("field");
+		var fit = function (e, r) {
+			e.autoExpand = false;
+			doc.selectNone();
+			e.selected = true;
+			doc.setTextRectangle(r);
+			doc.selectNone();
+		};
+		var who = text(230, 60, 440, 84, " ", 14, NAVY, { type: "input", align: "left" });
+		who.name = "who";
+		who.setTextString("");
+		who.border = true;
+		fit(who, { left: 230, top: 60, right: 440, bottom: 84 });
+		layer("controls");
+		add("ComboBox", "planet", 230, 100, { prompt: "Choose", dataProvider: [{ label: "Mars", data: "1" }, { label: "Jupiter", data: "2" }, { label: "Venus", data: "3" }] }, 210);
+		add("RadioButton", "yes", 230, 141, { label: "Yes", groupName: "star" }, 80);
+		add("RadioButton", "no", 320, 141, { label: "No", groupName: "star" }, 80);
+		add("NumericStepper", "moons", 230, 181, { value: 0, maximum: 9 });
+		add("Button", "send", 230, 224, { label: "Check my answers" }, 210);
+		layer("result");
+		var said = text(24, 260, 456, 288, " ", 16, "#2F6FD6", { type: "dynamic", bold: true, align: "left" });
+		said.name = "result";
+		said.setTextString("");
+		fit(said, { left: 24, top: 260, right: 456, bottom: 288 });
+		layer("actions");
+		var t = tl();
+		t.layers[t.currentLayer].frames[0].actionScript = [
+			"import fl.controls.*;",
+			"send.addEventListener(MouseEvent.CLICK, function (e:MouseEvent):void {",
+			"\tvar score:int = 0;",
+			"\tif (planet.selectedLabel == \"Jupiter\") score++;",
+			"\tif (yes.selected) score++;",
+			"\tif (moons.value == 2) score++;",
+			"\tresult.text = (who.text || \"You\") + \": \" + score + \" of 3\";",
+			"});",
+			"stop();"
+		].join("\n");
+	});
+
+	// ------------------------------------------------------------------ depth: a card turning in 3D
+	build("depth", function () {
+		newDoc(480, 240, 24);
+		symbol("card", "movie clip", function () {
+			rect(-70, -50, 70, 50, SKY, 10);
+			oval(-22, 0, 26, 26, AMBER);
+			rect(14, -18, 50, 18, CORAL, 4);
+		});
+		layer("card");
+		var t = tl(), li = t.currentLayer;
+		place("card", 240, 120, 0);
+		var steps = 48;
+		for (var i = 1; i < steps; i++) t.insertKeyframe(i);
+		for (i = 0; i < steps; i++) {
+			t.currentFrame = i;
+			doc.selectNone();
+			doc.selection = [t.layers[li].frames[i].elements[0]];
+			// (never exactly edge-on)
+			doc.rotate3DSelection({ x: 12, y: 3.75 + i * 360 / steps, z: 0 }, true);
+			doc.selectNone();
+		}
+	});
+
 	// ------------------------------------------------------------------ banner: an intro once, then a loop, three times
 	build("banner", function () {
 		newDoc(300, 250, 24, "#1E1B4B");

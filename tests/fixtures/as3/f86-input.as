@@ -24,6 +24,15 @@ var f:TextFormat = one.getTextFormat();
 trace(f.font, f.size, f.color, f.bold, f.italic, f.align);
 trace(one.selectable, one.caretIndex, one.selectionBeginIndex, one.selectionEndIndex);
 
+// ---- empty fields have their format, and it comes back when a script fills them
+function format(t:TextField):void {
+	var a:TextFormat = t.defaultTextFormat;
+	trace(t.name, t.length, a.font, a.size, a.color, a.bold);
+}
+format(pass); format(blank);
+blank.text = "Filled"; format(blank);
+var g:TextFormat = blank.getTextFormat(); trace(g.font, g.size, g.color);
+
 // ---- scripts may do what the user may not
 most.text = "much too long"; trace(most.text, most.length); most.text = "four";
 one.restrict = "a-c"; one.text = "xyz"; trace(one.text); one.text = "Hello"; one.restrict = null;

@@ -1029,6 +1029,16 @@
 					runs.push(tr);
 				}
 			} catch (e) {}
+			// an empty field has no runs, but scripts fill it in its format
+			if (!runs.length && textType != "static") {
+				var attr = function (k, d) { try { var v = el.getTextAttr(k); return v === undefined ? d : v; } catch (e) { return d; } };
+				runs.push({
+					text: "",
+					face: attr("face", "Arial"), size: attr("size", 12), fillColor: attr("fillColor", "#000000"),
+					bold: !!attr("bold", false), italic: !!attr("italic", false),
+					alignment: attr("alignment", "left"), letterSpacing: job.model.doc.type == "htmlcanvas" ? 0 : attr("letterSpacing", 0) || 0, lineSpacing: attr("lineSpacing", 2) || 0
+				});
+			}
 			if (job.model.doc.type != "htmlcanvas") try { selectable = !!el.selectable; } catch (e) {}
 			var txt = {
 				kind: "text",

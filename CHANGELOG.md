@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 5.0.0 (2026-11-07)
 
 - **The video component in scripts** (roadmap package 16): `fl.video` in the JS player: `FLVPlayback` with `play`, `pause`, `stop`, `seek`, `source`, `state`, `volume`, `autoRewind`, ActionScript cue points and their events, states in Flash Player's order (a video in Flash Player against the same in Edge, Firefox and WebKit). FLVPlayback's *skin* decides the browser's controls; an FLV file is warned about, browsers don't play them.
 - **MP4, WebM and APNG export** (roadmap package 16): the panel writes video files with the browser's own encoders (H.264 in MP4 where Animate's has one, else AV1 or VP9; VP9 in WebM), with the document's sounds mixed to one track, for social media and video players. BT.709 in video range, an index at the front of the file, a key frame every two seconds; *Video bit rate* or `videoBitrate` (default: enough for clean edges at the size). APNG is lossless with alpha and works in the command line too (`--format apng`).

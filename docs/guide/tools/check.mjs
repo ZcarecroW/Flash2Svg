@@ -119,6 +119,7 @@ try {
 									}
 									if (format === "lottie")
 										return until(() => stage.querySelector(".demo__lottie svg g") && stage.querySelector(".demo__lottie")._anim?.isLoaded);
+									if (format === "mp4" || format === "webm") return until(() => stage.querySelector("video")?.readyState >= 2 && stage.querySelector("video").videoWidth > 0);
 									if (format === "player") return until(() => stage.querySelector("object")?.contentDocument?.documentElement?.flash2svg);
 									// links and scripts: an <object> with the SVG document in it
 									if (embed === "object") return until(() => stage.querySelector("object")?.contentDocument?.documentElement?.localName === "svg");

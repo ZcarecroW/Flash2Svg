@@ -68,7 +68,7 @@ const loader = nodeWasmLoader();
 const codecs = createCodecs(loader);
 let audio, fonts;
 const demoCache = new Map();
-const EXT = { smil: ".svg", css: ".svg", player: ".svg", auto: ".svg", static: ".svg", lottie: ".json", dotlottie: ".lottie", gif: ".gif", webp: ".webp" };
+const EXT = { smil: ".svg", css: ".svg", player: ".svg", auto: ".svg", static: ".svg", lottie: ".json", dotlottie: ".lottie", gif: ".gif", webp: ".webp", apng: ".png", mp4: ".mp4", webm: ".webm" };
 const LABEL = {
 	smil: "SMIL",
 	css: "CSS",
@@ -78,6 +78,9 @@ const LABEL = {
 	dotlottie: ".lottie",
 	gif: "GIF",
 	webp: "WebP",
+	apng: "APNG",
+	mp4: "MP4",
+	webm: "WebM",
 	static: "Still",
 };
 
@@ -90,6 +93,17 @@ const DEMO_SETTINGS = {
 async function demo(name, format) {
 	const key = `${name}.${format}`;
 	if (demoCache.has(key)) return demoCache.get(key);
+	// (video comes from a browser's encoders: docs/guide/tools/videos.mjs made these)
+	if (format === "mp4" || format === "webm") {
+		const from = join(GUIDE, "demos", "video", `${name}.${format}`);
+		if (!existsSync(from)) throw new Error(`no video ${name}.${format} (run node docs/guide/tools/videos.mjs)`);
+		const bytes = readFileSync(from);
+		const file = `demos/${name}.${format}`;
+		writeFileSync(join(OUT, file), bytes);
+		const r = { file, bytes: bytes.length, gzip: bytes.length, width: 0, height: 0, format, warnings: [], svg: "" };
+		demoCache.set(key, r);
+		return r;
+	}
 	const dir = join(GUIDE, "demos", "models", name);
 	if (!existsSync(join(dir, "scene.json"))) throw new Error(`no demo ${name} (run node docs/guide/tools/demos.mjs)`);
 	let model = JSON.parse(readFileSync(join(dir, "scene.json"), "utf8"));
@@ -100,12 +114,12 @@ async function demo(name, format) {
 		audio ??= createAudioCodecs(loader);
 		({ model, files } = await encodeSounds(model, files, s, audio));
 	}
-	if (!/lottie|gif|webp/.test(format)) {
+	if (!/lottie|gif|webp|apng/.test(format)) {
 		fonts ??= createFontCodecs(loader, (await import("woff2-encoder")).compress);
 		({ model } = await encodeFonts(model, nodeFontFiles(), fonts));
 	}
 	const out =
-		format === "gif" || format === "webp"
+		format === "gif" || format === "webp" || format === "apng"
 			? await exportRaster(model, files, s, nodeRasterizer(loader), codecs)
 			: compileScene(model, files, s, 0, { gzip: (d) => gzipSync(d, { level: 9 }) });
 	const f = out.files[0];
@@ -115,7 +129,7 @@ async function demo(name, format) {
 	const r = {
 		file,
 		bytes: bytes.length,
-		gzip: /gif|webp|lottie$/.test(format) && format !== "lottie" ? bytes.length : gzipSync(bytes, { level: 9 }).length,
+		gzip: /gif|webp|apng|lottie$/.test(format) && format !== "lottie" ? bytes.length : gzipSync(bytes, { level: 9 }).length,
 		width: Math.round(model.doc.width),
 		height: Math.round(model.doc.height),
 		format: out.stats.format ?? format,

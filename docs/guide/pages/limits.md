@@ -50,13 +50,12 @@ Most of the time is Animate handing over the drawings (the progress bar says "Ex
 - **Frame scripts** run in the JS player only (see [Interactivity](interactivity.md#frame-scripts)). The other formats follow `stop()`, `play()`, `gotoAndPlay()` / `gotoAndStop()` with frame numbers or labels and pass counters, and warn about the rest.
 - **Movie clips with loops of very different lengths** (say 7, 11 and 13 frames in a 600-frame scene) can't all come round within one SMIL/CSS loop: SMIL and CSS repeat after the common period they find, so some clips jump when the animation repeats (warned). The JS player is exact.
 - **Shape tweens** in CSS output are drawn frame by frame. Animate draws a shape tween's keyframe a little differently from the start of its morph; where they differ by more than a quarter pixel, the keyframe stays a drawing of its own. A shape that splits into several looks different in Animate's preview than in its SVG export; the export follows the SVG export.
-- **Strokes:** *Horizontal* and *Vertical* scale options are drawn like *Normal* (warned). Animate never draws a stroke thinner than one pixel; SVG does.
+- **Strokes:** Animate never draws a stroke thinner than one pixel; SVG does.
 - **Alpha** on a symbol applies to each shape inside, as in Flash; inside such a symbol, alpha on nested symbols applies to them as a whole.
 - **Groups** that hold symbol instances are split: the group's drawing first, its instances above it.
 - **9-slice:** an animated scale is sliced frame by frame for symbols that only hold drawings; named instances and symbols with nested symbols keep normal scaling then (warned).
-- **3D** needs a browser that does CSS 3D inside an SVG: Chromium browsers and Firefox do; elsewhere, and in Lottie, it comes out flat, as close as flat can be. **Components** other than video aren't exported yet. **Video embedded in the timeline** isn't either.
-- **The camera's** colour effects (tint, colour filter) aren't exported.
-- **Lottie:** sounds, button states and editable text are left out; *subtract* and *add* are approximated. lottie-web draws an *inner gradient bevel* only faintly (Skottie and dotLottie draw it right). See [Lottie](lottie.md#what-is-not-in-lottie).
+- **3D** needs a browser that does CSS 3D inside an SVG: Chromium browsers and Firefox do; elsewhere, and in Lottie, it comes out flat, as close as flat can be.
+- **Lottie:** button states, UI components and editable text are left out, and sounds unless you ask for them (only lottie-web plays those); *subtract* and *add* are approximated. lottie-web draws an *inner gradient bevel* only faintly (Skottie and dotLottie draw it right). See [Lottie](lottie.md#what-is-not-in-lottie).
 - Animate adds the temporary copy each export works on to its *Recent files* list (JSFL can't open a document without that).
 
 ## Reporting a problem

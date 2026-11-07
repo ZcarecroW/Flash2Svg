@@ -10,9 +10,10 @@ kind of animation in the file:
 | --- | --- | --- | --- |
 | **SMIL** | `<animate>` / `<animateTransform>` with exact `keySplines` easing | ✓ | button states via CSS, web links, start on click / hover / when visible, scroll |
 | **CSS** | `@keyframes` on the individual transform properties, `cubic-bezier()` or `linear()` easing, class based | ✓ | button states, web links, pause from your page CSS, scroll-driven (inline) |
-| **JS player** | artwork + compact timeline + a 15.2 KB runtime with real Flash semantics (6.2 KB gzipped; 16.5 KB with shape-tween morphs, 18.2 KB with mouse handlers) | poster frame only | ✓ `play()`, `stop()`, `gotoAndPlay("label")`, buttons, Animate's code snippets, scroll, sounds |
+| **JS player** | artwork + compact timeline + a 15.6 KB runtime with real Flash semantics (6.3 KB gzipped; 18 KB with shape-tween morphs, 18.7 KB with mouse handlers, 83 KB with frame scripts) | poster frame only | ✓ `play()`, `stop()`, `gotoAndPlay("label")`, buttons, Animate's code snippets, scroll, sounds |
 | **Frames** | one still SVG per frame | ✓ | – |
-| **GIF** / **WebP** | animated raster fallbacks of the first pass, running movie clips included (GIF: 256 colours a frame; WebP: full colour with alpha, lossless for flat drawings, only the changed rectangle per frame), for e-mail and apps without SVG animation | ✓ | – |
+| **MP4** / **WebM** | video files with their sound, from the panel (H.264 or VP9, through the browser's encoders in Animate), for social media and video players | – | – |
+| **GIF** / **WebP** / **APNG** | animated raster fallbacks of the first pass, running movie clips included (GIF: 256 colours a frame; WebP: full colour with alpha, lossless for flat drawings, only the changed rectangle per frame), for e-mail and apps without SVG animation | ✓ | – |
 | **Automatic** | the JS player when sounds or mouse handlers need it, else CSS — or SMIL when that is clearly smaller (shape tweens) | ✓ (CSS/SMIL) | as the chosen format |
 | **Lottie** / **.lottie** | Lottie JSON, or a dotLottie archive with its bitmaps, for lottie-web, dotLottie, Skottie and the app players (iOS, Android, Flutter, React Native) | – | through the player's API |
 
@@ -146,7 +147,7 @@ bitmaps (the sound codecs likewise: LAME, libopus, mpg123).
 
 ### Sounds
 
-Frame sounds play in the **JS player** format, with Animate's sound settings: *Event*, *Start*,
+Frame sounds play in the **JS player**, and in **SMIL** and **CSS** wherever a script can run (inline, as a file, in an `<object>`; not in `<img>`), and go into MP4 and WebM, with Animate's sound settings: *Event*, *Start*,
 *Stop* and *Stream* sync, *Repeat* and *Loop*, the effects and custom envelopes (*Edit sound
 envelope*: volume and panning), in and out points, sounds in movie clips and on button states.
 Stream sounds follow the playhead, also after `gotoAndPlay()` or a pause.
@@ -159,7 +160,7 @@ Stream sounds follow the playhead, also after `gotoAndPlay()` or a pause.
 Every sound is cut to the part the frames play: Animate pads its sounds with silence (a 0.4 s
 beep came out as a 3.7 s file). *Convert stereo to mono* is followed. Browsers block sound until
 the visitor clicks or presses a key: until then the sounds run on silently and join at their
-position (a long one starts in the middle). In SMIL and CSS output sounds don't play (warned).
+position (a long one starts in the middle). Lottie JSON carries them on request (`--lottie-sounds`): lottie-web plays those on a page with Howler.
 
 ### Frame scripts
 
@@ -167,6 +168,14 @@ Frame scripts run in the JS player: AS3 compiled to JavaScript at export, the Ja
 Canvas documents as it is, on the APIs of Flash Player and CreateJS. Tested line by line against
 both. Documents without scripts pay nothing for this. A document class and classes in `.as` files
 aren't compiled (warned). See the guide's *Interactivity* page.
+
+### Forms and components
+
+Input text and Animate's UI components (Button, CheckBox, RadioButton, ComboBox, List, TextInput,
+TextArea, Label, NumericStepper, Slider, ColorPicker, ProgressBar, DataGrid, UILoader) export as
+real HTML controls in SMIL, CSS and the JS player. In the JS player scripts use them through
+`fl.controls` as in Flash Player, and `fl.video` drives the video component. HTML5 Canvas documents
+get their components too, with the part of jQuery that Animate's snippets use.
 
 ### Code snippets
 

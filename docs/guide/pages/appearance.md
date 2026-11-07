@@ -28,9 +28,15 @@ A tweened filter changes with the frames, as in Animate. The **JS player** write
 
 *Alpha* and *erase* act inside a symbol placed with the *layer* blend, as in Animate: they cut into what lies below them in that symbol. In Lottie, *subtract* and *add* are approximated (warned).
 
+## 3D
+
+Movie clips turned or moved with Animate's 3D tools keep their perspective, with the document's view angle and vanishing point.
+
+::: demo depth css,player A movie clip turned with the 3D rotation tool, frame by frame. SVG itself is flat: the turn is CSS 3D on the clip, so Chromium browsers and Firefox show it, elsewhere it comes out as close as flat can be.
+
 ## Colour effects
 
-*Brightness*, *tint*, *alpha* and *advanced* colour effects, tweened or not.
+*Brightness*, *tint*, *alpha* and *advanced* colour effects, tweened or not. The camera's *tint* and *Adjust Color* work in every format.
 
 > [!NOTE]
 > Alpha on a symbol applies to **each shape inside**, as in Flash: where shapes overlap — the inner half of a stroke over its fill — they show through each other. Flash2SVG does the same. Inside such a symbol, alpha on nested symbols applies to them as a whole (SVG can't multiply inherited alpha per shape).

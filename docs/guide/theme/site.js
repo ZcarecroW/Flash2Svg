@@ -71,6 +71,11 @@
 					el = document.createElement("p");
 					el.className = "demo__note";
 					el.innerHTML = `A <strong>.lottie</strong> archive (${tab.title.split(",")[0]}): <a href="${src}" download>download it</a> and open it in a dotLottie player, for example <a href="https://lottiefiles.com/preview" rel="noopener">lottiefiles.com/preview</a>.`;
+				} else if (format === "mp4" || format === "webm") {
+					el = document.createElement("video");
+					el.src = src;
+					el.muted = el.loop = el.autoplay = el.controls = el.playsInline = true;
+					el.setAttribute("aria-label", alt);
 				} else if (format === "lottie") {
 					el = document.createElement("div");
 					el.className = "demo__lottie";

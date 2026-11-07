@@ -72,6 +72,8 @@ Frame scripts run in the **JS player**, wherever scripts run: inline in a page, 
 
 What scripts see and the order things happen in are Flash Player's and CreateJS's own: the test documents trace everything they do, and the traces are compared line by line with Flash Player and with the document as Animate publishes it.
 
+::: demo game player Drag the ball into the moving ring. All of it is the frame script below, compiled to JavaScript at export.
+
 ```actionscript-3
 var score:int = 0;
 ball.addEventListener(MouseEvent.MOUSE_DOWN, function (e:MouseEvent):void { ball.startDrag(); });
@@ -83,15 +85,17 @@ stage.addEventListener(MouseEvent.MOUSE_UP, function (e:MouseEvent):void {
 
 A library symbol, bitmap or sound needs *Export for ActionScript* and a class name to be made with `new`; only those your scripts name are exported.
 
-Plain `stop()`, `play()` and frame jumps, simple mouse handlers and counted loops don't need any of this: they work in every format, and the player stays small (15.6 KB; 78 KB with scripts, and pixels and sounds, filters or CreateJS add to it only if the scripts use them).
+Plain `stop()`, `play()` and frame jumps, simple mouse handlers and counted loops don't need any of this: they work in every format, and the player stays small (15.6 KB; 83 KB with scripts, and pixels and sounds, filters or CreateJS add to it only if the scripts use them).
 
-**Not run:** the document class and classes in `.as` files (warned at export); `BitmapData.draw()` of display objects, because a browser can't read them back at once; the FLVPlayback component. A SWF can't be loaded, pictures can. Web pages block sound until the visitor clicks or presses a key, also for scripts.
+**Not run:** the document class and classes in `.as` files (warned at export); `BitmapData.draw()` of display objects, because a browser can't read them back at once. A SWF can't be loaded, pictures can. Web pages block sound until the visitor clicks or presses a key, also for scripts.
 
 **In other formats:** SMIL, CSS and Lottie follow plain frame jumps and warn that the rest needs the JS player.
 
 ## Forms and components
 
-**Input text** and Animate's **UI components** become real HTML controls in SMIL, CSS and the JS player, so forms and quizzes work without any code: you can type, tick, choose and tab through them, screen readers know them, and browsers fill and spell-check them as usual.
+**Input text** and Animate's **UI components** become real HTML controls in SMIL, CSS and the JS player, so forms and quizzes work without any code: you can type, tick, choose and tab through them, and screen readers know them.
+
+::: demo quiz player Input text, a ComboBox, radio buttons, a NumericStepper and a Button, with a few lines of frame script. Try it.
 
 | Component | Becomes | |
 |---|---|---|

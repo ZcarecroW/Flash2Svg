@@ -257,6 +257,8 @@ function usage(model: SceneModel): Map<string, { face: string; bold: boolean; it
 				for (const e of k.elements) {
 					if (e.kind !== "text" || e.textType === "static") continue;
 					for (const r of (e as TextElement).runs) {
+						// (an empty dynamic field has nothing to embed yet)
+						if (!r.text && e.textType !== "input") continue;
 						const key = fontKey(r.face, r.bold, r.italic);
 						let u = out.get(key);
 						if (!u) out.set(key, (u = { face: r.face, bold: r.bold, italic: r.italic, chars: new Set() }));

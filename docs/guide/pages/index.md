@@ -15,7 +15,7 @@ description: Flash2SVG exports Adobe Animate timelines as animated SVG (SMIL, CS
 <li><strong>Every way to animate SVG</strong>SMIL for anywhere (even <code>&lt;img&gt;</code> and e-mail clients that show SVG), CSS for pages you style, a 15 KB JS player with Flash's own behaviour, still frames, GIF and WebP fallbacks.</li>
 <li><strong>Lottie and dotLottie</strong>The same timeline for lottie-web, the dotLottie players, Skottie and the iOS, Android, Flutter and React Native players.</li>
 <li><strong>Exactly like Animate</strong>Every tween is checked against Animate's own frames. Classic and custom eases, motion tweens and guides, shape tweens as real morphs.</li>
-<li><strong>Interactive</strong>Buttons, frame scripts (<code>stop()</code>, <code>gotoAndPlay()</code>), the Code Snippets panel's mouse handlers, start on click, hover, scroll or when visible.</li>
+<li><strong>Interactive</strong>Buttons, real form fields and UI components, ActionScript 3 and HTML5 Canvas frame scripts running in the browser, Animate's Code Snippets, start on click, hover, scroll or when visible.</li>
 <li><strong>Small files</strong>One drawing per symbol, curves instead of frames, images in WebP or AVIF and scaled to what is shown, sounds as MP3 or Opus — and a size overview after every export.</li>
 <li><strong>Your FLA stays untouched</strong>The export works on a temporary copy. HTML5 Canvas documents work as well as ActionScript 3.</li>
 </ul>

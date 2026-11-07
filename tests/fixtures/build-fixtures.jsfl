@@ -3523,6 +3523,7 @@
 		field("nowrap", { left: 20, top: 220, right: 220, bottom: 270 }, "No wrap here", { lineType: "multiline no wrap", border: true });
 		field("wide", { left: 240, top: 20, right: 380, bottom: 90 }, "A paragraph long enough to wrap in its field\rand one more", { lineType: "multiline", border: true });
 		field("shown", { left: 240, top: 110, right: 380, bottom: 180 }, "A dynamic paragraph long enough to wrap in its field\rand one more", { lineType: "multiline", type: "dynamic" });
+		field("blank", { left: 240, top: 200, right: 380, bottom: 224 }, "", { type: "dynamic", color: "#117733" });
 		layer("actions");
 		var t = tl();
 		t.layers[t.currentLayer].frames[0].actionScript = FLfile.read(root + "/as3/f86-input.as");

@@ -121,6 +121,8 @@ export function textNode(t: TextElement, digits: number, fonts?: FontSet): XmlNo
 				[s],
 			);
 		});
+		// (an empty field: its look, for the script that fills it)
+		if (!t.text && !spans.length) spans.push(el("tspan", { "font-family": fontFamily(first.face, font(first)?.family), "font-size": fmt(first.size, 2), fill: first.fillColor, "font-weight": first.bold ? "bold" : undefined, "font-style": first.italic ? "italic" : undefined }, [""]));
 		children.push(el("tspan", { x: fmt(x, 2), y: fmt(y, 2) }, spans));
 	});
 	return el(
