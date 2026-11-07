@@ -295,6 +295,27 @@ CSS export running against paused now; CSS on scroll stood still inside `overflo
 and in `<object>` — a script takes over there. Still open: the gradient bevel at low quality
 draws a 1 px softer rim than Animate (~0.1 % of the filters demo).
 
+## Part 3: after 5.0.0 (goals of 2026-11-07)
+
+Parts 1 and 2 are done and released. These are the goals for later, biggest first; work starts when
+the user says go, in this order unless the user changes it. Each is compared with Flash Player or
+Animate as before: an own test document, real keys and clicks where a user is involved.
+
+| # | Goal | Benefit | Effort | Status |
+|---|---|---|---|---|
+| 17 | **Document class and classes in `.as` files:** the parser learns `package`, `class`, `extends`, `super`, statics, getters and setters, interfaces, imports across files. The extractor finds the files through the document's class path. The document class's constructor runs before frame 1 | real AS3 projects, not only frame scripts | high | ⬜ |
+| 18 | **XML and E4X:** XML, XMLList, `@attributes`, `..` and filters in the AS3 compiler and the runtime | data-driven content; DataProvider from XML | medium–high | ⬜ |
+| 19 | **The remaining UI components:** TileList, ScrollPane, UIScrollBar, and jQuery UI components in HTML5 Canvas documents (today: warned) | every component exports | medium | ⬜ |
+| 20 | **`BitmapData.draw()` of display objects**, and library BitmapData readable before it is decoded | canvas-style effects in scripts | medium | ⬜ |
+| 21 | **Motion tweens as curves:** fit their X and Y curves instead of a keyframe per frame; bent motion-tween paths; the JS player moving along `offset-path` | smaller, cleaner motion tweens | medium | ⬜ |
+| 22 | **Unverified Animate features:** test documents for art, pattern and fluid brushes, Flexi bones, the envelope deformer, warps with "Auto convert vector to bitmap" off, 9-slice on animated symbols with nested symbols | certainty, fixes for what they show | medium | ⬜ |
+| 23 | **Smaller gaps in the output:** lottie-web's faint inner gradient bevel, the rim of a gradient bevel, CSS filter functions, Firefox's SMIL drifting far into long loops | fidelity | low–medium | ⬜ |
+| 24 | **MP4 and WebM from the command line:** the CLI has no video encoder; through an installed browser or a WebAssembly encoder | batch export of video | medium | ⬜ |
+| 25 | **Why Animate crashes quitting:** after the full batch of test documents, 2 of 4 runs, all work done by then. Find out whether a document or the extractor causes it | a user's Animate must not crash | low, if it can be reproduced | ⬜ |
+
+Video embedded in the timeline stays out unless Animate turns out to hand over its frames: only FLV
+can be embedded, and browsers can't play it.
+
 ## Sources
 - Animate features: https://helpx.adobe.com/animate/using/whats-new/2023.html, https://www.videohelp.com/software/Flash-Professional/version-history, https://helpx.adobe.com/animate/desktop/animation/bone-tool-animation.html, https://helpx.adobe.com/animate/desktop/interactivity/add-interactivity-code-snippets.html, https://community.adobe.com/t5/animate-discussions/asset-warp-tool-creates-bitmaps-when-generating-mesh/m-p/12602916
 - Ruffle: https://en.wikipedia.org/wiki/Ruffle_(software), https://ruffle.rs/blog/2024/09/12/optimisations-text-more
