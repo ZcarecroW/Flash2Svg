@@ -74,6 +74,8 @@ async function playerTraces(name: string, page: import("playwright-core").Page, 
 	page.on("pageerror", onError);
 	await page.goto(`${origin}/${name}/${alone ? "as3-player.svg" : "as3-player.html"}`);
 	for (let i = 0; i < 100 && !lines.includes("END"); i++) await page.waitForTimeout(100);
+	// (a frame's last lines can come after the script's END)
+	await page.waitForTimeout(400);
 	page.off("console", onLog);
 	page.off("pageerror", onError);
 	return lines;

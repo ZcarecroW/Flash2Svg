@@ -28,6 +28,8 @@ const steps = args.includes("--steps");
 const TOLERANCE: Record<string, number> = {
 	// (Lottie has no perspective: 3D comes out flat, as close as that can be, and warned)
 	"f63-3d": 0.02,
+	// (flat in Lottie, as f63)
+	"guide:depth": 0.02,
 	"f64-3d2": 0.025,
 	// Animate's layer "fx" filter: left out (warned)
 	"f22-layers": 0.002,
@@ -78,7 +80,7 @@ const names = list
 	: [
 			...readdirSync(out).filter((d) => existsSync(join(out, d, "model", "scene.json")) && !VIDEO.has(d) && !/^f(7[4-9]|8[0156789]|90)-/.test(d)),
 			...readdirSync(join(guideDemos, "models"))
-				.filter((d) => existsSync(join(guideDemos, "models", d, "scene.json")))
+				.filter((d) => existsSync(join(guideDemos, "models", d, "scene.json")) && d !== "quiz")
 				.map((d) => `guide:${d}`),
 		];
 

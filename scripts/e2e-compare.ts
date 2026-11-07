@@ -66,6 +66,9 @@ const TOLERANCE: Record<string, number> = {
 	"guide:filters": 0.008,
 	"guide:text": 0.02,
 	"guide:morph": 0.03,
+	// (the game's label is dynamic text as f49; the quiz has HTML controls, the browser's to draw)
+	"guide:game": 0.01,
+	"guide:quiz": 0.03,
 };
 const imagesOpt = opt("images", "");
 const images: Partial<ImageSettings> | null = !imagesOpt ? null : imagesOpt === "lossless" ? {} : { imageLossy: imagesOpt as ImageSettings["imageLossy"] };
