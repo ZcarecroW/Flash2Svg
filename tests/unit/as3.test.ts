@@ -74,7 +74,7 @@ describe("AS3 parser", () => {
 			return null;
 		};
 		expect(err("/* a\n b */\n\n)")?.line).toBe(4);
-		expect(err("var x:XML = <a><b/></a>;")?.message).toMatch(/XML/);
+		expect(err("var x = a.ns::b;")?.message).toMatch(/amespace/);
 		expect(err("class A {}")?.message).toMatch(/class/);
 		expect(err('var s = "open')?.message).toMatch(/string/);
 	});

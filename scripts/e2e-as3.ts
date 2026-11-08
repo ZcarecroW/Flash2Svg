@@ -72,7 +72,8 @@ async function playerTraces(name: string, page: import("playwright-core").Page, 
 	writeFileSync(file, alone ? res.files[0]!.svg : `<!doctype html><html><body style="margin:0">${res.files[0]!.svg}</body></html>`);
 	const lines: string[] = [];
 	// (what isn't there on purpose: the browser says so too)
-	const onLog = (m: import("playwright-core").ConsoleMessage) => void (/^(Failed to load|\[DOM\])/.test(m.text()) || !m.text() || lines.push(m.text()));
+	// (a trace with line breaks is lines in Flash Player's log too)
+	const onLog = (m: import("playwright-core").ConsoleMessage) => void (/^(Failed to load|\[DOM\])/.test(m.text()) || !m.text() || lines.push(...m.text().split(/\r?\n/)));
 	// (WebKit's own media controls trip in an XML document)
 	const onError = (e: Error) => void (/evaluating 'style\./.test(e.message) || lines.push(`PAGE ERROR ${e.message}`));
 	// (the last document may still be running: nothing of it goes into this one's lines)
@@ -94,6 +95,7 @@ function loadable(name: string) {
 	mkdirSync(dir, { recursive: true });
 	writeFileSync(join(dir, "note.txt"), "A note");
 	writeFileSync(join(dir, "vars.txt"), "a=1&b=two%20words");
+	writeFileSync(join(dir, "data.xml"), '<?xml version="1.0" encoding="utf-8"?>\n<!-- a feed -->\n<feed>\n\t<entry title="One"><tag>a</tag></entry>\n\t<entry title="Two &amp; more"><tag>b</tag><tag>c</tag></entry>\n</feed>\n');
 	copyFileSync(join(repo, "tests", "fixtures", "assets", "icon.png"), join(dir, "pic.png"));
 	copyFileSync(join(repo, "tests", "fixtures", "assets", "clip.mp4"), join(dir, "clip.mp4"));
 	if (existsSync(join(dir, "model", "videos"))) {

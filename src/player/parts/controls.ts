@@ -93,6 +93,15 @@ export default function controls(L: any): Record<string, unknown> {
 		private _of(v: any): any[] {
 			if (Array.isArray(v)) return typeof v[0] === "string" || typeof v[0] === "number" ? v.map((x) => ({ label: String(x), data: x })) : v.slice();
 			if (v instanceof DataProvider) return v.toArray();
+			// (XML: each child an item, its attributes and the children with only text in them its fields)
+			const X = L.scripts.api.XML;
+			if (X && v instanceof X)
+				return v.children()._items().map((node: any) => {
+					const o: Record<string, string> = {};
+					for (const a of node.attributes()._items()) o[a.localName()] = a.toString();
+					for (const p of node.children()._items()) if (p.hasSimpleContent()) o[p.localName()] = p.toString();
+					return o;
+				});
 			throw new TypeError(`Error: Type Coercion failed: cannot convert ${v} to Array or DataProvider.`);
 		}
 		private _in(i: number, max: number) {

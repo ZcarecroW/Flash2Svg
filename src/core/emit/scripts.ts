@@ -17,6 +17,7 @@ const ACTIONS = new Set(["stop", "play", "gotoAndPlay", "gotoAndStop"]);
 
 /** What frame scripts say when they need a part of the runtime. */
 const MEDIA = /\$f\.(Bitmap|BitmapData|ByteArray|Sound|SoundChannel|SoundMixer|Video|URLLoader|NetConnection|NetStream|SharedObject|Tween|TweenEvent|None|Regular|Strong|Back|Bounce|Elastic|Loader|ProLoader|ProgressEvent|IOErrorEvent|HTTPStatusEvent|NetStatusEvent)\b|graphics\.beginBitmapFill/;
+const XML = /\$f\.(XML|XMLList|isXMLName)\b|\$r\.x(ml|a|d|c|f|n|s|del|eq)\(/;
 const FLV = /\$f\.(FLVPlayback|VideoEvent|VideoState|MetadataEvent|VideoScaleMode|CuePointType)\b/;
 const INPUT = /\$f\.TextFieldType\b|"input"/;
 const CONTROLS = /\$f\.(Button|CheckBox|RadioButton|RadioButtonGroup|ComboBox|List|TextInput|TextArea|Label|NumericStepper|Slider|ColorPicker|ProgressBar|UILoader|DataGrid|DataGridColumn|DataProvider|UIComponent|ComponentEvent|ListEvent|SliderEvent|ColorPickerEvent|DataChangeEvent|DataChangeType|ProgressBarMode|ProgressBarDirection|SliderDirection|ButtonLabelPlacement|ScrollPolicy|StyleManager|LabelButton)\b/;
@@ -254,6 +255,7 @@ export function playerScripts(ctx: Context, playerId: string, warn: (m: string) 
 		if (controls) list.push("controls");
 		if (FLV.test(js) || elementOf(ctx, (e) => e.kind === "video")) list.push("flv");
 		if (cls?.js) list.push("classes");
+		if (XML.test(js)) list.push("xml");
 	}
 	const parts = list.map((p) => `${PLAYER_PARTS[p as keyof typeof PLAYER_PARTS]};((window.__f2s[${JSON.stringify(playerId)}].$p=window.__f2s[${JSON.stringify(playerId)}].$p||[]).push(__f2sPart.default));`);
 	const bases: Record<string, string> = {};

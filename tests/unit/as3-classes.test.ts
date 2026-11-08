@@ -246,9 +246,9 @@ describe("AS3 class files", () => {
 	it("reports a file it can't read and compiles the rest", () => {
 		const r = compileClasses([
 			{ path: "Good.as", code: "package { public class Good {} }" },
-			{ path: "Bad.as", code: "package { public class Bad {\n var x:XML = <a/>; } }" },
+			{ path: "Bad.as", code: "package { public class Bad {\n use namespace x; } }" },
 		]);
-		expect(r.failed).toEqual([{ file: "Bad.as", line: 2, message: expect.stringMatching(/XML/) }]);
+		expect(r.failed).toEqual([{ file: "Bad.as", line: 2, message: expect.stringMatching(/amespace/) }]);
 		expect(r.js).toMatch(/"Good"/);
 	});
 

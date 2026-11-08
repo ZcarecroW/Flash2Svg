@@ -3745,6 +3745,14 @@
 		l.name = "logo";
 	});
 
+	// ---------------------------------------------------------------- f94: XML and E4X in a frame script
+	build("f94-xml", function () {
+		newDoc("timeline", 400, 300, 24);
+		layer("actions");
+		var t = tl();
+		t.layers[t.currentLayer].frames[0].actionScript = FLfile.read(root + "/as3/f94-xml.as");
+	});
+
 	FLfile.write(outDir + "/build-log.txt", log.join("\n"));
 	fl.closeAll(false);
 	fl.quit(false);

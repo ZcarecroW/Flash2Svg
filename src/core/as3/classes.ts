@@ -398,14 +398,14 @@ class ClassEmitter extends Emitter {
 				const f = x.f;
 				const mi = f.k === "member" ? this.memberOf(f.o, f.name) : f.k === "id" && this.cls && this.lookup(f.name) === undefined ? ((!this.isStatic && this.world.member(this.cls, f.name, this.cls)) || this.world.staticInScope(this.cls, f.name)) : null;
 				if (mi?.m.kind === "method") return this.qualify(mi.m.type, mi.owner.file);
-				return "*";
+				return super.typeIn(x);
 			}
 			case "new":
 				if (x.f.k === "id" && this.lookup(x.f.name) === undefined) {
 					const c = this.world.resolve(this.file, x.f.name);
 					if (isClass(c)) return c.q;
 				}
-				return "*";
+				return super.typeIn(x);
 			case "bin":
 				if (x.op === "as" && x.b.k === "id") {
 					const c = this.world.resolve(this.file, x.b.name);

@@ -1,7 +1,8 @@
 /**
  * ActionScript 3: frame scripts (parseScript) and class files (parseClassFile: packages, classes,
- * interfaces, their members). E4X and namespaces are refused: the caller then falls back on what
- * it can recognise without running the script. Metadata is read past ([Embed] is noted).
+ * interfaces, their members), with E4X (XML literals, .@, .., filters). Namespaces are refused: the
+ * caller then falls back on what it can recognise without running the script. Metadata is read
+ * past ([Embed] is noted).
  */
 
 export class ScriptError extends Error {
@@ -14,13 +15,18 @@ export class ScriptError extends Error {
 
 // ------------------------------------------------------------------ tokens
 
-type TokenKind = "id" | "num" | "str" | "regex" | "op" | "end";
+type TokenKind = "id" | "num" | "str" | "regex" | "xml" | "op" | "end";
+
+/** A piece of an XML literal: text, or an {expression} (ctx 0 content, 1 attribute value, 2 name). */
+export type XmlPart = string | { src: string; ctx: number; line: number };
 
 export interface Token {
 	kind: TokenKind;
 	text: string;
 	/** Strings: the value. */
 	value?: string;
+	/** XML literals: their pieces. */
+	parts?: XmlPart[];
 	/** A line break comes before it. */
 	nl: boolean;
 	line: number;
@@ -69,6 +75,87 @@ export function tokenize(src: string): Token[] {
 		line = 1,
 		nl = false;
 	const n = src.length;
+	/** An XML literal from `<` to the end of its root (or of <>...</>), with its {expressions} apart. */
+	const xmlLiteral = (start: number) => {
+		const parts: XmlPart[] = [];
+		const first = line;
+		let j = start,
+			buf = "",
+			depth = 0;
+		const unclosed = () => new ScriptError("XML isn't closed", first);
+		const through = (end: string) => {
+			const e = src.indexOf(end, j);
+			if (e < 0) throw unclosed();
+			const piece = src.slice(j, e + end.length);
+			for (const ch of piece) if (ch === "\n") line++;
+			buf += piece;
+			j = e + end.length;
+		};
+		const expr = (ctx: number) => {
+			let d = 0,
+				k = j;
+			for (; k < n; k++) {
+				const ch = src[k]!;
+				if (ch === '"' || ch === "'") {
+					// (a string of the expression: its escapes too)
+					let e = k + 1;
+					while (e < n && src[e] !== ch) e += src[e] === "\\" ? 2 : 1;
+					if (e >= n) throw unclosed();
+					k = e;
+				} else if (ch === "{") d++;
+				else if (ch === "}" && !--d) break;
+			}
+			if (k >= n) throw new ScriptError("An expression in XML isn't closed", line);
+			if (buf) parts.push(buf);
+			buf = "";
+			parts.push({ src: src.slice(j + 1, k), ctx, line });
+			for (let q = j; q < k; q++) if (src[q] === "\n") line++;
+			j = k + 1;
+		};
+		for (;;) {
+			if (j >= n) throw unclosed();
+			const ch = src[j]!;
+			if (ch === "<") {
+				if (src.startsWith("<!--", j)) through("-->");
+				else if (src.startsWith("<![CDATA[", j)) through("]]>");
+				else if (src.startsWith("<?", j)) through("?>");
+				else {
+					const closing = src[j + 1] === "/";
+					let alone = false;
+					buf += "<";
+					j++;
+					while (j < n && src[j] !== ">") {
+						const t = src[j]!;
+						if (t === '"' || t === "'") {
+							const e = src.indexOf(t, j + 1);
+							if (e < 0) throw unclosed();
+							buf += src.slice(j, e + 1);
+							j = e + 1;
+						} else if (t === "{") expr(/=\s*$/.test(buf) ? 1 : 2);
+						else {
+							if (t === "/" && src[j + 1] === ">") alone = true;
+							if (t === "\n") line++;
+							buf += t;
+							j++;
+						}
+					}
+					if (j >= n) throw unclosed();
+					buf += ">";
+					j++;
+					if (closing) depth--;
+					else if (!alone) depth++;
+					if (depth <= 0) break;
+				}
+			} else if (ch === "{") expr(0);
+			else {
+				if (ch === "\n") line++;
+				buf += ch;
+				j++;
+			}
+		}
+		if (buf) parts.push(buf);
+		return { end: j, parts };
+	};
 	const startsValue = () => {
 		const t = out[out.length - 1];
 		if (!t) return true;
@@ -164,9 +251,14 @@ export function tokenize(src: string): Token[] {
 			i = j;
 			continue;
 		}
-		if (c === "<" && startsValue() && out[out.length - 1]?.text !== "new" && /[A-Za-z/]/.test(src[i + 1] ?? "")) throw new ScriptError("XML in scripts isn't supported", line);
+		if (c === "<" && startsValue() && out[out.length - 1]?.text !== "new" && /[A-Za-z_>!?{]/.test(src[i + 1] ?? "")) {
+			const x = xmlLiteral(i);
+			out.push({ kind: "xml", text: src.slice(i, x.end), parts: x.parts, ...at });
+			i = x.end;
+			continue;
+		}
 		const op = OPS.find((o) => src.startsWith(o, i)) ?? c;
-		if (!/[{}()[\];,.?:~!<>=+\-*/%&|^]/.test(c)) throw new ScriptError(`Unexpected character ${c}`, line);
+		if (!/[{}()[\];,.?:~!<>=+\-*/%&|^@]/.test(c)) throw new ScriptError(`Unexpected character ${c}`, line);
 		out.push({ kind: "op", text: op, ...at });
 		i += op.length;
 	}
@@ -197,7 +289,17 @@ export type Expr =
 	| { k: "call"; f: Expr; args: Expr[] }
 	| { k: "new"; f: Expr; args: Expr[] }
 	| { k: "vector"; of: string }
-	| { k: "seq"; items: Expr[] };
+	| { k: "seq"; items: Expr[] }
+	// E4X
+	| { k: "xml"; list: boolean; parts: (string | { x: Expr; ctx: number })[] }
+	/** o.@name, o.@*, o.@[i]; `o` null: an attribute of the item a filter looks at */
+	| { k: "xattr"; o: Expr | null; name: string | null; i?: Expr }
+	/** o..name, o..@name, o..* */
+	| { k: "xdesc"; o: Expr; name: string }
+	/** o.* */
+	| { k: "xchild"; o: Expr; name: string }
+	/** o.(predicate) */
+	| { k: "xfilter"; o: Expr; pred: Expr };
 
 export interface VarDecl {
 	name: string;
@@ -442,6 +544,23 @@ function parser(src: string, classes: boolean) {
 			p++;
 			return { k: "regex", v: t.text };
 		}
+		if (t.kind === "xml") {
+			p++;
+			const parts = t.parts!.map((q) => {
+				if (typeof q === "string") return q;
+				try {
+					return { x: parser(q.src, classes).expr(), ctx: q.ctx };
+				} catch (e) {
+					if (e instanceof ScriptError) throw new ScriptError(e.message, q.line + e.line - 1);
+					throw e;
+				}
+			});
+			return { k: "xml", list: /^<\s*>/.test(t.text), parts };
+		}
+		if (t.kind === "op" && t.text === "@") {
+			p++;
+			return attrRest(null);
+		}
 		if (t.kind === "id") {
 			switch (t.text) {
 				case "this":
@@ -508,8 +627,19 @@ function parser(src: string, classes: boolean) {
 			expect("}");
 			return { k: "object", props };
 		}
-		if (t.text === "<") fail("XML in scripts isn't supported");
 		return fail(`Unexpected ${t.text || "end of the script"}`);
+	}
+
+	/** After @: a name, *, or [expression]. */
+	function attrRest(o: Expr | null): Expr {
+		if (eat("*")) return { k: "xattr", o, name: "*" };
+		if (eat("[")) {
+			const i = expression();
+			expect("]");
+			return { k: "xattr", o, name: null, i };
+		}
+		if (is("::") || toks[p + 1]?.text === "::") fail("XML namespaces aren't supported");
+		return { k: "xattr", o, name: ident() };
 	}
 
 	function newExpr(): Expr {
@@ -551,9 +681,24 @@ function parser(src: string, classes: boolean) {
 		for (;;) {
 			if (is(".")) {
 				p++;
-				if (is("@") || is("(")) fail("XML in scripts isn't supported");
-				x = { k: "member", o: x, name: ident() };
-			} else if (is("..") || is("::")) fail("XML and namespaces in scripts aren't supported");
+				if (eat("@")) x = attrRest(x);
+				else if (eat("*")) x = { k: "xchild", o: x, name: "*" };
+				else if (eat("(")) {
+					const saved = noIn;
+					noIn = false;
+					const pred = expression();
+					noIn = saved;
+					expect(")");
+					x = { k: "xfilter", o: x, pred };
+				} else {
+					x = { k: "member", o: x, name: ident() };
+					if (is("::")) fail("XML namespaces aren't supported");
+				}
+			} else if (is("..")) {
+				p++;
+				if (eat("@")) x = { k: "xdesc", o: x, name: `@${eat("*") ? "*" : ident()}` };
+				else x = { k: "xdesc", o: x, name: eat("*") ? "*" : ident() };
+			} else if (is("::")) fail("Namespaces in scripts aren't supported");
 			else if (is("[")) {
 				p++;
 				const saved = noIn;
@@ -602,7 +747,7 @@ function parser(src: string, classes: boolean) {
 		}
 		const t = peek();
 		if (t.kind === "op" && ASSIGN.has(t.text)) {
-			if (c.k !== "id" && c.k !== "member" && c.k !== "index") fail("This can't be assigned to");
+			if (c.k !== "id" && c.k !== "member" && c.k !== "index" && c.k !== "xattr") fail("This can't be assigned to");
 			p++;
 			return { k: "assign", op: t.text, a: c, b: assignment() };
 		}
@@ -920,6 +1065,11 @@ function parser(src: string, classes: boolean) {
 	}
 
 	return {
+		expr(): Expr {
+			const x = expression();
+			if (peek().kind !== "end") fail(`Unexpected ${peek().text}`);
+			return x;
+		},
 		script(): Stmt[] {
 			const out: Stmt[] = [];
 			while (peek().kind !== "end") out.push(statement());

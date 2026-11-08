@@ -45,6 +45,9 @@ export const GLOBALS = new Set([
 
 /** What `$f` gives: the part of the Flash API the runtime has (see src/player/script.ts). */
 export const FLASH_API = new Set([
+	"XML",
+	"XMLList",
+	"isXMLName",
 	"FLVPlayback",
 	"VideoEvent",
 	"MetadataEvent",
@@ -196,6 +199,50 @@ export const FLASH_API = new Set([
 	"DropShadowFilter",
 ]);
 
+/** E4X: the methods of XML and XMLList (a child of such a name is reached through $r.xc), and what they give. */
+const XML_RETURNS: Record<string, string> = {
+	attribute: "XMLList",
+	attributes: "XMLList",
+	child: "XMLList",
+	children: "XMLList",
+	elements: "XMLList",
+	descendants: "XMLList",
+	text: "XMLList",
+	comments: "XMLList",
+	processingInstructions: "XMLList",
+	parent: "XML",
+	appendChild: "XML",
+	prependChild: "XML",
+	insertChildAfter: "XML",
+	insertChildBefore: "XML",
+	setChildren: "XML",
+	replace: "XML",
+	normalize: "XML",
+	copy: "",
+	name: "String",
+	localName: "String",
+	nodeKind: "String",
+	toString: "String",
+	toXMLString: "String",
+	length: "int",
+	childIndex: "int",
+	hasOwnProperty: "Boolean",
+	contains: "Boolean",
+	hasSimpleContent: "Boolean",
+	hasComplexContent: "Boolean",
+	valueOf: "",
+	setName: "*",
+	setLocalName: "*",
+	namespace: "*",
+	inScopeNamespaces: "*",
+	addNamespace: "*",
+	removeNamespace: "*",
+	setNamespace: "*",
+	namespaceDeclarations: "*",
+	propertyIsEnumerable: "Boolean",
+};
+const XMLISH = new Set(["XML", "XMLList"]);
+
 /** JavaScript's reserved words that are plain names in AS3. */
 const JS_RESERVED = new Set(["await", "let", "yield", "async", "of", "enum", "implements", "private", "public", "protected", "static", "eval", "with", "debugger", "export", "extends", "class", "super"]);
 
@@ -304,14 +351,44 @@ export class Emitter {
 	protected self = "$t";
 	/** Rendering what is called: a method stays a method (not one bound to its object). */
 	protected calling = false;
+	/** In an E4X filter's predicate: names are looked up on the item first ($x). */
+	protected filters = 0;
 
 	/** The declared type of an expression, as far as it is known here. */
 	protected typeIn(x: Expr): string {
-		if (x.k === "id") return this.lookup(x.name) ?? this.members.get(x.name) ?? this.klass?.member(x.name)?.type ?? "*";
+		if (x.k === "id") return this.filters ? "XMLList" : (this.lookup(x.name) ?? this.members.get(x.name) ?? this.klass?.member(x.name)?.type ?? "*");
 		if (x.k === "member" && x.o.k === "this") return this.members.get(x.name) ?? "*";
 		if (x.k === "index") {
-			const m = /^Vector\.<(.*)>$/.exec(this.typeIn(x.o));
+			const t = this.typeIn(x.o);
+			const m = /^Vector\.<(.*)>$/.exec(t);
 			if (m) return m[1]!;
+			if (XMLISH.has(t)) return "XML";
+		}
+		return this.xmlType(x);
+	}
+
+	/** E4X: XML or XMLList where an expression is one, else "*". */
+	protected xmlType(x: Expr): string {
+		switch (x.k) {
+			case "xml":
+				return x.list ? "XMLList" : "XML";
+			case "xattr":
+			case "xdesc":
+			case "xchild":
+			case "xfilter":
+				return "XMLList";
+			case "member":
+				return x.o.k !== "this" && XMLISH.has(this.typeIn(x.o)) ? "XMLList" : "*";
+			case "new":
+				return x.f.k === "id" && XMLISH.has(x.f.name) && this.lookup(x.f.name) === undefined ? x.f.name : "*";
+			case "call": {
+				const f = x.f;
+				if (f.k === "id" && XMLISH.has(f.name) && this.lookup(f.name) === undefined) return f.name;
+				const on = f.k === "member" ? this.typeIn(f.o) : f.k === "id" && this.filters && this.lookup(f.name) === undefined ? "XML" : "";
+				const name = f.k === "member" || f.k === "id" ? f.name : "";
+				if (!XMLISH.has(on) || !(name in XML_RETURNS)) return "*";
+				return XML_RETURNS[name] || on;
+			}
 		}
 		return "*";
 	}
@@ -390,7 +467,24 @@ export class Emitter {
 			case "lit":
 				return x.v;
 			case "id":
+				// (in a filter's predicate the item's children come first, as in a with block)
+				if (this.filters && !this.calling) return `$r.xn($x,${JSON.stringify(x.name)},${this.ref(x.name)})`;
 				return this.ref(x.name);
+			case "xml":
+				return `$r.xml(${x.list ? 1 : 0}${x.parts.map((q) => (typeof q === "string" ? `,${JSON.stringify(q)}` : `,[${q.ctx},${this.plain(q.x)}]`)).join("")})`;
+			case "xattr":
+				return `$r.xa(${x.o ? this.plain(x.o) : "$x"},${x.name !== null ? JSON.stringify(x.name) : this.plain(x.i!)})`;
+			case "xdesc":
+				return `$r.xd(${this.plain(x.o)},${JSON.stringify(x.name)})`;
+			case "xchild":
+				return `$r.xc(${this.plain(x.o)},${JSON.stringify(x.name)})`;
+			case "xfilter": {
+				const o = this.plain(x.o);
+				this.filters++;
+				const pred = this.plain(x.pred);
+				this.filters--;
+				return `$r.xf(${o},($x)=>${pred})`;
+			}
 			case "this":
 				return this.self;
 			case "super":
@@ -402,6 +496,8 @@ export class Emitter {
 			case "func":
 				return this.func(x.f, true);
 			case "unary":
+				if (x.op === "delete" && x.x.k === "xattr") return `$r.xdel(${x.x.o ? this.plain(x.x.o) : "$x"},${x.x.name !== null ? JSON.stringify(`@${x.x.name}`) : `"@"+(${this.plain(x.x.i!)})`})`;
+				if (x.op === "typeof" && XMLISH.has(this.typeIn(x.x))) return '"xml"';
 				if (x.op === "typeof" && x.x.k === "id") {
 					// (a typed variable has its type's name, null or not; a class is an object)
 					const t = this.typeIn(x.x);
@@ -434,6 +530,14 @@ export class Emitter {
 			case "bin":
 				return this.binary(x);
 			case "assign": {
+				if (x.a.k === "xattr") {
+					const o = x.a.o ? this.plain(x.a.o) : "$x";
+					const n = x.a.name !== null ? JSON.stringify(`@${x.a.name}`) : `"@"+(${this.plain(x.a.i!)})`;
+					const v = this.plain(x.b);
+					return x.op === "=" ? `$r.xs(${o},${n},${v})` : `$r.xs(${o},${n},$r.xa(${o},${n}.slice(1))${x.op.slice(0, -1)}(${v}))`;
+				}
+				// (a child named like a method of XML)
+				if (x.a.k === "member" && x.op === "=" && x.a.name in XML_RETURNS && XMLISH.has(this.typeIn(x.a.o))) return `$r.xs(${this.plain(x.a.o)},${JSON.stringify(x.a.name)},${this.plain(x.b)})`;
 				if (x.a.k === "index" && this.isVector(x.a.o)) {
 					const o = this.expr(x.a.o),
 						i = this.expr(x.a.i),
@@ -488,6 +592,8 @@ export class Emitter {
 
 	protected member(o: Expr, name: string): string {
 		if (this.inPackage(o)) return this.ref(name);
+		// (E4X: the children of that name, not the method of XML)
+		if (!this.calling && name in XML_RETURNS && XMLISH.has(this.typeIn(o))) return `$r.xc(${this.plain(o)},${JSON.stringify(name)})`;
 		// constants of AS3's Array
 		if (o.k === "id" && o.name === "Array" && this.lookup("Array") === undefined) {
 			const c: Record<string, number> = { CASEINSENSITIVE: 1, DESCENDING: 2, UNIQUESORT: 4, RETURNINDEXEDARRAY: 8, NUMERIC: 16 };
@@ -514,6 +620,7 @@ export class Emitter {
 	}
 
 	protected binary(x: Extract<Expr, { k: "bin" }>): string {
+		if ((x.op === "==" || x.op === "!=") && (XMLISH.has(this.typeIn(x.a)) || XMLISH.has(this.typeIn(x.b)))) return `(${x.op === "!=" ? "!" : ""}$r.xeq(${this.plain(x.a)},${this.plain(x.b)}))`;
 		const a = this.expr(x.a);
 		if (x.op === "as" || x.op === "is") {
 			if (x.b.k === "vector") return `$r.${x.op}(${a},${this.expr(x.b)})`;
@@ -538,6 +645,9 @@ export class Emitter {
 		if (f.k === "vector") return `$r.vec(${JSON.stringify(f.of)},${list})`;
 		if (f.k === "id" && this.lookup(f.name) === undefined && !this.members.has(f.name) && !this.klass?.member(f.name)) {
 			// conversions
+			if (f.name === "XML") return `$f.XML.$from(${list})`;
+			if (f.name === "XMLList") return `new $f.XMLList(${list})`;
+			if (this.filters && f.name in XML_RETURNS) return `$x.${f.name}(${list})`;
 			if (f.name === "int") return `(${list}|0)`;
 			if (f.name === "uint") return `(${list}>>>0)`;
 			if (f.name === "String" && args.length === 1) return `$r.text(${list})`;

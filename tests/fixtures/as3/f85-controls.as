@@ -99,6 +99,8 @@ try { tick.toggle = false; } catch (e:Error) { trace(e.message.substr(9)); }
 try { one.toggle = false; } catch (e:Error) { trace(e.message.substr(9)); }
 try { pick.getItemAt(99); } catch (e:Error) { trace(e is RangeError, e.message); }
 try { new DataProvider(5); } catch (e:Error) { trace(e is TypeError, e.message); }
+var fromXml:DataProvider = new DataProvider(<list><i label="Apple" data="1"/><i label="Pear"><data>2</data><more><x/></more></i></list>);
+trace("xml provider", fromXml.length, fromXml.getItemAt(0).label, fromXml.getItemAt(0).data, fromXml.getItemAt(1).label, fromXml.getItemAt(1).data, fromXml.getItemAt(1).more);
 
 trace(ProgressBarMode.EVENT, ProgressBarMode.POLLED, ProgressBarMode.MANUAL, ProgressBarDirection.RIGHT, ProgressBarDirection.LEFT, SliderDirection.HORIZONTAL, SliderDirection.VERTICAL, ButtonLabelPlacement.RIGHT, ButtonLabelPlacement.LEFT, ButtonLabelPlacement.TOP, ButtonLabelPlacement.BOTTOM);
 trace(ComponentEvent.ENTER, ComponentEvent.SHOW, ComponentEvent.HIDE, ComponentEvent.MOVE, ComponentEvent.RESIZE, ComponentEvent.LABEL_CHANGE, ComponentEvent.BUTTON_DOWN, SliderEvent.CHANGE, SliderEvent.THUMB_DRAG, SliderEvent.THUMB_PRESS, SliderEvent.THUMB_RELEASE, ListEvent.ITEM_CLICK, ListEvent.ITEM_ROLL_OVER, ListEvent.ITEM_ROLL_OUT, ListEvent.ITEM_DOUBLE_CLICK, ColorPickerEvent.CHANGE, ColorPickerEvent.ENTER, ColorPickerEvent.ITEM_ROLL_OVER, ColorPickerEvent.ITEM_ROLL_OUT);
