@@ -15,6 +15,10 @@ Restart Animate after installing. With the zip install, CEP's debug mode must be
 
 The Flash2SVG panel was saved as open in your workspace and then the extension was removed. Install it again, start Animate, close the panel, quit Animate — then remove it. See [Remove it safely](installation.md#remove-it-safely).
 
+### Animate hangs when it quits
+
+A bug of Animate 2024: once a document with a motion tween has been saved (an export saves a copy of it too), Animate hangs when it quits if that document was closed on its own first (*File › Close*). Quit with the document still open, or close all documents at once (*File › Close All*): then it quits normally. Nothing is lost: by then everything is saved.
+
 ### The animation doesn't move
 
 - In an `<img>`, a **JS player** export shows only its first frame: use `<object>`, inline it or use `<flash2svg-player>` ([Embedding](embedding.md)).

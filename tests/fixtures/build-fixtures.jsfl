@@ -106,7 +106,9 @@
 		var uri = outDir + "/" + name + ".fla";
 		if (FLfile.exists(uri)) FLfile.remove(uri);
 		var ok = fl.saveDocument(doc, uri);
-		fl.closeDocument(doc, false);
+		// (all at once: Animate 2024 hangs when it quits after a document with a motion tween was saved
+		// and then closed on its own; one document is open at a time here)
+		fl.closeAll(false);
 		log.push(name + ": " + (ok ? "saved" : "SAVE FAILED"));
 	}
 	function build(name, fn) {
@@ -2831,7 +2833,7 @@
 			var uri = outDir + "/" + name + ".fla";
 			if (FLfile.exists(uri)) FLfile.remove(uri);
 			var ok = fl.saveDocument(doc, uri);
-			fl.closeDocument(doc, false);
+			fl.closeAll(false);
 			log.push(name + ": " + (ok ? "saved" : "SAVE FAILED"));
 		} catch (e) {
 			log.push(name + ": ERROR " + e + (e.lineNumber ? " line " + e.lineNumber : ""));
@@ -2858,7 +2860,7 @@
 				doc = fl.openDocument(uri);
 				fn();
 				fl.saveDocument(doc, uri);
-				fl.closeDocument(doc, false);
+				fl.closeAll(false);
 			} catch (e) {
 				log.push(name + ": ERROR " + e);
 			}

@@ -219,6 +219,16 @@ JSFL to measure it: a curve fitted through the frames). The JS player could move
 with `offset-path` in its Web Animations too. Firefox's SMIL draws f09 wrong far into the loop
 (~8 minutes, before this package too).
 
+**25. Animate hanging on quit** (2026-11-08): reproduced every time with one motion tween (f06):
+Animate 2024 hangs when it quits after a document with an object-based motion tween was saved —
+`save`, `saveAsCopy` (FLA or XFL, as the extractor's working copy), with or without waiting until the
+file is written — and then closed on its own (`fl.closeDocument`, `document.close`). `fl.closeAll`
+closing it, or quitting with it open, is fine; a document without a motion tween is fine. Found by
+cutting the extractor down step by step (`tools/probe/quit-hang.jsfl` keeps the cases). The test
+scripts closed each document after its export: they close all now (extraction of f06 and f99 then
+quits in 22 s instead of hanging), and the guide tells users to quit with the document open or close
+all at once.
+
 **24. Video from the command line** (2026-11-08): the panel's encoding moved behind an interface
 (`src/core/video-codecs.ts`: WebCodecs and Web Audio, nothing more); the command line loads that
 code (4.3 KB) into an installed Chrome or Edge it starts hidden and drives over the DevTools
@@ -368,7 +378,7 @@ Animate as before: an own test document, real keys and clicks where a user is in
 | 22 | **Unverified Animate features:** test documents for art, pattern and fluid brushes, Flexi bones, the envelope deformer, warps with "Auto convert vector to bitmap" off, 9-slice on animated symbols with nested symbols | certainty, fixes for what they show | medium | ✅ f100, f101; vector warps fixed (see below); fluid brush, Flexi bones, envelope ❓ |
 | 23 | **Smaller gaps in the output:** lottie-web's faint inner gradient bevel, the rim of a gradient bevel, CSS filter functions, Firefox's SMIL drifting far into long loops | fidelity | low–medium | ✅ lottie-web bevel fixed; the other three measured and kept (see below) |
 | 24 | **MP4 and WebM from the command line:** the CLI has no video encoder; through an installed browser or a WebAssembly encoder | batch export of video | medium | ✅ an installed Chrome or Edge, driven over its DevTools protocol (`src/cli/browser-codecs.ts`); `e2e-videofile.ts --cli` |
-| 25 | **Why Animate crashes quitting:** after the full batch of test documents, 2 of 4 runs, all work done by then. Find out whether a document or the extractor causes it | a user's Animate must not crash | low, if it can be reproduced | ⬜ |
+| 25 | **Why Animate crashes quitting:** after the full batch of test documents, 2 of 4 runs, all work done by then. Find out whether a document or the extractor causes it | a user's Animate must not crash | low, if it can be reproduced | ✅ an Animate bug, reproduced (see below); the test scripts avoid it, the guide says how |
 
 Video embedded in the timeline stays out unless Animate turns out to hand over its frames: only FLV
 can be embedded, and browsers can't play it.

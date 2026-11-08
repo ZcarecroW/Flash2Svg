@@ -35,7 +35,9 @@
 				var ok = doc.exportPNG(outRoot + "/" + name + "/ref/f.png", true, false);
 				log.push(name + " png: " + ok);
 			}
-			fl.closeDocument(doc, false);
+			// (all at once: Animate 2024 hangs when it quits after a document with a motion tween was
+			// saved, the copy the export makes too, and then closed on its own)
+			fl.closeAll(false);
 		} catch (e) {
 			log.push(name + " ERROR " + e + (e.lineNumber ? " line " + e.lineNumber : ""));
 		}
