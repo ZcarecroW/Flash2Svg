@@ -48,6 +48,8 @@ export const FLASH_API = new Set([
 	"XML",
 	"XMLList",
 	"isXMLName",
+	"Namespace",
+	"QName",
 	"FLVPlayback",
 	"VideoEvent",
 	"MetadataEvent",
@@ -376,6 +378,7 @@ export class Emitter {
 			case "xdesc":
 			case "xchild":
 			case "xfilter":
+			case "xq":
 				return "XMLList";
 			case "member":
 				return x.o.k !== "this" && XMLISH.has(this.typeIn(x.o)) ? "XMLList" : "*";
@@ -473,9 +476,13 @@ export class Emitter {
 			case "xml":
 				return `$r.xml(${x.list ? 1 : 0}${x.parts.map((q) => (typeof q === "string" ? `,${JSON.stringify(q)}` : `,[${q.ctx},${this.plain(q.x)}]`)).join("")})`;
 			case "xattr":
+				if (x.ns) return `$r.xq(${x.o ? this.plain(x.o) : "$x"},${this.plain(x.ns)},${JSON.stringify(x.name)},1)`;
 				return `$r.xa(${x.o ? this.plain(x.o) : "$x"},${x.name !== null ? JSON.stringify(x.name) : this.plain(x.i!)})`;
 			case "xdesc":
+				if (x.ns) return `$r.xq(${this.plain(x.o)},${this.plain(x.ns)},${JSON.stringify(x.name.replace(/^@/, ""))},${x.name[0] === "@" ? 3 : 2})`;
 				return `$r.xd(${this.plain(x.o)},${JSON.stringify(x.name)})`;
+			case "xq":
+				return `$r.xq(${this.plain(x.o)},${this.plain(x.ns)},${JSON.stringify(x.name)},0)`;
 			case "xchild":
 				return `$r.xc(${this.plain(x.o)},${JSON.stringify(x.name)})`;
 			case "xfilter": {
@@ -646,6 +653,7 @@ export class Emitter {
 		if (f.k === "id" && this.lookup(f.name) === undefined && !this.members.has(f.name) && !this.klass?.member(f.name)) {
 			// conversions
 			if (f.name === "XML") return `$f.XML.$from(${list})`;
+			if (f.name === "Namespace" || f.name === "QName") return `new $f.${f.name}(${list})`;
 			if (f.name === "XMLList") return `new $f.XMLList(${list})`;
 			if (this.filters && f.name in XML_RETURNS) return `$x.${f.name}(${list})`;
 			if (f.name === "int") return `(${list}|0)`;
@@ -750,6 +758,8 @@ export class Emitter {
 				return `throw ${this.expr(s.x)};`;
 			case "label":
 				return `${s.name}:${this.stmt(s.body, top)}`;
+			case "xmlns":
+				return `$r.xdns(${this.plain(s.x)});`;
 			case "try": {
 				let out = `try{${s.body.map(body).join("")}}`;
 				if (s.catches.length) {

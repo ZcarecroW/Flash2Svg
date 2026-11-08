@@ -1,8 +1,8 @@
 /**
  * ActionScript 3: frame scripts (parseScript) and class files (parseClassFile: packages, classes,
- * interfaces, their members), with E4X (XML literals, .@, .., filters). Namespaces are refused: the
- * caller then falls back on what it can recognise without running the script. Metadata is read
- * past ([Embed] is noted).
+ * interfaces, their members), with E4X (XML literals, .@, .., filters, XML namespaces). Namespaces of
+ * code (use namespace, mx_internal) are refused: the caller then falls back on what it can recognise
+ * without running the script. Metadata is read past ([Embed] is noted).
  */
 
 export class ScriptError extends Error {
@@ -292,10 +292,12 @@ export type Expr =
 	| { k: "seq"; items: Expr[] }
 	// E4X
 	| { k: "xml"; list: boolean; parts: (string | { x: Expr; ctx: number })[] }
-	/** o.@name, o.@*, o.@[i]; `o` null: an attribute of the item a filter looks at */
-	| { k: "xattr"; o: Expr | null; name: string | null; i?: Expr }
-	/** o..name, o..@name, o..* */
-	| { k: "xdesc"; o: Expr; name: string }
+	/** o.@name, o.@*, o.@[i], o.@ns::name; `o` null: an attribute of the item a filter looks at */
+	| { k: "xattr"; o: Expr | null; name: string | null; i?: Expr; ns?: Expr }
+	/** o..name, o..@name, o..*, o..ns::name */
+	| { k: "xdesc"; o: Expr; name: string; ns?: Expr }
+	/** o.ns::name, o.ns::* */
+	| { k: "xq"; o: Expr; ns: Expr; name: string }
 	/** o.* */
 	| { k: "xchild"; o: Expr; name: string }
 	/** o.(predicate) */
@@ -393,6 +395,8 @@ export type Stmt =
 	| { k: "try"; body: Stmt[]; catches: { param: string; type: string; body: Stmt[] }[]; final: Stmt[] | null }
 	| { k: "label"; name: string; body: Stmt }
 	| { k: "expr"; x: Expr }
+	/** default xml namespace = x */
+	| { k: "xmlns"; x: Expr }
 	| { k: "empty" };
 
 // ------------------------------------------------------------------ parser
@@ -630,16 +634,23 @@ function parser(src: string, classes: boolean) {
 		return fail(`Unexpected ${t.text || "end of the script"}`);
 	}
 
-	/** After @: a name, *, or [expression]. */
+	/** A name of E4X: name, *, or ns::name, ns::* (`ns` a variable holding a Namespace). */
+	function qualName(): { ns?: Expr; name: string } {
+		if (eat("*")) return { name: "*" };
+		const first = ident();
+		if (eat("::")) return { ns: { k: "id", name: first }, name: eat("*") ? "*" : ident() };
+		return { name: first };
+	}
+
+	/** After @: a name, *, ns::name, or [expression]. */
 	function attrRest(o: Expr | null): Expr {
-		if (eat("*")) return { k: "xattr", o, name: "*" };
 		if (eat("[")) {
 			const i = expression();
 			expect("]");
 			return { k: "xattr", o, name: null, i };
 		}
-		if (is("::") || toks[p + 1]?.text === "::") fail("XML namespaces aren't supported");
-		return { k: "xattr", o, name: ident() };
+		const q = qualName();
+		return { k: "xattr", o, name: q.name, ...(q.ns ? { ns: q.ns } : {}) };
 	}
 
 	function newExpr(): Expr {
@@ -691,13 +702,15 @@ function parser(src: string, classes: boolean) {
 					expect(")");
 					x = { k: "xfilter", o: x, pred };
 				} else {
-					x = { k: "member", o: x, name: ident() };
-					if (is("::")) fail("XML namespaces aren't supported");
+					const name = ident();
+					if (eat("::")) x = { k: "xq", o: x, ns: { k: "id", name }, name: eat("*") ? "*" : ident() };
+					else x = { k: "member", o: x, name };
 				}
 			} else if (is("..")) {
 				p++;
-				if (eat("@")) x = { k: "xdesc", o: x, name: `@${eat("*") ? "*" : ident()}` };
-				else x = { k: "xdesc", o: x, name: eat("*") ? "*" : ident() };
+				const attr = eat("@");
+				const q = qualName();
+				x = { k: "xdesc", o: x, name: `${attr ? "@" : ""}${q.name}`, ...(q.ns ? { ns: q.ns } : {}) };
 			} else if (is("::")) fail("Namespaces in scripts aren't supported");
 			else if (is("[")) {
 				p++;
@@ -805,6 +818,15 @@ function parser(src: string, classes: boolean) {
 					return { k: "empty" };
 				case "use":
 					fail("Namespaces in scripts aren't supported");
+					break;
+				case "default":
+					if (toks[p + 1]?.text === "xml" && toks[p + 2]?.text === "namespace") {
+						p += 3;
+						expect("=");
+						const x = assignment();
+						semi();
+						return { k: "xmlns", x };
+					}
 					break;
 				case "class":
 				case "interface":

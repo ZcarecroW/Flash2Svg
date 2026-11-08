@@ -74,7 +74,7 @@ describe("AS3 parser", () => {
 			return null;
 		};
 		expect(err("/* a\n b */\n\n)")?.line).toBe(4);
-		expect(err("var x = a.ns::b;")?.message).toMatch(/amespace/);
+		expect(err("use namespace mx_internal;")?.message).toMatch(/amespace/);
 		expect(err("class A {}")?.message).toMatch(/class/);
 		expect(err('var s = "open')?.message).toMatch(/string/);
 	});
@@ -202,5 +202,36 @@ describe("which frame scripts run", () => {
 	it("runs a counter two frames share: a list counts passes over one frame", () => {
 		expect(runs("this.n = 0;", "if (++this.n == 3) stop();")).toBe(true);
 		expect(runs("if (++this.n == 3) stop();", "if (++this.m == 3) stop();")).toBe(false);
+	});
+});
+
+describe("E4X", () => {
+	it("reads XML literals with their {expressions} apart: in content, attribute values and names", () => {
+		const t = tokenize('var x:XML = <a {n}="1" b={v + "}"}>{"<" + 1}<c/></a>;').find((k) => k.kind === "xml")!;
+		expect(t.parts).toEqual(['<a ', { src: "n", ctx: 2, line: 1 }, '="1" b=', { src: 'v + "}"', ctx: 1, line: 1 }, ">", { src: '"<" + 1', ctx: 0, line: 1 }, "<c/></a>"]);
+		expect(tokenize("a < b").map((k) => k.kind)).toEqual(["id", "op", "id", "end"]);
+		expect(tokenize("new <int>[1]").map((k) => k.text).slice(0, 4)).toEqual(["new", "<", "int", ">"]);
+		expect(tokenize("var l = <><a/><b/></>;").find((k) => k.kind === "xml")?.text).toBe("<><a/><b/></>");
+	});
+
+	it("reads attributes, descendants, filters and qualified names", () => {
+		const [s] = parseScript('x.item.(@id == "1")..ns::name.@*;') as [{ k: "expr"; x: unknown }];
+		expect(JSON.stringify(s.x)).toBe(
+			JSON.stringify({ k: "xattr", o: { k: "xdesc", o: { k: "xfilter", o: { k: "member", o: { k: "id", name: "x" }, name: "item" }, pred: { k: "bin", op: "==", a: { k: "xattr", o: null, name: "id" }, b: { k: "str", v: "1" } } }, name: "name", ns: { k: "id", name: "ns" } }, name: "*" }),
+		);
+		expect(parseScript("default xml namespace = atom;")[0]).toEqual({ k: "xmlns", x: { k: "id", name: "atom" } });
+		expect(parseScript("x.@id = 2; delete x.@id;").length).toBe(2);
+	});
+
+	it("compiles E4X to the XML part's helpers, == between XML values too", () => {
+		const c = compileScripts([{ frame: 0, code: 'var x:XML = <a><b id="1"/></a>; trace(x.b.@id, x..b.length(), x.b.(@id == "1").length(), x.name, x == x.copy(), typeof x);' }]);
+		expect(c.failed).toEqual([]);
+		expect(c.js).toMatch(/\$r\.xml\(0,"<a><b id=\\"1\\"\/><\/a>"\)/);
+		expect(c.js).toMatch(/\$r\.xa\(/);
+		expect(c.js).toMatch(/\$r\.xd\(/);
+		expect(c.js).toMatch(/\$r\.xf\(.*\(\$x\)=>/);
+		expect(c.js).toMatch(/\$r\.xc\(\$t\.x,"name"\)/);
+		expect(c.js).toMatch(/\$r\.xeq\(/);
+		expect(c.js).toMatch(/"xml"/);
 	});
 });

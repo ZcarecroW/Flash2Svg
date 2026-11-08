@@ -8,6 +8,10 @@
  * An XML or XMLList object is a Proxy: what isn't one of its methods is a child by that name
  * (`x.item`, `x.item[0]`), as in E4X. The compiled code reaches attributes, descendants and filters
  * through the helpers (`$r.xa`, `$r.xd`, `$r.xf`...).
+ *
+ * Namespaces as Flash Player has them (f95): an unqualified name finds elements of no namespace and
+ * of the default xml namespace, `ns::name` those of `ns`; `name()` is a QName (`uri::local`);
+ * printing puts the attributes first, then the namespaces (all those in scope at what is printed).
  */
 
 /** Node kinds, in nodeKind()'s words. */
@@ -20,7 +24,12 @@ const KINDS = ["", "element", "attribute", "text", "comment", "processing-instru
 
 class XNode {
 	_k: number;
+	/** Its local name; the prefix it was written with; its namespace. */
 	_name: string;
+	_px = "";
+	_uri = "";
+	/** The namespaces it declares: [prefix, uri] ("" the default). */
+	_ns: [string, string][] | null = null;
 	_v = "";
 	_attrs: XNode[] = [];
 	_kids: XNode[] = [];
@@ -38,6 +47,22 @@ export default function xml(L: any): Record<string, unknown> {
 	const { fail } = L;
 	const settings = { ignoreComments: true, ignoreProcessingInstructions: true, ignoreWhitespace: true, prettyPrinting: true, prettyIndent: 2 };
 	const bad = (id: number, text: string) => fail(TypeError, id, text);
+	/** The default xml namespace (default xml namespace = ...). */
+	let dns = "";
+	const qname = (n: XNode) => (n._px ? `${n._px}:${n._name}` : n._name);
+	/** The namespace a prefix stands for at a node ("" the default one), or undefined. */
+	const lookup = (n: XNode | null, px: string): string | undefined => {
+		for (let x = n; x; x = x._up) for (const [p, u] of x._ns ?? []) if (p === px) return u;
+		return px === "" ? "" : px === "xml" ? "http://www.w3.org/XML/1998/namespace" : undefined;
+	};
+	/** The namespaces in scope at a node, the nearer declaration of a prefix winning (outermost first). */
+	const inScope = (n: XNode): [string, string][] => {
+		const chain: XNode[] = [];
+		for (let x: XNode | null = n; x; x = x._up) chain.unshift(x);
+		const m = new Map<string, string>();
+		for (const x of chain) for (const [p, u] of x._ns ?? []) m.set(p, u);
+		return [...m];
+	};
 
 	// ------------------------------------------------------------------ parsing
 
@@ -106,13 +131,15 @@ export default function xml(L: any): Record<string, unknown> {
 				const e = src.indexOf(">", lt);
 				if (e < 0) throw bad(1090, "XML parser failure: element is malformed.");
 				const name = src.slice(lt + 2, e).trim();
-				if (open.length < 2 || up._name !== name) throw bad(1085, `The element type "${open.length < 2 ? name : up._name}" must be terminated by the matching end-tag "</${open.length < 2 ? name : up._name}>".`);
+				const want = open.length < 2 ? name : qname(up);
+				if (open.length < 2 || want !== name) throw bad(1085, `The element type "${want}" must be terminated by the matching end-tag "</${want}>".`);
 				open.pop();
 				i = e + 1;
 			} else {
 				const m = /^<([^\s/>]+)/.exec(src.slice(lt, lt + 256));
 				if (!m) throw bad(1090, "XML parser failure: element is malformed.");
 				const el = new XNode(ELEMENT, m[1]!);
+				el._up = up;
 				let j = lt + m[0].length;
 				for (;;) {
 					while (j < n && /\s/.test(src[j]!)) j++;
@@ -120,12 +147,26 @@ export default function xml(L: any): Record<string, unknown> {
 					if (src[j] === ">" || src.startsWith("/>", j)) break;
 					const a = /^([^\s=/>]+)\s*=\s*("([^"]*)"|'([^']*)')/.exec(src.slice(j, j + 65536));
 					if (!a) throw bad(1090, "XML parser failure: element is malformed.");
-					const at = new XNode(ATTRIBUTE, a[1]!, unescape(a[3] ?? a[4] ?? ""));
-					at._up = el;
-					el._attrs.push(at);
+					const value = unescape(a[3] ?? a[4] ?? "");
+					if (a[1] === "xmlns" || a[1]!.startsWith("xmlns:")) (el._ns ??= []).push([a[1] === "xmlns" ? "" : a[1]!.slice(6), value]);
+					else {
+						const at = new XNode(ATTRIBUTE, a[1]!, value);
+						at._up = el;
+						el._attrs.push(at);
+					}
 					j += a[0].length;
 				}
-				el._up = up;
+				// (prefixes resolved once its own declarations are known)
+				for (const x of [el, ...el._attrs]) {
+					const c = x._name.indexOf(":");
+					if (c > 0) {
+						x._px = x._name.slice(0, c);
+						x._name = x._name.slice(c + 1);
+					}
+					const uri = x._k === ATTRIBUTE && !x._px ? "" : lookup(el, x._px);
+					if (uri === undefined) throw bad(1083, `The prefix "${x._px}" for element "${x._name}" is not bound.`);
+					x._uri = uri;
+				}
 				up._kids.push(el);
 				if (src[j] === ">") {
 					open.push(el);
@@ -146,7 +187,8 @@ export default function xml(L: any): Record<string, unknown> {
 	const escText = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 	const escAttr = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;").replace(/\n/g, "&#xA;").replace(/\r/g, "&#xD;").replace(/\t/g, "&#x9;");
 
-	function print(node: XNode, level: number): string {
+	/** `root`: what is printed starts here: the namespaces in scope are declared on it. */
+	function print(node: XNode, level: number, root = level === 0): string {
 		const pretty = settings.prettyPrinting;
 		const pad = pretty ? " ".repeat(level * settings.prettyIndent) : "";
 		switch (node._k) {
@@ -159,13 +201,15 @@ export default function xml(L: any): Record<string, unknown> {
 			case PI:
 				return `${pad}<?${node._name} ${node._v}?>`;
 		}
-		const head = `${pad}<${node._name}${node._attrs.map((a) => ` ${a._name}="${escAttr(a._v)}"`).join("")}`;
+		const name = qname(node);
+		const decl = (root ? inScope(node) : (node._ns ?? [])).map(([p, u]) => ` xmlns${p ? `:${p}` : ""}="${escAttr(u)}"`).join("");
+		const head = `${pad}<${name}${node._attrs.map((a) => ` ${qname(a)}="${escAttr(a._v)}"`).join("")}${decl}`;
 		const kids = node._kids;
 		if (!kids.length) return `${head}/>`;
 		// (only text inside: one line)
-		if (kids.length === 1 && kids[0]!._k === TEXT) return `${head}>${escText(kids[0]!._v)}</${node._name}>`;
-		if (!pretty) return `${head}>${kids.map((k) => print(k, 0)).join("")}</${node._name}>`;
-		return `${head}>\n${kids.map((k) => print(k, level + 1)).join("\n")}\n${pad}</${node._name}>`;
+		if (kids.length === 1 && kids[0]!._k === TEXT) return `${head}>${escText(kids[0]!._v)}</${name}>`;
+		if (!pretty) return `${head}>${kids.map((k) => print(k, 0, false)).join("")}</${name}>`;
+		return `${head}>\n${kids.map((k) => print(k, level + 1, false)).join("\n")}\n${pad}</${name}>`;
 	}
 
 	const simple = (node: XNode) => (node._k === ELEMENT ? !node._kids.some((k) => k._k === ELEMENT) : node._k === TEXT || node._k === ATTRIBUTE);
@@ -182,6 +226,10 @@ export default function xml(L: any): Record<string, unknown> {
 
 	const copyNode = (node: XNode): XNode => {
 		const c = new XNode(node._k, node._name, node._v);
+		c._px = node._px;
+		c._uri = node._uri;
+		// (a copy keeps the namespaces it was in)
+		if (node._k === ELEMENT) c._ns = node._up ? inScope(node) : (node._ns?.slice() ?? null);
 		for (const a of node._attrs) {
 			const ca = copyNode(a);
 			ca._up = c;
@@ -197,6 +245,7 @@ export default function xml(L: any): Record<string, unknown> {
 	const same = (a: XNode, b: XNode): boolean =>
 		a._k === b._k &&
 		a._name === b._name &&
+		a._uri === b._uri &&
 		a._v === b._v &&
 		a._attrs.length === b._attrs.length &&
 		a._attrs.every((x) => b._attrs.some((y) => y._name === x._name && y._v === x._v)) &&
@@ -208,6 +257,11 @@ export default function xml(L: any): Record<string, unknown> {
 	/** One XML object for each node, as in Flash Player (x.item[0] === x.item[0]). */
 	const objects = new WeakMap<XNode, any>();
 	const matches = (n: XNode, name: string) => name === "*" || n._name === name;
+	/** An element by name: unqualified (uri undefined) of no namespace or the default one; else of `uri`. */
+	const isElement = (x: XNode, name: string, uri?: string) => x._k === ELEMENT && (name === "*" || x._name === name) && (uri === undefined ? name === "*" || x._uri === "" || x._uri === dns : x._uri === uri);
+	const isAttr = (x: XNode, name: string, uri?: string) => (name === "*" || x._name === name) && (uri === undefined ? name === "*" || x._uri === "" : x._uri === uri);
+	/** A name an XML method is given: text, or a QName. */
+	const nameOf = (q: any): [string, string | undefined] => (q instanceof QNameClass ? [q.localName, q.uri] : [String(q), undefined]);
 
 	/** Nodes of a value an XML method is given: an XML, a list, or text that is parsed. */
 	function nodesOf(v: any): XNode[] {
@@ -223,27 +277,27 @@ export default function xml(L: any): Record<string, unknown> {
 		parent._kids.splice(at, 0, ...fresh);
 	}
 
-	/** The children of the nodes in a list by name, in order (attributes with @). */
-	function childrenOf(nodes: XNode[], name: string): XNode[] {
+	/** The children of the nodes in a list by name, in order (attributes with @); `uri`: of that namespace. */
+	function childrenOf(nodes: XNode[], name: string, uri?: string): XNode[] {
 		const out: XNode[] = [];
 		if (name[0] === "@") {
 			const a = name.slice(1);
-			for (const n of nodes) for (const x of n._attrs) if (matches(x, a)) out.push(x);
-		} else for (const n of nodes) for (const x of n._kids) if (name === "*" ? true : x._k === ELEMENT && x._name === name) out.push(x);
+			for (const n of nodes) for (const x of n._attrs) if (isAttr(x, a, uri)) out.push(x);
+		} else for (const n of nodes) for (const x of n._kids) if (name === "*" && uri === undefined ? true : isElement(x, name, uri)) out.push(x);
 		return out;
 	}
-	function descendantsOf(nodes: XNode[], name: string): XNode[] {
+	function descendantsOf(nodes: XNode[], name: string, uri?: string): XNode[] {
 		const out: XNode[] = [];
 		const attr = name[0] === "@" ? name.slice(1) : null;
 		const walk = (n: XNode) => {
 			for (const k of n._kids) {
 				if (k._k !== ELEMENT) {
-					if (!attr && name === "*") out.push(k);
+					if (!attr && name === "*" && uri === undefined) out.push(k);
 					continue;
 				}
 				if (attr !== null) {
-					for (const a of k._attrs) if (matches(a, attr)) out.push(a);
-				} else if (matches(k, name)) out.push(k);
+					for (const a of k._attrs) if (isAttr(a, attr, uri)) out.push(a);
+				} else if (isElement(k, name, uri)) out.push(k);
 				walk(k);
 			}
 		};
@@ -257,7 +311,7 @@ export default function xml(L: any): Record<string, unknown> {
 		if (name[0] === "@") {
 			const a = name.slice(1);
 			const s = v instanceof XMLListClass ? v._l.map(text).join(" ") : String(v);
-			const at = node._attrs.find((x) => x._name === a);
+			const at = node._attrs.find((x) => x._name === a && !x._uri);
 			if (at) at._v = s;
 			else {
 				const x = new XNode(ATTRIBUTE, a, s);
@@ -266,7 +320,7 @@ export default function xml(L: any): Record<string, unknown> {
 			}
 			return;
 		}
-		const list = node._kids.filter((k) => k._k === ELEMENT && k._name === name);
+		const list = node._kids.filter((k) => isElement(k, name));
 		const content = v instanceof XMLClass || v instanceof XMLListClass ? nodesOf(v).map(copyNode) : [new XNode(TEXT, "", String(v))];
 		if (!list.length) {
 			const el = new XNode(ELEMENT, name);
@@ -376,24 +430,28 @@ export default function xml(L: any): Record<string, unknown> {
 
 	/** What an XMLList and an XML (a list of one) can both do. */
 	const shared = {
-		attribute(this: any, name: string) {
-			return list(childrenOf(this._nodes(), `@${name}`));
+		attribute(this: any, q: any) {
+			const [name, uri] = nameOf(q);
+			return list(childrenOf(this._nodes(), `@${name}`, uri));
 		},
 		attributes(this: any) {
 			return list(childrenOf(this._nodes(), "@*"));
 		},
-		child(this: any, name: string | number) {
-			if (typeof name === "number") return list(this._nodes().flatMap((n: XNode) => (n._kids[name] ? [n._kids[name]!] : [])));
-			return list(childrenOf(this._nodes(), String(name)));
+		child(this: any, q: any) {
+			if (typeof q === "number") return list(this._nodes().flatMap((n: XNode) => (n._kids[q] ? [n._kids[q]!] : [])));
+			const [name, uri] = nameOf(q);
+			return list(childrenOf(this._nodes(), name, uri));
 		},
 		children(this: any) {
 			return list(childrenOf(this._nodes(), "*"));
 		},
-		elements(this: any, name = "*") {
-			return list(this._nodes().flatMap((n: XNode) => n._kids.filter((k) => k._k === ELEMENT && matches(k, name))));
+		elements(this: any, q: any = "*") {
+			const [name, uri] = nameOf(q);
+			return list(this._nodes().flatMap((n: XNode) => n._kids.filter((k) => k._k === ELEMENT && (name === "*" && uri === undefined ? true : isElement(k, name, uri)))));
 		},
-		descendants(this: any, name = "*") {
-			return list(descendantsOf(this._nodes(), name));
+		descendants(this: any, q: any = "*") {
+			const [name, uri] = nameOf(q);
+			return list(descendantsOf(this._nodes(), name, uri));
 		},
 		text(this: any) {
 			return list(this._nodes().flatMap((n: XNode) => n._kids.filter((k) => k._k === TEXT)));
@@ -526,17 +584,50 @@ export default function xml(L: any): Record<string, unknown> {
 			return 1;
 		}
 		name(this: any) {
-			return this._n._k === ELEMENT || this._n._k === ATTRIBUTE || this._n._k === PI ? this._n._name : null;
+			const n = this._n as XNode;
+			return n._k === ELEMENT || n._k === ATTRIBUTE || n._k === PI ? new QNameClass(n._uri, n._name) : null;
 		}
 		localName(this: any) {
-			const n = this.name();
-			return n === null ? null : n.slice(n.indexOf(":") + 1);
+			const n = this._n as XNode;
+			return n._k === ELEMENT || n._k === ATTRIBUTE || n._k === PI ? n._name : null;
 		}
-		setName(this: any, n: string) {
-			this._n._name = String(n);
+		setName(this: any, q: any) {
+			const [name, uri] = nameOf(q);
+			this._n._name = name;
+			if (uri !== undefined) this._n._uri = uri;
 		}
 		setLocalName(this: any, n: string) {
 			this._n._name = String(n);
+		}
+		/** Its namespace, or the one of a prefix in scope. */
+		namespace(this: any, px?: string) {
+			const n = this._n as XNode;
+			if (px === undefined) return n._k === ELEMENT || n._k === ATTRIBUTE ? new NamespaceClass(n._px, n._uri) : null;
+			const uri = lookup(n._k === ELEMENT ? n : n._up, String(px));
+			return uri === undefined ? undefined : new NamespaceClass(String(px), uri);
+		}
+		inScopeNamespaces(this: any) {
+			return inScope(this._n).map(([p, u]) => new NamespaceClass(p, u));
+		}
+		namespaceDeclarations(this: any) {
+			return (this._n._ns ?? []).map(([p, u]: [string, string]) => new NamespaceClass(p, u));
+		}
+		addNamespace(this: any, ns: any) {
+			const n = this._n as XNode;
+			const p = ns?.prefix ?? "";
+			if (n._k === ELEMENT && !(n._ns ?? []).some(([x]) => x === p)) (n._ns ??= []).push([p, String(ns?.uri ?? ns)]);
+			return this;
+		}
+		removeNamespace(this: any, ns: any) {
+			const n = this._n as XNode;
+			if (n._ns) n._ns = n._ns.filter(([, u]) => u !== String(ns?.uri ?? ns));
+			return this;
+		}
+		setNamespace(this: any, ns: any) {
+			const n = this._n as XNode;
+			n._uri = String(ns?.uri ?? ns);
+			n._px = ns?.prefix ?? n._px;
+			if (n._k === ELEMENT && n._px !== undefined && lookup(n, n._px) !== n._uri) (n._ns ??= []).push([n._px, n._uri]);
 		}
 		nodeKind(this: any) {
 			return KINDS[this._n._k];
@@ -612,11 +703,58 @@ export default function xml(L: any): Record<string, unknown> {
 	}
 	Object.assign(XMLListClass.prototype, shared);
 	// a list of one does what its XML does
-	for (const k of ["appendChild", "prependChild", "insertChildAfter", "insertChildBefore", "setChildren", "replace", "childIndex", "name", "localName", "setName", "setLocalName", "nodeKind", "normalize"] as const)
+	for (const k of ["appendChild", "prependChild", "insertChildAfter", "insertChildBefore", "setChildren", "replace", "childIndex", "name", "localName", "setName", "setLocalName", "nodeKind", "normalize", "namespace", "inScopeNamespaces", "namespaceDeclarations", "addNamespace", "removeNamespace", "setNamespace"] as const)
 		(XMLListClass.prototype as any)[k] = function (this: any, ...a: unknown[]) {
 			if (this._l.length !== 1) throw bad(1086, `The ${k} method only works on lists containing one item.`);
 			return (wrap(this._l[0]) as any)[k](...a);
 		};
+
+	class NamespaceClass {
+		prefix: string | undefined;
+		uri: string;
+		constructor(a?: any, b?: any) {
+			if (b !== undefined) {
+				this.prefix = a === undefined || a === null ? undefined : String(a);
+				this.uri = b instanceof QNameClass ? b.uri : String(b?.uri ?? b);
+			} else if (a instanceof NamespaceClass) {
+				this.prefix = a.prefix;
+				this.uri = a.uri;
+			} else {
+				this.uri = a === undefined ? "" : a instanceof QNameClass ? a.uri : String(a);
+				this.prefix = this.uri === "" ? "" : undefined;
+			}
+		}
+		toString() {
+			return this.uri;
+		}
+		valueOf() {
+			return this.uri;
+		}
+	}
+	class QNameClass {
+		uri: string;
+		localName: string;
+		constructor(a?: any, b?: any) {
+			if (b === undefined) {
+				if (a instanceof QNameClass) {
+					this.uri = a.uri;
+					this.localName = a.localName;
+				} else {
+					this.uri = dns;
+					this.localName = a === undefined ? "" : String(a);
+				}
+			} else {
+				this.uri = a === null || a === undefined ? "" : String(a?.uri ?? a);
+				this.localName = String(b);
+			}
+		}
+		toString() {
+			return this.uri ? `${this.uri}::${this.localName}` : this.localName;
+		}
+		valueOf() {
+			return this.toString();
+		}
+	}
 
 	// ------------------------------------------------------------------ what the compiled code calls
 
@@ -665,6 +803,16 @@ export default function xml(L: any): Record<string, unknown> {
 			if (l.length === 1) setChild(l[0]!, name, v);
 			return v;
 		},
+		/** o.ns::name (0), o.@ns::name (1), o..ns::name (2), o..@ns::name (3) */
+		xq(o: any, ns: any, name: string, mode: number) {
+			const uri = String(ns?.uri ?? ns);
+			const at = mode & 1 ? `@${name}` : name;
+			return list(mode & 2 ? descendantsOf(nodes(o), at, uri) : childrenOf(nodes(o), at, uri));
+		},
+		/** default xml namespace = ns */
+		xdns(ns: any) {
+			dns = ns === null || ns === undefined ? "" : String(ns?.uri ?? ns);
+		},
 		/** delete o.@name */
 		xdel(o: any, name: string) {
 			for (const n of childrenOf(nodes(o), name)) remove(n);
@@ -699,5 +847,5 @@ export default function xml(L: any): Record<string, unknown> {
 			settings.prettyPrinting = was;
 		}
 	}
-	return { XML: XMLClass, XMLList: XMLListClass, isXMLName: (s: unknown) => /^[A-Za-z_][\w.-]*$/.test(String(s)) };
+	return { XML: XMLClass, XMLList: XMLListClass, Namespace: NamespaceClass, QName: QNameClass, isXMLName: (s: unknown) => /^[A-Za-z_][\w.-]*$/.test(String(s)) };
 }

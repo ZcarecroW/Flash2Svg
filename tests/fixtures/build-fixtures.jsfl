@@ -3753,6 +3753,14 @@
 		t.layers[t.currentLayer].frames[0].actionScript = FLfile.read(root + "/as3/f94-xml.as");
 	});
 
+	// ---------------------------------------------------------------- f95: XML namespaces (Atom, Media RSS, Dublin Core)
+	build("f95-xmlns", function () {
+		newDoc("timeline", 400, 300, 24);
+		layer("actions");
+		var t = tl();
+		t.layers[t.currentLayer].frames[0].actionScript = FLfile.read(root + "/as3/f95-xmlns.as");
+	});
+
 	FLfile.write(outDir + "/build-log.txt", log.join("\n"));
 	fl.closeAll(false);
 	fl.quit(false);
