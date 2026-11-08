@@ -12,7 +12,7 @@ import { playbackStateMachine } from "./statemachine.ts";
 import { joinScenes } from "./scenes.ts";
 import { hasRootInteractions, interactiveStateMachine } from "./interactive.ts";
 import type { ScrollRange } from "./emit/triggers.ts";
-import { documentRuns, timelineRuns } from "./emit/scripts.ts";
+import { modelRuns, timelineRuns } from "./emit/scripts.ts";
 import { playhead } from "./emit/timing.ts";
 import type { SoundSettings } from "./audio.ts";
 import type { ImageSettings } from "./images.ts";
@@ -153,7 +153,7 @@ export interface CompileOutput {
 function chooseFormat(model: SceneModel, files: FileSource, partial: Partial<ExportSettings>, rootIndex: number, hooks: CompileHooks): CompileOutput {
 	const sounds = Object.keys(model.sounds).length > 0;
 	const zeroBased = model.doc.type !== "Flash";
-	const scripted = documentRuns(Object.values(model.timelines), zeroBased);
+	const scripted = modelRuns(model);
 	const handlers = Object.values(model.timelines).some((t) =>
 		t.layers.some((l) => l.keyframes.some((k) => k.script && /addEventListener|\.on\s*\(/.test(k.script))),
 	);
@@ -251,8 +251,8 @@ export function compileScene(
 	const assets = new Map<string, { path: string; source: string }>();
 	const lottie = s.format === "lottie" || s.format === "dotlottie";
 	const zeroBased = model.doc.type !== "Flash";
-	if (s.format !== "player" && documentRuns(Object.values(model.timelines), zeroBased))
-		out.warnings.push("Frame scripts run only in the JS player format: here only plain stop(), play() and frame jumps count");
+	if (s.format !== "player" && modelRuns(model))
+		out.warnings.push(model.classes?.files.length ? "Scripts and classes run only in the JS player format: here only plain stop(), play() and frame jumps count" : "Frame scripts run only in the JS player format: here only plain stop(), play() and frame jumps count");
 	for (const p of Object.values(ctx.programs)) {
 		if (!p.scriptNotes) continue;
 		const tl = model.timelines[p.source ?? p.id];

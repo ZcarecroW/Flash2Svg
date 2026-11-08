@@ -28,10 +28,17 @@ async function publish() {
 	const uri = (p: string) => "file:///" + p.replace(/\\/g, "/").replace(/^([A-Za-z]):/, "$1|");
 	const lines = names.map((n) => {
 		mkdirSync(join(out, n), { recursive: true });
-		return `var d = fl.openDocument(${JSON.stringify(uri(join(repo, "tests", "fixtures", "fla", `${n}.fla`)))}); d.exportSWF(${JSON.stringify(uri(join(out, n, `${n}.swf`)))}, true); fl.closeDocument(d, false);`;
+		return `var d = fl.openDocument(${JSON.stringify(uri(join(repo, "tests", "fixtures", "fla", `${n}.fla`)))}); fl.compilerErrors.clear(); d.exportSWF(${JSON.stringify(uri(join(out, n, `${n}.swf`)))}, true); fl.compilerErrors.save(${JSON.stringify(uri(join(out, n, "compiler-errors.txt")))}, false, true); fl.closeDocument(d, false);`;
 	});
 	writeFileSync(script, `${lines.join("\n")}\nfl.quit(false);\n`);
 	await runJsfl(script, { timeoutMs: 180000 });
+	// (a class that doesn't compile: Animate writes no SWF, and says why here)
+	for (const n of names) {
+		const file = join(out, n, "compiler-errors.txt");
+		const text = existsSync(file) ? readFileSync(file, "utf8").trim() : "";
+		if (text && !/^0 Error/m.test(text)) console.log(`${n}: Animate's compiler says
+${text}`);
+	}
 }
 
 /** What Flash Player traces. */

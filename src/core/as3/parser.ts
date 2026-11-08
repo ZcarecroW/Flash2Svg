@@ -1,7 +1,7 @@
 /**
- * ActionScript 3 as frame scripts use it: a parser for the language without classes (those can't
- * be written in a frame script). E4X, namespaces and metadata are refused: the caller then falls
- * back on what it can recognise without running the script.
+ * ActionScript 3: frame scripts (parseScript) and class files (parseClassFile: packages, classes,
+ * interfaces, their members). E4X and namespaces are refused: the caller then falls back on what
+ * it can recognise without running the script. Metadata is read past ([Embed] is noted).
  */
 
 export class ScriptError extends Error {
@@ -182,6 +182,7 @@ export type Expr =
 	| { k: "regex"; v: string }
 	| { k: "id"; name: string }
 	| { k: "this" }
+	| { k: "super" }
 	| { k: "lit"; v: "null" | "true" | "false" }
 	| { k: "array"; items: Expr[] }
 	| { k: "object"; props: [string, Expr][] }
@@ -215,6 +216,62 @@ export interface FuncDecl {
 	name: string;
 	params: Param[];
 	ret: string;
+	body: Stmt[];
+	/** Declared without a body: in an interface, or native. */
+	bodiless?: boolean;
+	line?: number;
+}
+
+/** A member of a class or interface. */
+export interface Member {
+	kind: "var" | "const" | "method" | "get" | "set";
+	name: string;
+	isStatic: boolean;
+	access: "public" | "private" | "protected" | "internal";
+	override: boolean;
+	/** A variable's type, a function's return type. */
+	type: string;
+	init: Expr | null;
+	f: FuncDecl | null;
+	/** Under [Embed]: an asset the Flash compiler would have put in. */
+	embed: boolean;
+	line: number;
+}
+
+export interface ClassDecl {
+	kind: "class" | "interface";
+	name: string;
+	/** Its package ("" the top level). */
+	pkg: string;
+	/** Written outside the package block: seen only in its own file. */
+	local: boolean;
+	/** What it extends, as written (an interface: in `impl`). */
+	ext: string | null;
+	impl: string[];
+	dynamic: boolean;
+	members: Member[];
+	ctor: FuncDecl | null;
+	/** Statements in the class body: run once, when the class is set up; `at`: after that many members. */
+	init: { at: number; s: Stmt }[];
+	line: number;
+}
+
+/** What a package or a file defines besides classes: a function or a variable. */
+export interface PackageDef {
+	pkg: string;
+	local: boolean;
+	f?: FuncDecl;
+	v?: VarDecl;
+	line: number;
+}
+
+/** A class file. */
+export interface FileDecl {
+	pkg: string;
+	imports: string[];
+	classes: ClassDecl[];
+	defs: PackageDef[];
+	/** Statements outside any definition. */
 	body: Stmt[];
 }
 
@@ -269,6 +326,18 @@ const ASSIGN = new Set(["=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<
 
 /** Parses a frame script: its statements. */
 export function parseScript(src: string): Stmt[] {
+	return parser(src, false).script();
+}
+
+/** Parses a class file: its package, imports, classes and interfaces. */
+export function parseClassFile(src: string): FileDecl {
+	return parser(src, true).file();
+}
+
+const MODIFIERS = new Set(["public", "private", "protected", "internal", "static", "override", "final", "dynamic", "native"]);
+const DEFINES = new Set(["var", "const", "function", "class", "interface", "namespace"]);
+
+function parser(src: string, classes: boolean) {
 	const toks = tokenize(src);
 	let p = 0;
 	let noIn = false;
@@ -326,7 +395,9 @@ export function parseScript(src: string): Stmt[] {
 	}
 	const annotation = () => (eat(":") ? typeName() : "*");
 
-	function functionRest(name: string): FuncDecl {
+	/** `bodiless`: it may end without a body (interfaces, native functions). */
+	function functionRest(name: string, bodiless = false): FuncDecl {
+		const line = peek().line;
 		expect("(");
 		const params: Param[] = [];
 		while (!is(")")) {
@@ -339,7 +410,11 @@ export function parseScript(src: string): Stmt[] {
 		}
 		expect(")");
 		const ret = annotation();
-		return { name, params, ret, body: blockBody() };
+		if (bodiless && !is("{")) {
+			semi();
+			return { name, params, ret, body: [], bodiless: true, line };
+		}
+		return { name, params, ret, body: blockBody(), line };
 	}
 
 	function blockBody(): Stmt[] {
@@ -385,7 +460,10 @@ export function parseScript(src: string): Stmt[] {
 				case "new":
 					return newExpr();
 				case "super":
-					fail("super isn't available in a frame script");
+					if (!classes) fail("super isn't available in a frame script");
+					p++;
+					if (!is("(") && !is(".")) fail("Expected ( or . after super");
+					return { k: "super" };
 			}
 			p++;
 			// Vector.<int> as a value: new Vector.<int>(), Vector.<int>(list)
@@ -586,7 +664,7 @@ export function parseScript(src: string): Stmt[] {
 				case "class":
 				case "interface":
 				case "package":
-					fail(`${t.text} can't be written in a frame script`);
+					fail(classes ? `${t.text} can't be written here` : `${t.text} can't be written in a frame script`);
 					break;
 				case "if": {
 					p++;
@@ -720,7 +798,153 @@ export function parseScript(src: string): Stmt[] {
 		return { k: "try", body, catches, final };
 	}
 
-	const out: Stmt[] = [];
-	while (peek().kind !== "end") out.push(statement());
-	return out;
+	/** a.b.C, or a.b.* where `star` (imports). */
+	function dotted(star = false): string {
+		let s = ident();
+		while (eat(".")) {
+			if (star && eat("*")) return `${s}.*`;
+			s += `.${ident()}`;
+		}
+		return s;
+	}
+
+	/** Metadata, [Name(...)]: read past; its name. */
+	function metadata(): string {
+		expect("[");
+		const name = peek().kind === "id" ? peek().text : "";
+		for (let depth = 1; depth; ) {
+			const t = next();
+			if (t.kind === "end") fail("Metadata isn't closed");
+			if (t.text === "[") depth++;
+			else if (t.text === "]") depth--;
+		}
+		return name;
+	}
+
+	/** Attributes before a definition (public static ...). A namespace of its own is refused. */
+	function modifiers(): Set<string> {
+		const m = new Set<string>();
+		for (;;) {
+			const t = peek();
+			if (t.kind !== "id") return m;
+			const after = toks[p + 1]!;
+			const leads = after.kind === "id" && (MODIFIERS.has(after.text) || DEFINES.has(after.text));
+			if (MODIFIERS.has(t.text) && leads) m.add(next().text);
+			else if (!MODIFIERS.has(t.text) && !DEFINES.has(t.text) && leads && !after.nl) fail(`Namespaces aren't supported (${t.text})`);
+			else return m;
+		}
+	}
+
+	const accessOf = (m: Set<string>): Member["access"] => (m.has("private") ? "private" : m.has("protected") ? "protected" : m.has("public") ? "public" : "internal");
+
+	function classDef(m: Set<string>, pkg: string, local: boolean): ClassDecl {
+		const line = peek().line;
+		const kind = next().text as ClassDecl["kind"];
+		const c: ClassDecl = { kind, name: ident(), pkg, local, ext: null, impl: [], dynamic: m.has("dynamic"), members: [], ctor: null, init: [], line };
+		const list = () => {
+			do c.impl.push(dotted());
+			while (eat(","));
+		};
+		if (eat("extends")) {
+			if (kind === "interface") list();
+			else c.ext = dotted();
+		}
+		if (kind === "class" && eat("implements")) list();
+		expect("{");
+		let embed = false;
+		while (!is("}")) {
+			if (peek().kind === "end") fail(`The ${kind} ${c.name} isn't closed`);
+			if (is("[")) {
+				if (metadata() === "Embed") embed = true;
+				continue;
+			}
+			if (eat(";")) continue;
+			if (is("use") || is("namespace")) fail("Namespaces aren't supported");
+			const at = peek().line;
+			const mods = modifiers();
+			const isStatic = mods.has("static");
+			if (is("var") || is("const")) {
+				const k = next().text as "var" | "const";
+				for (const d of varDecls()) c.members.push({ kind: k, name: d.name, isStatic, access: accessOf(mods), override: false, type: d.type, init: d.init, f: null, embed, line: at });
+				semi();
+				embed = false;
+				continue;
+			}
+			if (is("function")) {
+				p++;
+				let mk: Member["kind"] = "method";
+				if ((is("get") || is("set")) && toks[p + 1]?.kind === "id") mk = next().text as "get" | "set";
+				const name = ident();
+				const f = functionRest(name, kind === "interface" || mods.has("native"));
+				if (name === c.name && mk === "method" && !isStatic) {
+					if (kind === "interface") fail("An interface has no constructor");
+					c.ctor = f;
+				} else c.members.push({ kind: mk, name, isStatic, access: kind === "interface" ? "public" : accessOf(mods), override: mods.has("override"), type: f.ret, init: null, f, embed: false, line: at });
+				embed = false;
+				continue;
+			}
+			if (mods.size) fail(`Expected var, const or function after ${[...mods].join(" ")}`);
+			if (kind === "interface") fail(`Unexpected ${peek().text} in an interface`);
+			c.init.push({ at: c.members.length, s: statement() });
+		}
+		p++;
+		return c;
+	}
+
+	/** One thing in a package block or outside it. */
+	function directive(out: FileDecl, pkg: string, local: boolean) {
+		if (is("[")) return void metadata();
+		if (eat(";")) return;
+		if (is("import")) {
+			p++;
+			out.imports.push(dotted(true));
+			return semi();
+		}
+		if (is("include")) fail("include isn't supported in class files");
+		if (is("use") || is("namespace")) fail("Namespaces aren't supported");
+		const line = peek().line;
+		const m = modifiers();
+		if (is("class") || is("interface")) return void out.classes.push(classDef(m, pkg, local));
+		if (is("function") && toks[p + 1]?.kind === "id") {
+			p++;
+			const name = ident();
+			return void out.defs.push({ pkg, local, f: functionRest(name, m.has("native")), line });
+		}
+		if (is("var") || is("const")) {
+			p++;
+			for (const v of varDecls()) out.defs.push({ pkg, local, v, line });
+			return semi();
+		}
+		if (m.size) fail(`Expected a definition after ${[...m].join(" ")}`);
+		out.body.push(statement());
+	}
+
+	return {
+		script(): Stmt[] {
+			const out: Stmt[] = [];
+			while (peek().kind !== "end") out.push(statement());
+			return out;
+		},
+		file(): FileDecl {
+			const out: FileDecl = { pkg: "", imports: [], classes: [], defs: [], body: [] };
+			let packages = 0;
+			while (peek().kind !== "end") {
+				if (is("package")) {
+					p++;
+					if (packages++) fail("A file has one package");
+					out.pkg = is("{") ? "" : dotted();
+					expect("{");
+					while (!is("}")) {
+						if (peek().kind === "end") fail("The package isn't closed");
+						directive(out, out.pkg, false);
+					}
+					p++;
+					continue;
+				}
+				// (after the package block: seen only in this file)
+				directive(out, "", true);
+			}
+			return out;
+		},
+	};
 }

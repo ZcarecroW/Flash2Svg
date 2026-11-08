@@ -355,6 +355,8 @@ export function renderPlayer(
 	svg.children.push(poster);
 	if (scripts) {
 		if (Object.keys(scripts.classes).length) P.cl = scripts.classes;
+		if (scripts.doc) P.dc = scripts.doc;
+		if (scripts.bases) P.cb = scripts.bases;
 		if (d.type !== "Flash") P.zb = 1;
 		const bitmaps = Object.entries(scripts.bitmaps);
 		if (bitmaps.length) {

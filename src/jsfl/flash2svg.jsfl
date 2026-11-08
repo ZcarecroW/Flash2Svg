@@ -354,8 +354,7 @@
 		job.pendingTimelines = [];
 		job.seen = {};
 		job.linked = {};
-		var docClass = job.model.doc.type == "htmlcanvas" ? "" : String(get(job.srcDoc || fl.getDocumentDOM(), "docClass", "") || "");
-		if (docClass) warn("The document class " + docClass + " isn't run: classes in .as files aren't compiled, only frame scripts are");
+		if (job.model.doc.type != "htmlcanvas") readClasses(job.srcDoc || src);
 		for (i = 0; i < roots.length; i++) {
 			var id = roots[i].item ? "sym:" + roots[i].item : "scene:" + roots[i].scene;
 			job.model.roots.push(id);
@@ -372,6 +371,118 @@
 		job.phase = "timelines";
 		job.message = "Reading timelines";
 		job.queue.push(nextTimeline);
+	}
+
+	/** The folders of the document's class path (its own and Animate's), as URIs. */
+	function classRoots(src) {
+		var base = String(src.pathURI || "");
+		if (!base) return [];
+		base = base.replace(/\/[^\/]*$/, "");
+		var list = [];
+		var add = function (p) {
+			p = String(p || "").replace(/^\s+|\s+$/g, "");
+			// (Animate's own folders hold its classes, which the player has)
+			if (!p || p.indexOf("$(") >= 0) return;
+			var uri = /^file:/.test(p) ? p : /^([A-Za-z]:|\/|\\)/.test(p) ? FLfile.platformPathToURI(p) : base + "/" + p.replace(/\\/g, "/");
+			// (a/./b, a/x/../b)
+			var head = /^file:\/\/\/[^\/]*/.exec(uri), parts = uri.substr(head ? head[0].length : 0).split("/"), out = [];
+			for (var i = 0; i < parts.length; i++) {
+				if (parts[i] == "" || parts[i] == ".") continue;
+				if (parts[i] == "..") out.pop();
+				else out.push(parts[i]);
+			}
+			uri = (head ? head[0] : "") + "/" + out.join("/");
+			for (var k = 0; k < list.length; k++) if (list[k] == uri) return;
+			list.push(uri);
+		};
+		var own = String(get(src, "sourcePath", "") || "").split(";");
+		for (var i = 0; i < own.length; i++) add(own[i]);
+		var all = String(get(fl, "as3PackagePaths", "") || "").split(";");
+		for (var j = 0; j < all.length; j++) add(all[j]);
+		add(".");
+		return list;
+	}
+
+	/**
+	 * Classes in .as files: the document class, the classes of library symbols, and what they use
+	 * (imports, their package, the top level), found through the class path. Symbols with such a
+	 * class are read whether or not they are on stage.
+	 */
+	function readClasses(src) {
+		var docClass = String(get(src, "docClass", "") || "");
+		var roots = classRoots(src);
+		var seen = {}, queue = [];
+		var find = function (q) {
+			var rel = q.replace(/\./g, "/") + ".as";
+			for (var i = 0; i < roots.length; i++) if (FLfile.exists(roots[i] + "/" + rel)) return { root: roots[i], rel: rel };
+			return null;
+		};
+		var want = function (q) {
+			if (seen[q] !== undefined) return seen[q];
+			// (the Flash API and Animate's components are the player's own)
+			if (/^(flash|fl|adobe)\./.test(q)) return (seen[q] = false);
+			var at = find(q);
+			seen[q] = !!at;
+			if (at) queue.push(at);
+			return seen[q];
+		};
+		/** The classes of a package's folders that the code names. */
+		var named = function (pkg, code) {
+			for (var i = 0; i < roots.length; i++) {
+				var list = FLfile.listFolder(roots[i] + (pkg ? "/" + pkg.replace(/\./g, "/") : "") + "/*.as", "files") || [];
+				for (var k = 0; k < list.length; k++) {
+					var n = String(list[k]).replace(/\.as$/i, "");
+					if (/^\w+$/.test(n) && new RegExp("\\b" + n + "\\b").test(code)) want(pkg ? pkg + "." + n : n);
+				}
+			}
+		};
+		var cls = { files: [] };
+		if (docClass) {
+			if (want(docClass)) cls.doc = docClass;
+			else warn("The document class " + docClass + " wasn't found in the class path (" + (roots.length ? roots.join("; ") : "save the document first") + "): what it does doesn't run");
+		}
+		var items = job.lib.items, symbols = null, bases = null;
+		for (var i = 0; i < items.length; i++) {
+			var item = items[i];
+			if (item.itemType == "component" || !item.timeline) continue;
+			var c = String(get(item, "linkageClassName", "") || "");
+			if (!c) continue;
+			var b = String(get(item, "linkageBaseClass", "") || "");
+			var own = want(c), viaBase = !own && b && want(b);
+			if (!own && !viaBase) continue;
+			(symbols || (symbols = {}))[c] = "sym:" + item.name;
+			if (viaBase) (bases || (bases = {}))[c] = b;
+			(job.model.linkage || (job.model.linkage = {}))[c.substr(c.lastIndexOf(".") + 1)] = "sym:" + item.name;
+			job.linked[c] = true;
+			queueTimeline("sym:" + item.name);
+		}
+		var total = 0;
+		while (queue.length) {
+			var f = queue.shift();
+			var code = FLfile.read(f.root + "/" + f.rel);
+			if (code === null || code === undefined) continue;
+			code = String(code);
+			total += code.length;
+			if (cls.files.length >= 500 || total > 8000000) {
+				warn("The classes are too many to export (500 files or 8 MB): " + f.rel + " and the rest are left out");
+				break;
+			}
+			cls.files.push({ path: f.rel, code: code });
+			// (library symbols the classes make by name are read too)
+			job.scriptText = (job.scriptText || "") + "\n" + code;
+			var pkg = (/\bpackage\s+([\w.]+)/.exec(code) || [])[1] || "";
+			var m, re = /\bimport\s+([\w.]+?)(\.\*)?\s*(?:;|$)/gm;
+			while ((m = re.exec(code))) {
+				if (m[2]) named(m[1], code);
+				else want(m[1]);
+			}
+			named(pkg, code);
+			if (pkg) named("", code);
+		}
+		if (!cls.files.length) return;
+		if (symbols) cls.symbols = symbols;
+		if (bases) cls.bases = bases;
+		job.model.classes = cls;
 	}
 
 	function queueTimeline(id) {

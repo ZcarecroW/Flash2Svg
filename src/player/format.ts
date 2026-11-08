@@ -38,6 +38,10 @@ export interface PProgram {
 	pf?: number;
 	/** scripts: library classes (linkage): name -> timeline or sound id */
 	cl?: Record<string, string>;
+	/** scripts: library classes that extend a class of the document's own: name -> that class */
+	cb?: Record<string, string>;
+	/** scripts: the document class (its qualified name) */
+	dc?: string;
 	/** Library bitmaps scripts make: class name -> file or data, width, height, has transparency. */
 	bd?: Record<string, [string, number, number, number]>;
 	/** Scenes of the root timeline, and the document's name (for class names). */

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **The document class and classes in .as files run** (roadmap package 17): the extractor finds the files through the document's class path (its own and Animate's) and takes what they use (imports, their package, the top level); the JS player compiles them with the frame scripts. Packages, classes and interfaces, `extends` and `implements`, `super`, static members set up when the class is first used, code in the class body, getters and setters (one half overridden keeps the other), private members kept apart from a subclass's of the same name, method closures bound to their object, constructors that use `this` before `super()` and fields that are there before the base class's constructor runs, as in Flash Player; package functions, classes only their file sees, custom events and errors. The document class takes the stage's timeline: its stage instances, `stage`, its frame scripts (which reach its members, statics too). f91 traces 41 lines, identical to Flash Player's, in a page and as an SVG file. Not supported: namespaces, `include` in class files and assets embedded with `[Embed]` (warned).
 - **A script's own fields can't break its objects any more:** a frame script or class that set `_name`, `_alpha`, `_parent` or another name starting with `_` on a movie clip, text field or event overwrote the JS player's own field of that name. The player's fields now have names of their own in the runtime with scripts, which also made it 0.5 KB smaller (84.4 KB).
 
 ## 5.0.0 (2026-11-07)

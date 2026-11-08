@@ -10,7 +10,7 @@
 import { parseScript, ScriptError, type Expr, type FuncDecl, type Stmt, type VarDecl } from "./parser.ts";
 
 /** Names that stay what they are in JavaScript. */
-const GLOBALS = new Set([
+export const GLOBALS = new Set([
 	"Math",
 	"JSON",
 	"Date",
@@ -197,11 +197,17 @@ export const FLASH_API = new Set([
 /** JavaScript's reserved words that are plain names in AS3. */
 const JS_RESERVED = new Set(["await", "let", "yield", "async", "of", "enum", "implements", "private", "public", "protected", "static", "eval", "with", "debugger", "export", "extends", "class", "super"]);
 
-const safe = (n: string) => (JS_RESERVED.has(n) ? `$_${n}` : n);
+export const safe = (n: string) => (JS_RESERVED.has(n) ? `$_${n}` : n);
 
 interface Scope {
 	vars: Map<string, string>;
 	up: Scope | null;
+}
+
+/** The class of a timeline (the document class, a symbol's): its frame scripts are part of it. */
+export interface ClassScope {
+	/** A member by its AS3 name, as the class's own code reaches it (its private ones too). */
+	member(name: string): { js: string; isStatic: boolean; method: boolean; type: string; owner: string } | null;
 }
 
 export interface ScriptUnit {
@@ -221,9 +227,9 @@ export interface CompiledScripts {
 
 /** Collects what a statement list declares at function level (var hoists out of blocks). */
 /** The type of a function declared by name: unlike a variable of type Function, it has a value at once. */
-const DECLARED = "function!";
+export const DECLARED = "function!";
 
-function hoist(body: Stmt[], out: Map<string, string>, fns: FuncDecl[] | null) {
+export function hoist(body: Stmt[], out: Map<string, string>, fns: FuncDecl[] | null) {
 	const walk = (s: Stmt | null | undefined) => {
 		if (!s) return;
 		switch (s.k) {
@@ -267,10 +273,10 @@ function hoist(body: Stmt[], out: Map<string, string>, fns: FuncDecl[] | null) {
 	body.forEach(walk);
 }
 
-const INT = new Set(["int", "uint"]);
+export const INT = new Set(["int", "uint"]);
 
 /** A variable's default in AS3. */
-function defaultOf(type: string): string {
+export function defaultOf(type: string): string {
 	if (INT.has(type)) return "0";
 	if (type === "Number") return "NaN";
 	if (type === "Boolean") return "false";
@@ -278,23 +284,28 @@ function defaultOf(type: string): string {
 	return "null";
 }
 
-class Emitter {
+export class Emitter {
 	unknown = new Set<string>();
-	private scope: Scope | null = null;
+	protected scope: Scope | null = null;
 	/** The timeline's members and their types. */
-	private members: Map<string, string>;
-	private linked: Set<string>;
-	constructor(members: Map<string, string>, linked: Set<string>) {
+	protected members: Map<string, string>;
+	protected linked: Set<string>;
+	/** The timeline's class, if it has one of the document's own. */
+	protected klass: ClassScope | null;
+	constructor(members: Map<string, string>, linked: Set<string>, cls: ClassScope | null = null) {
 		this.members = members;
 		this.linked = linked;
+		this.klass = cls;
 	}
-	private ret = "*";
+	protected ret = "*";
 	/** What `this` is: the timeline at the top of a frame and in its functions; in a function literal, what it is called on. */
-	private self = "$t";
+	protected self = "$t";
+	/** Rendering what is called: a method stays a method (not one bound to its object). */
+	protected calling = false;
 
 	/** The declared type of an expression, as far as it is known here. */
-	private typeIn(x: Expr): string {
-		if (x.k === "id") return this.lookup(x.name) ?? this.members.get(x.name) ?? "*";
+	protected typeIn(x: Expr): string {
+		if (x.k === "id") return this.lookup(x.name) ?? this.members.get(x.name) ?? this.klass?.member(x.name)?.type ?? "*";
 		if (x.k === "member" && x.o.k === "this") return this.members.get(x.name) ?? "*";
 		if (x.k === "index") {
 			const m = /^Vector\.<(.*)>$/.exec(this.typeIn(x.o));
@@ -303,15 +314,15 @@ class Emitter {
 		return "*";
 	}
 
-	private isVector(x: Expr) {
+	protected isVector(x: Expr) {
 		return this.typeIn(x).startsWith("Vector.<");
 	}
 
-	private isDictionary(x: Expr): boolean {
+	protected isDictionary(x: Expr): boolean {
 		return this.typeIn(x) === "Dictionary";
 	}
 
-	private lookup(name: string): string | undefined {
+	protected lookup(name: string): string | undefined {
 		for (let s = this.scope; s; s = s.up) {
 			const t = s.vars.get(name);
 			if (t !== undefined) return t;
@@ -319,11 +330,16 @@ class Emitter {
 		return undefined;
 	}
 
-	private ref(name: string): string {
+	protected ref(name: string): string {
 		if (this.lookup(name) !== undefined) return safe(name);
 		if (name === "trace") return "$f.trace";
 		if (name === "arguments") return name;
 		if (this.members.has(name)) return `$t.${safe(name) === name ? name : `["${name}"]`}`;
+		const mi = this.klass?.member(name);
+		if (mi) {
+			if (mi.isStatic) return `$r.cls(${JSON.stringify(mi.owner)},null).${mi.js}`;
+			return mi.method && !this.calling ? `$r.m($t,${JSON.stringify(mi.js)})` : `$t.${mi.js}`;
+		}
 		if (GLOBALS.has(name)) return name;
 		if (FLASH_API.has(name) && !this.linked.has(name)) return `$f.${name}`;
 		// a class of the library (linkage), or what the timeline has
@@ -332,7 +348,7 @@ class Emitter {
 	}
 
 	/** The value converted to a variable's type. */
-	private coerce(type: string, js: string, x?: Expr): string {
+	protected coerce(type: string, js: string, x?: Expr): string {
 		switch (type) {
 			case "int":
 				return x?.k === "num" && /^\d+$/.test(x.v) ? js : `(${js}|0)`;
@@ -349,7 +365,7 @@ class Emitter {
 		}
 	}
 
-	private typeOfTarget(a: Expr): string {
+	protected typeOfTarget(a: Expr): string {
 		return this.typeIn(a);
 	}
 
@@ -375,6 +391,8 @@ class Emitter {
 				return this.ref(x.name);
 			case "this":
 				return this.self;
+			case "super":
+				throw new ScriptError("super must be called or followed by a name", 0);
 			case "array":
 				return `[${x.items.map((i) => this.expr(i)).join(",")}]`;
 			case "object":
@@ -450,7 +468,7 @@ class Emitter {
 					if (x.f.name === "Boolean") return list.length ? `(!!(${list[0]}))` : "false";
 				}
 				// (an error's second argument is its number)
-				if (x.f.k === "id" && /Error$/.test(x.f.name) && list.length > 1) return `Object.assign(new (${this.expr(x.f)})(${list[0]}),{errorID:${list[1]}})`;
+				if (x.f.k === "id" && /Error$/.test(x.f.name) && (GLOBALS.has(x.f.name) || FLASH_API.has(x.f.name)) && this.lookup(x.f.name) === undefined && list.length > 1) return `Object.assign(new (${this.expr(x.f)})(${list[0]}),{errorID:${list[1]}})`;
 				return `new (${this.expr(x.f)})(${list.join(",")})`;
 			}
 			case "seq":
@@ -459,14 +477,14 @@ class Emitter {
 	}
 
 	/** The name of a package path (flash.utils.Timer), if that is what this is. */
-	private inPackage(o: Expr): boolean {
+	protected inPackage(o: Expr): boolean {
 		for (let x = o; ; x = (x as { o: Expr }).o) {
 			if (x.k === "id") return (x.name === "flash" || x.name === "fl") && this.lookup(x.name) === undefined && !this.members.has(x.name);
 			if (x.k !== "member") return false;
 		}
 	}
 
-	private member(o: Expr, name: string): string {
+	protected member(o: Expr, name: string): string {
 		if (this.inPackage(o)) return this.ref(name);
 		// constants of AS3's Array
 		if (o.k === "id" && o.name === "Array" && this.lookup("Array") === undefined) {
@@ -474,17 +492,26 @@ class Emitter {
 			if (name in c) return String(c[name]);
 		}
 		const n = /^[A-Za-z_$][\w$]*$/.test(name) ? `.${name}` : `[${JSON.stringify(name)}]`;
-		const of = this.expr(o);
+		const of = this.plain(o);
 		return o.k === "num" ? `(${of})${n}` : `${of}${n}`;
 	}
 
+	/** An expression that isn't itself what is called (the object a method is called on, an argument). */
+	protected plain(x: Expr): string {
+		const was = this.calling;
+		this.calling = false;
+		const js = this.expr(x);
+		this.calling = was;
+		return js;
+	}
+
 	/** A class as `is` and `as` take it. */
-	private classOf(type: string): string {
+	protected classOf(type: string): string {
 		if (type === "int" || type === "uint" || type === "Number" || type === "String" || type === "Boolean") return `"${type}"`;
 		return type.startsWith("Vector.<") ? JSON.stringify(type) : this.ref(type);
 	}
 
-	private binary(x: Extract<Expr, { k: "bin" }>): string {
+	protected binary(x: Extract<Expr, { k: "bin" }>): string {
 		const a = this.expr(x.a);
 		if (x.op === "as" || x.op === "is") {
 			if (x.b.k === "vector") return `$r.${x.op}(${a},${this.expr(x.b)})`;
@@ -495,10 +522,19 @@ class Emitter {
 		return `(${a}${x.op === "instanceof" || x.op === "in" ? ` ${x.op} ` : x.op}${this.expr(x.b)})`;
 	}
 
-	private call(f: Expr, args: Expr[]): string {
-		const list = args.map((a) => this.expr(a)).join(",");
+	/** What is called, rendered as such. */
+	protected callee(f: Expr): string {
+		const was = this.calling;
+		this.calling = f.k === "id" || f.k === "member";
+		const js = this.expr(f);
+		this.calling = was;
+		return js;
+	}
+
+	protected call(f: Expr, args: Expr[]): string {
+		const list = args.map((a) => this.plain(a)).join(",");
 		if (f.k === "vector") return `$r.vec(${JSON.stringify(f.of)},${list})`;
-		if (f.k === "id" && this.lookup(f.name) === undefined && !this.members.has(f.name)) {
+		if (f.k === "id" && this.lookup(f.name) === undefined && !this.members.has(f.name) && !this.klass?.member(f.name)) {
 			// conversions
 			if (f.name === "int") return `(${list}|0)`;
 			if (f.name === "uint") return `(${list}>>>0)`;
@@ -507,22 +543,33 @@ class Emitter {
 			if (args.length === 1 && /^[A-Z]/.test(f.name) && (!GLOBALS.has(f.name) || f.name === "Object")) return `(${list})`;
 		}
 		if (f.k === "member" && (f.name === "sort" || f.name === "sortOn")) return `$r.${f.name}(${this.expr(f.o)}${list ? `,${list}` : ""})`;
-		return `${this.expr(f)}(${list})`;
+		return `${this.callee(f)}(${list})`;
 	}
 
 	/** A function with its own scope. Named functions are members or locals, see `decl`. */
 	func(f: FuncDecl, asExpression: boolean, member = false): string {
+		const savedSelf = this.self;
+		this.self = member ? "$t" : "this";
+		const js = `function${asExpression && f.name ? ` ${safe(f.name)}` : ""}${this.funcBody(f, asExpression && !!f.name)}`;
+		this.self = savedSelf;
+		return js;
+	}
+
+	/**
+	 * `(params){...}`: a function's own scope, its parameters as AS3 passes them, its locals. `named`:
+	 * a function expression with a name, which it sees itself by. `pre`: code that goes first, asked
+	 * for once the rest is written.
+	 */
+	protected funcBody(f: FuncDecl, named: boolean, pre?: () => string): string {
 		const vars = new Map<string, string>();
 		for (const p of f.params) vars.set(p.name, p.rest ? "Array" : p.type);
 		const inner: FuncDecl[] = [];
 		hoist(f.body, vars, inner);
-		if (asExpression && f.name) vars.set(f.name, DECLARED);
+		if (named) vars.set(f.name, DECLARED);
 		const saved = this.scope;
 		const savedRet = this.ret;
-		const savedSelf = this.self;
 		this.scope = { vars, up: saved };
 		this.ret = f.ret;
-		this.self = member ? "$t" : "this";
 		const params = f.params.map((p) => (p.rest ? `...${safe(p.name)}` : safe(p.name))).join(",");
 		// defaults by how many came: passing undefined isn't leaving out, and they don't count in .length
 		const head = f.params
@@ -535,18 +582,17 @@ class Emitter {
 			})
 			.join("");
 		const paramNames = new Set(f.params.map((p) => p.name));
-		const locals = [...vars].filter(([n]) => !paramNames.has(n) && n !== f.name).map(([n, t]) => (t === DECLARED ? null : `${safe(n)}=${defaultOf(t)}`));
+		const locals = [...vars].filter(([n]) => !paramNames.has(n) && !(named && n === f.name)).map(([n, t]) => (t === DECLARED ? null : `${safe(n)}=${defaultOf(t)}`));
 		const decl = locals.filter(Boolean).length ? `var ${locals.filter(Boolean).join(",")};` : "";
 		// functions in functions: there from the start, as declarations are
 		const hoisted = inner.map((g) => `function ${safe(g.name)}${this.func(g, false).replace(/^function/, "")}`).join("");
 		const body = f.body.map((s) => this.stmt(s, false)).join("");
 		this.scope = saved;
 		this.ret = savedRet;
-		this.self = savedSelf;
-		return `function${asExpression && f.name ? ` ${safe(f.name)}` : ""}(${params}){${head}${decl}${hoisted}${body}}`;
+		return `(${params}){${pre?.() ?? ""}${head}${decl}${hoisted}${body}}`;
 	}
 
-	private varInit(d: VarDecl, top: boolean): string {
+	protected varInit(d: VarDecl, top: boolean): string {
 		const js = d.init ? this.coerce(d.type, this.expr(d.init), d.init) : null;
 		if (top) return js === null ? `$t.${d.name}=$t.${d.name};` : `$t.${d.name}=${js};`;
 		return js === null ? "" : `${safe(d.name)}=${js};`;
@@ -616,7 +662,7 @@ class Emitter {
 		}
 	}
 
-	private branch(s: Stmt, top: boolean): string {
+	protected branch(s: Stmt, top: boolean): string {
 		return s.k === "block" || s.k === "empty" ? this.stmt(s, top) || ";" : `{${this.stmt(s, top)}}`;
 	}
 }
@@ -626,7 +672,7 @@ class Emitter {
  * the others still run.
  */
 /** `linked`: class names of the library, which win over the Flash API's. */
-export function compileScripts(units: ScriptUnit[], linked: Set<string> = new Set()): CompiledScripts {
+export function compileScripts(units: ScriptUnit[], linked: Set<string> = new Set(), cls: ClassScope | null = null): CompiledScripts {
 	const failed: CompiledScripts["failed"] = [];
 	const parsed: { frame: number; body: Stmt[] }[] = [];
 	for (const u of units) {
@@ -640,7 +686,7 @@ export function compileScripts(units: ScriptUnit[], linked: Set<string> = new Se
 	const members = new Map<string, string>();
 	const fns: FuncDecl[] = [];
 	for (const p of parsed) hoist(p.body, members, fns);
-	const em = new Emitter(members, linked);
+	const em = new Emitter(members, linked, cls);
 	let out = "function($t,$f,$r){";
 	for (const [name, type] of members) if (type !== DECLARED) out += `$t.${name}=${defaultOf(type)};`;
 	for (const f of fns) out += `$t.${f.name}=${em.func(f, false, true)};`;

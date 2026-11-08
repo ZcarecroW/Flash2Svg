@@ -30,6 +30,8 @@ export interface SceneModel {
 	timelines: Record<string, TimelineData>;
 	/** Library symbols scripts make by class name (their linkage): name -> timeline id. */
 	linkage?: Record<string, string>;
+	/** Classes in .as files (AS3): the document class, those of library symbols and what they use. */
+	classes?: ClassFiles;
 	/** Shape/text artwork rendered through Animate's SVG exporter, keyed by atlas id. */
 	atlas: Record<string, AtlasItem>;
 	bitmaps: Record<string, BitmapData>;
@@ -37,6 +39,18 @@ export interface SceneModel {
 	/** Fonts embedded for dynamic and input text (set by encodeFonts, see fonts.ts). */
 	fonts?: EmbeddedFont[];
 	warnings: string[];
+}
+
+/** Classes in .as files, found through the document's class path. */
+export interface ClassFiles {
+	/** Each file: its path in its class path folder (shapes/Circle.as) and its text. */
+	files: { path: string; code: string }[];
+	/** The document class (qualified). */
+	doc?: string;
+	/** Library symbols with a class of these, or one extending one of these: linkage class (qualified) -> timeline id. */
+	symbols?: Record<string, string>;
+	/** Of those, the ones whose own class has no file: linkage class -> the class it extends (qualified). */
+	bases?: Record<string, string>;
 }
 
 /** Settings from Animate's Accessibility panel (only what is set). */

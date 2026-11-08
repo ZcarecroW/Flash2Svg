@@ -347,7 +347,9 @@ export class Clip {
 					for (const e of inst.els.length ? inst.els : [inst.node]) g.insertBefore(e, before);
 					const c = inst.clip;
 					if (c && c.kind === 1) c.setFrame(graphicFrame(it as PInst, this.frame, c.tl.n));
+					if (__SCRIPTS__) this.player.scripts?.born(inst);
 				} else if (!active && inst) {
+					if (__SCRIPTS__) this.player.scripts?.gone(inst);
 					for (const e of inst.els.length ? inst.els : [inst.node]) e.remove();
 					inst.clip?.stopStreams();
 					inst.dispose();

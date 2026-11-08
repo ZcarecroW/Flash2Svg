@@ -3657,6 +3657,29 @@
 		t.layers[t.currentLayer].frames[0].actionScript = FLfile.read(root + "/as3/f90-video.as");
 	});
 
+	// ---------------------------------------------------------------- f91: a document class and classes in .as files
+	build("f91-classes", function () {
+		newDoc("timeline", 400, 300, 24);
+		// (the classes lie in tests/fixtures/as3/f91, found through the document's class path)
+		doc.docClass = "Main";
+		doc.sourcePath = "../as3/f91";
+		boxSymbol();
+		layer("art");
+		var b = place("box", 100, 100, 0);
+		b.name = "box";
+		var t = tl();
+		t.insertFrames(1);
+		layer("labels");
+		t = tl();
+		t.convertToKeyframes(1);
+		t.layers[t.currentLayer].frames[1].name = "end";
+		layer("actions");
+		t = tl();
+		t.layers[t.currentLayer].frames[0].actionScript = 'trace("frame 1", currentFrame, describeMe(), count, TITLE, box.name);\nstop();';
+		t.convertToKeyframes(1);
+		t.layers[t.currentLayer].frames[1].actionScript = 'import flash.system.fscommand;\ntrace("frame 2", currentFrame, currentLabel, frames);\ntrace("END");\nfscommand("quit");';
+	});
+
 	FLfile.write(outDir + "/build-log.txt", log.join("\n"));
 	fl.closeAll(false);
 	fl.quit(false);

@@ -4,10 +4,11 @@
  * which every format has too. Any other script runs: AS3 compiled to JavaScript (src/core/as3),
  * the JavaScript of HTML5 Canvas documents as it is, on the Flash API of src/player/script.ts.
  */
+import { compileClasses, type CompiledClasses } from "../as3/classes.ts";
 import { compileScripts, type ScriptUnit } from "../as3/emit.ts";
 import { parseScript, type Expr, type Stmt } from "../as3/parser.ts";
 import type { Context } from "../context.ts";
-import type { ElementData, TimelineData } from "../model.ts";
+import type { ElementData, SceneModel, TimelineData } from "../model.ts";
 import { parseActions } from "../program.ts";
 import { splitScript } from "../snippets.ts";
 import { PLAYER_PARTS } from "./runtime-code.generated.ts";
@@ -134,6 +135,43 @@ export function documentRuns(timelines: Iterable<TimelineData>, zeroBased: boole
 	return false;
 }
 
+/** Whether a document's scripts run: frame scripts the action lists can't say, or classes in .as files. */
+export function modelRuns(model: SceneModel): boolean {
+	return (model.doc.type === "Flash" && !!model.classes?.files.length) || documentRuns(Object.values(model.timelines), model.doc.type !== "Flash");
+}
+
+/** The instance names on a timeline (all its frames): Animate declares them as its class's variables. */
+function instanceNames(tl: TimelineData | undefined): string[] {
+	const out = new Set<string>();
+	for (const l of tl?.layers ?? []) for (const k of l.keyframes) for (const e of k.elements) if ((e as { name?: string }).name) out.add((e as { name: string }).name);
+	return [...out];
+}
+
+/** The class of a timeline: the document class for the scenes, a symbol's own class. */
+function classOfTimeline(model: SceneModel, id: string): string | null {
+	const cf = model.classes;
+	if (!cf) return null;
+	if (id.startsWith("scene:")) return cf.doc ?? null;
+	for (const [q, t] of Object.entries(cf.symbols ?? {})) if (t === id) return cf.bases?.[q] ?? q;
+	return null;
+}
+
+const compiled = new WeakMap<SceneModel, CompiledClasses>();
+
+/** A document's classes, compiled once. */
+function classesOf(model: SceneModel): CompiledClasses | null {
+	const cf = model.classes;
+	if (!cf?.files.length || model.doc.type !== "Flash") return null;
+	let c = compiled.get(model);
+	if (!c) {
+		const instances: Record<string, string[]> = {};
+		if (cf.doc) instances[cf.doc] = Object.keys(model.timelines).filter((k) => k.startsWith("scene:")).flatMap((k) => instanceNames(model.timelines[k]));
+		for (const [q, id] of Object.entries(cf.symbols ?? {})) instances[q] = instanceNames(model.timelines[id]);
+		compiled.set(model, (c = compileClasses(cf.files, { instances }, new Set(Object.keys(model.linkage ?? {})))));
+	}
+	return c;
+}
+
 export interface PlayerScripts {
 	/** Program ids of the timelines whose scripts run. */
 	timelines: Set<string>;
@@ -145,6 +183,9 @@ export interface PlayerScripts {
 	bitmaps: Record<string, string>;
 	/** The parts of the runtime they need, as the code to run before it. */
 	parts: string[];
+	/** The document class; library classes extending a class of the document's own (name -> that class). */
+	doc?: string;
+	bases?: Record<string, string>;
 }
 
 /** The scripts of a document that have to run; null when the action lists say it all. */
@@ -158,7 +199,12 @@ export function playerScripts(ctx: Context, playerId: string, warn: (m: string) 
 		units.set(id, unitsOf(tl, true));
 		timelines.add(id);
 	}
-	if (!timelines.size) return null;
+	const cls = canvas ? null : classesOf(ctx.model);
+	if (!timelines.size && !cls?.js) return null;
+	if (cls) {
+		for (const x of cls.failed) warn(`${x.file}${x.line ? `, line ${x.line}` : ""}: this class can't run (${x.message})`);
+		for (const w of cls.warnings) warn(w);
+	}
 	const entries: string[] = [];
 	for (const id of timelines) {
 		const name = ctx.programs[id]!.name;
@@ -166,12 +212,13 @@ export function playerScripts(ctx: Context, playerId: string, warn: (m: string) 
 		if (canvas) {
 			js = canvasScripts(units.get(id)!, name, warn);
 		} else {
-			const c = compileScripts(units.get(id)!, new Set(Object.keys(ctx.model.linkage ?? {})));
+			const c = compileScripts(units.get(id)!, new Set(Object.keys(ctx.model.linkage ?? {})), cls ? cls.scope(classOfTimeline(ctx.model, ctx.programs[id]!.source ?? id) ?? "") : null);
 			for (const f of c.failed) warn(`${name}, frame ${f.frame + 1}: this script can't run (line ${f.line}: ${f.message})`);
 			js = c.js;
 		}
 		entries.push(`${JSON.stringify(id)}:${js}`);
 	}
+	if (cls?.js) entries.push(`"$c":${cls.js}`);
 	const js = `(window.__f2s=window.__f2s||{})[${JSON.stringify(playerId)}]={${entries.join(",")}};`;
 	const classes: Record<string, string> = {};
 	const bitmaps: Record<string, string> = {};
@@ -187,7 +234,13 @@ export function playerScripts(ctx: Context, playerId: string, warn: (m: string) 
 	if (canvas) for (const m of js.matchAll(/\blib\.([A-Za-z_$][\w$]*)/g)) use(m[1]!);
 	// (getDefinitionByName: any name in the library may be asked for)
 	if (js.includes("getDefinitionByName")) for (const n in linkage) use(n);
-	for (const n of missing) warn(`Frame scripts use ${n}, which the player doesn't have and the library doesn't export for ActionScript`);
+	const cf = ctx.model.classes;
+	if (cls?.js) for (const q in cf?.symbols ?? {}) {
+		const bare = q.slice(q.lastIndexOf(".") + 1);
+		classes[bare] = cf!.symbols![q]!;
+		missing.delete(bare);
+	}
+	for (const n of missing) if (!cls?.classes.has(n) && ![...(cls?.classes.keys() ?? [])].some((q) => q.endsWith(`.${n}`))) warn(`Scripts use ${n}, which the player doesn't have and the library doesn't export for ActionScript`);
 	const list = [];
 	const any = js.includes("getDefinitionByName");
 	if (canvas || any || MEDIA.test(js) || Object.keys(bitmaps).length || Object.keys(classes).some((n) => ctx.model.sounds[classes[n]!])) list.push("media");
@@ -202,7 +255,9 @@ export function playerScripts(ctx: Context, playerId: string, warn: (m: string) 
 		if (FLV.test(js) || elementOf(ctx, (e) => e.kind === "video")) list.push("flv");
 	}
 	const parts = list.map((p) => `${PLAYER_PARTS[p as keyof typeof PLAYER_PARTS]};((window.__f2s[${JSON.stringify(playerId)}].$p=window.__f2s[${JSON.stringify(playerId)}].$p||[]).push(__f2sPart.default));`);
-	return { timelines, js, classes, bitmaps, parts };
+	const bases: Record<string, string> = {};
+	for (const [q, b] of Object.entries(cf?.bases ?? {})) bases[q.slice(q.lastIndexOf(".") + 1)] = b;
+	return { timelines, js, classes, bitmaps, parts, ...(cls?.js && cf?.doc ? { doc: cf.doc } : {}), ...(cls?.js && Object.keys(bases).length ? { bases } : {}) };
 }
 
 /** HTML5 Canvas: frame scripts are JavaScript with `this` the timeline, each frame on its own. */
