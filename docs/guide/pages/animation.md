@@ -81,6 +81,7 @@ Other conditions always run (warned), and a jump to a label that doesn't exist i
 - **Layer folders**, hidden layers (exported by default, as Flash publishes them), guide layers (left out), guided layers.
 - **Layer parenting** (Animate 2020+): children follow their parent's rig frame by frame.
 - **Advanced layers** with layer effects: a colour effect, filters and a blend mode on a whole layer.
-- **9-slice scaling** of movie clips: corners keep their size, also in tweens (rotated instances scale normally, as in Flash).
+- **9-slice scaling** of movie clips: corners keep their size, also in tweens; symbols nested inside scale normally, as Animate draws them (rotated instances scale normally, as in Flash).
+- **Asset Warp** (bitmaps, and vectors with *Auto convert vector to bitmap* off), **art and pattern brushes** and **variable-width strokes** come out as Animate draws them.
 - **3D** (rotation X/Y, translation in Z, 3D motion tweens, view angle, vanishing point) exports in real perspective in SMIL, CSS and the JS player. Lottie has no perspective: there it comes out flat, as close as flat can be.
 - **Video components** (FLVPlayback, HTML5 Canvas *Video*) become an HTML `<video>` over their place, the file copied next to the SVG. Browsers don't play FLV: give the component an MP4 or WebM. In the JS player, scripts drive them as in Flash (`vid.play()`, `vid.seek(5)`, cue points).

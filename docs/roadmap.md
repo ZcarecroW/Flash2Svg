@@ -172,11 +172,11 @@ the AS3 that Animate users actually write is.
 | Shapes, gradients (focal point, spread, linear RGB), bitmap fills, stroke styles | ✅ | checked against Animate's frames |
 | Stroke scale *Normal* under uneven scale, *Horizontal*, *Vertical* | ✅ | a round pen, as measured (`src/core/pens.ts`, f83); scale that changes over time keeps the plain stroke |
 | Variable-width strokes | ✅ | come through Animate's SVG export as outlines: 0.00 % in f70, on scaled symbols and in shape tweens |
-| Art and pattern brushes, fluid brush | ❓ | `PaintBrushStroke`; no test document yet |
+| Art and pattern brushes, fluid brush | ✅ / ❓ | art and pattern brushes 0.00 % (f101, brushes of our own as XFL); the fluid brush: no document to check (it needs a pen; Animate's samples have none) |
 | Static, dynamic, input text; fonts embedded | ✅ | input text is a real field in SMIL, CSS and the player |
 | Bitmaps, smoothing, compression, downscaling | ✅ | |
 | Filters (all 7), colour effects, blend modes, layer effects | ✅ | tweened filters: one filter whose numbers change in the player (package 9); SMIL and CSS a `<filter>` per frame — cheaper to draw in Chromium, compresses well (filters demo 284 KB, 19 KB gzip) |
-| Masks, 9-slice | ✅ / 🟡 | 9-slice: animated scale of symbols with nested symbols |
+| Masks, 9-slice | ✅ | 9-slice with animated scale and nested symbols too (f100) |
 | Classic and motion tweens, eases, shape tweens with hints | ✅ | |
 | Motion guides, orient to path, motion-tween paths | ✅ | guides as paths (package 8); motion tweens, bent paths and the pace along guides as curves through Animate's frames (package 21, f99) |
 | Graphic looping, frame picker, lip sync, movie clips, scenes | ✅ | SMIL/CSS: clips with unrelated loop lengths jump at the repeat (player exact) |
@@ -185,7 +185,7 @@ the AS3 that Animate users actually write is.
 | 3D rotation and translation (perspective) | ✅ | `src/core/persp.ts`: a flat transform plus a CSS `matrix3d` on HTML in a `foreignObject`; Lottie flat (warned) |
 | IK armatures (bones on symbols and on shapes) | ✅ | baked in the working copy (f67–f69): 0.00 % |
 | Asset Warp | ✅ | as Animate's warped bitmaps (f71–f73) |
-| Flexi bones, envelope deformer; warps with "Auto convert vector to bitmap" off | ❓ | go the same way; no test document yet |
+| Flexi bones, envelope deformer; warps with "Auto convert vector to bitmap" off | ✅ / ❓ | vector warps fixed and checked on Animate's own samples (bicycle, jellyfish with warp bones, robot, mantis: 0.00–0.08 %); no document of our own (the warp data is binary, the tool needs its panel); Flexi bones and the envelope deformer are warps drawn the same way, not seen in a document |
 | Sounds | ✅ | player, SMIL, CSS, MP4, WebM; Lottie JSON on request |
 | Video components / video in the timeline | ✅ / ⬜ | embedded FLV: warned, see package 16 |
 | Buttons (states, Hit frame), links, start triggers, scroll | ✅ | e2e-hit: a real mouse in three engines; Lottie: its art is the hit area |
@@ -218,6 +218,22 @@ handles per key), no path geometry: fit those curves exactly instead of sampling
 JSFL to measure it: a curve fitted through the frames). The JS player could move along the curve
 with `offset-path` in its Web Animations too. Firefox's SMIL draws f09 wrong far into the loop
 (~8 minutes, before this package too).
+
+**22. Unverified features** (2026-11-08): 9-slice symbols whose scale is animated now keep their
+9-slice with nested symbols inside, and nested graphics scale normally as Animate draws them
+(f100; it showed the old rule, graphics sliced, was a guess). Art and pattern brushes: their XFL is
+readable (`PaintBrushDefinitions.xml`: per brush JSON parameters with the art as SVG;
+`PaintBrushStroke paintBrushDefinition=…`), so f101 has brushes of our own; they come through
+Animate's SVG export as outlines (0.00 %). Animate ships samples (`Common/Configuration/Samples`,
+`Coachmark/workflows`; read locally, never committed) that showed three bugs: vector warps (Asset
+Warp without bitmap conversion) came out empty, since their frames are shapes worked out on drawing
+that a frame copy loses — now each is drawn alone in a scratch scene of the working copy and exported
+(`exportWarpFrame`); a pasted raw shape listed as several elements stopped the export (Hippo); a
+long export stopped on Animate's "script running a long time" question (mantis). Also found: the SMIL/CSS
+horizon of a looping root ignored clips nested in clips and graphics. Not possible: an own
+vector-warp document (pins and mesh are binary or need the tool's panel, whose tabs ignore
+synthetic clicks; a hand-written puppet drew nothing), a fluid-brush one (needs a pen). Animate
+hangs on quit after documents with warps or XML-edited motion tweens (robot, Hippo, f99): for 25.
 
 **21. Motion as curves** (2026-11-08): motion tweens, armatures, the camera, layer depth, guided
 paces and classic tweens whose ease Animate's settings don't describe were written as Animate's
@@ -323,7 +339,7 @@ Animate as before: an own test document, real keys and clicks where a user is in
 | 19 | **The remaining UI components:** TileList, ScrollPane, UIScrollBar, and jQuery UI components in HTML5 Canvas documents (today: warned) | every component exports | medium | ✅ f96 (29 lines as Flash Player), f97 (7 lines as the published page) |
 | 20 | **`BitmapData.draw()` of display objects**, and library BitmapData readable before it is decoded | canvas-style effects in scripts | medium | ✅ f98: 9 lines as Flash Player (`src/player/paint.ts`, `png.ts`) |
 | 21 | **Motion tweens as curves:** fit their X and Y curves instead of a keyframe per frame; bent motion-tween paths; the JS player moving along `offset-path` | smaller, cleaner motion tweens | medium | ✅ curves through Animate's frames (`src/core/tracks.ts` fitCurve, fitTogether), f99: bent paths (see below) |
-| 22 | **Unverified Animate features:** test documents for art, pattern and fluid brushes, Flexi bones, the envelope deformer, warps with "Auto convert vector to bitmap" off, 9-slice on animated symbols with nested symbols | certainty, fixes for what they show | medium | ⬜ |
+| 22 | **Unverified Animate features:** test documents for art, pattern and fluid brushes, Flexi bones, the envelope deformer, warps with "Auto convert vector to bitmap" off, 9-slice on animated symbols with nested symbols | certainty, fixes for what they show | medium | ✅ f100, f101; vector warps fixed (see below); fluid brush, Flexi bones, envelope ❓ |
 | 23 | **Smaller gaps in the output:** lottie-web's faint inner gradient bevel, the rim of a gradient bevel, CSS filter functions, Firefox's SMIL drifting far into long loops | fidelity | low–medium | ⬜ |
 | 24 | **MP4 and WebM from the command line:** the CLI has no video encoder; through an installed browser or a WebAssembly encoder | batch export of video | medium | ⬜ |
 | 25 | **Why Animate crashes quitting:** after the full batch of test documents, 2 of 4 runs, all work done by then. Find out whether a document or the extractor causes it | a user's Animate must not crash | low, if it can be reproduced | ⬜ |

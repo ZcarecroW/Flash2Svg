@@ -53,7 +53,7 @@ Most of the time is Animate handing over the drawings (the progress bar says "Ex
 - **Strokes:** Animate never draws a stroke thinner than one pixel; SVG does.
 - **Alpha** on a symbol applies to each shape inside, as in Flash; inside such a symbol, alpha on nested symbols applies to them as a whole.
 - **Groups** that hold symbol instances are split: the group's drawing first, its instances above it.
-- **9-slice:** an animated scale is sliced frame by frame for symbols that only hold drawings; named instances and symbols with nested symbols keep normal scaling then (warned).
+- **9-slice:** an animated scale is sliced frame by frame, nested symbols scale with it; named instances and symbols whose content changes over their own frames keep normal scaling then (warned).
 - **3D** needs a browser that does CSS 3D inside an SVG: Chromium browsers and Firefox do; elsewhere, and in Lottie, it comes out flat, as close as flat can be.
 - **Lottie:** button states, UI components and editable text are left out, and sounds unless you ask for them (only lottie-web plays those); *subtract* and *add* are approximated. lottie-web draws an *inner gradient bevel* only faintly (Skottie and dotLottie draw it right). See [Lottie](lottie.md#what-is-not-in-lottie).
 - Animate adds the temporary copy each export works on to its *Recent files* list (JSFL can't open a document without that).
