@@ -99,9 +99,14 @@ export function textNode(t: TextElement, digits: number, fonts?: FontSet): XmlNo
 	const children: XmlNode[] = [];
 	let y = 0;
 	let below = 0;
+	// (a dynamic field shows the lines that start inside its box, as Flash Player does: one made Scrollable holds more)
+	const room = t.textType === "dynamic" ? fieldSize(t).h - 4 : Infinity;
+	let full = false;
 	lines.forEach((line, i) => {
+		if (full) return;
 		const rs = line.pieces.length ? line.pieces.map((p) => p.r) : [line.r];
 		const up = Math.max(...rs.map(ascent));
+		if (i > 0 && y + below + line.r.lineSpacing >= room) return void (full = true);
 		y += i === 0 ? up : below + line.r.lineSpacing + up;
 		below = Math.max(...rs.map(descent));
 		const spans = line.pieces.map((p, k) => {

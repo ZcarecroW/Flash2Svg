@@ -260,6 +260,8 @@ export function compileScene(
 		// (a layer wrap copies its program)
 		for (const n of p.scriptNotes) if (!out.warnings.includes(n)) out.warnings.push(n);
 	}
+	if (s.format !== "player" && !lottie && Object.values(model.timelines).some((t) => t.layers.some((l) => l.keyframes.some((k) => k.elements.some((e) => e.kind === "control" && e.control === "UIScrollBar")))))
+		out.warnings.push("A UIScrollBar scrolls its text field in the JS player only");
 	if (lottie && (s.begin === "visible" || s.begin === "scroll"))
 		out.warnings.push(`Start "${s.begin === "visible" ? "when visible" : "on scroll"}" is up to the page that shows a Lottie animation: it plays when loaded`);
 	if (s.format !== "player" && !lottie && Object.keys(model.sounds).length)

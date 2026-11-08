@@ -259,7 +259,7 @@ export default function controls(L: any): Record<string, unknown> {
 			} else {
 				const b = controlBox(kind, this._w, this._h);
 				fo = svgEl("foreignObject", { x: String(b.x), y: String(b.y), width: String(b.w), height: String(b.h), tabindex: "-1" }) as SVGElement;
-				const spec = controlSpec(kind, this._p, false);
+				const spec = controlSpec(kind, this._p, false, this._w, this._h);
 				if (spec) fo.appendChild(build(spec));
 				this._node.appendChild(fo);
 			}
@@ -1654,6 +1654,9 @@ export default function controls(L: any): Record<string, unknown> {
 		UILoader,
 		DataGrid,
 		DataGridColumn,
+		// (for the part with TileList, ScrollPane and UIScrollBar: parts/panes.ts)
+		SelectableList,
+		$build: build,
 		DataProvider,
 		ComponentEvent,
 		ListEvent,

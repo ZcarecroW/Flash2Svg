@@ -39,7 +39,7 @@ function actionCode(a: HandlerAction): (number | string)[] {
 function textExtras(t: TextElement): PTextExtras {
 	const r = t.runs[0];
 	// (several lines: their text, not the lines they are wrapped to)
-	return [round(t.width, 2), round(t.height, 2), r?.alignment ?? "left", t.textType === "input" ? "input" : "dynamic", (t.selectable ? 1 : 0) | (t.border ? 2 : 0), t.multiline || t.noWrap ? 1 : 0, Math.round((r?.size ?? 12) * 1.1 + (r?.lineSpacing ?? 0)), t.noWrap ? 0 : 1, ...(t.multiline || t.noWrap ? [t.text] : [])] as PTextExtras;
+	return [round(t.width, 2), round(t.height, 2), r?.alignment ?? "left", t.textType === "input" ? "input" : "dynamic", (t.selectable ? 1 : 0) | (t.border ? 2 : 0), t.multiline || t.noWrap ? 1 : 0, r?.lineSpacing ?? 0, t.noWrap ? 0 : 1, ...(t.multiline || t.noWrap ? [t.text] : [])] as PTextExtras;
 }
 
 export function renderPlayer(
@@ -146,7 +146,8 @@ export function renderPlayer(
 					k: "r",
 					s: it.start,
 					e: it.end,
-					x: serialize(doc.video(c, true)),
+					// (put in with innerHTML: in an .svg file the root's xlink prefix isn't known there)
+					x: serialize(doc.video(c, true)).replaceAll(' xlink:href="', ' href="'),
 					...(scripts && c.name ? { nm: c.name } : {}),
 					...(scripts && c.kind === "control" ? { ct: [c.control, c.params, c.width, c.height] as [string, Record<string, unknown>, number, number] } : {}),
 					...(scripts && c.kind === "video" && ctx.model.doc.type === "Flash" ? { ct: ["FLVPlayback", { source: c.src, autoRewind: c.autoRewind }, c.bounds.width, c.bounds.height] as [string, Record<string, unknown>, number, number] } : {}),

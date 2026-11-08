@@ -33,8 +33,36 @@ export function controlBox(kind: string, w: number, h: number): { x: number; y: 
 
 const options = (items: any[], selected: number, style?: string): Spec[] => items.map((it, i) => ["option", { value: itemData(it), selected: i === selected ? "selected" : undefined, style }, itemLabel(it)]);
 
-/** The element for a component; null if there is none to make. */
-export function controlSpec(kind: string, p: Params, canvas: boolean): Spec | null {
+/** A TileList's grid, as Flash Player lays it out: tiles left to right, then top to bottom; padding 0, a scroll bar 15. */
+export function tileGrid(n: number, w: number, h: number, p: Params): { cols: number; rows: number; perRow: number; scrollX: boolean; scrollY: boolean } {
+	const colW = Number(p.columnWidth) || 50,
+		rowH = Number(p.rowHeight) || 50;
+	const policy = String(p.scrollPolicy ?? "auto");
+	const across = Math.max(1, Math.floor(w / colW)),
+		down = Math.max(1, Math.floor(h / rowH));
+	const scrolls = policy === "on" || (policy === "auto" && n > across * down);
+	if (p.direction === "vertical") {
+		const cols = scrolls ? Math.max(1, Math.floor((w - 15) / colW)) : across;
+		return { cols, rows: Math.max(1, Math.ceil(h / rowH)), perRow: cols, scrollX: false, scrollY: policy !== "off" };
+	}
+	const rows = scrolls ? Math.max(1, Math.floor((h - 15) / rowH)) : down;
+	return { cols: Math.max(1, Math.ceil(w / colW)), rows, perRow: Math.max(across, Math.ceil(n / rows)), scrollX: policy !== "off", scrollY: false };
+}
+
+/** A tile: its picture (`source`) above its label. */
+export function tileSpec(label: string, src: string | undefined, selected: boolean): Spec {
+	return [
+		"div",
+		{ role: "option", "aria-selected": String(selected), style: `display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;overflow:hidden;min-width:0;cursor:default${selected ? ";background:#cfe3f2" : ""}` },
+		...(src ? [["img", { src, alt: "", draggable: "false", style: "flex:1 1 0;min-height:0;max-width:100%;object-fit:contain" }] as Spec] : []),
+		["span", { style: "max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" }, label],
+	];
+}
+
+const overflow = (policy: unknown) => (policy === "on" ? "scroll" : policy === "off" ? "hidden" : "auto");
+
+/** The element for a component (`w`, `h`: its box); null if there is none to make. */
+export function controlSpec(kind: string, p: Params, canvas: boolean, w = 100, h = 100): Spec | null {
 	const disabled = p.enabled === false || p.disabled === true ? "disabled" : undefined;
 	const skin = canvas ? BOX : SKIN;
 	const field = canvas ? BOX : FIELD;
@@ -83,6 +111,36 @@ export function controlSpec(kind: string, p: Params, canvas: boolean): Spec | nu
 		case "UILoader":
 		case "Image":
 			return ["img", { src: String(p.file ?? p.source ?? p.src ?? ""), alt: String(p.alt ?? ""), class: cls, style: `${BOX};object-fit:${p.scaleContent === false ? "none" : p.maintainAspectRatio === false ? "fill" : "contain"};object-position:0 0` }];
+		case "TileList": {
+			const g = tileGrid(items.length, w, h, p);
+			const colW = Number(p.columnWidth) || 50,
+				rowH = Number(p.rowHeight) || 50;
+			return [
+				"div",
+				{
+					role: "listbox",
+					tabindex: "0",
+					"aria-multiselectable": p.allowMultipleSelection ? "true" : undefined,
+					"aria-disabled": disabled ? "true" : undefined,
+					style: `${field};padding:0;display:grid;grid-template-columns:repeat(${g.perRow},${colW}px);grid-auto-rows:${rowH}px;align-content:start;justify-content:start;overflow-x:${g.scrollX ? overflow(p.scrollPolicy) : "hidden"};overflow-y:${g.scrollY ? overflow(p.scrollPolicy) : "hidden"}${dim}`,
+				},
+				...items.map((it): Spec => tileSpec(itemLabel(it), it?.file ?? (typeof it?.source === "string" ? it.source : undefined), false)),
+			];
+		}
+		case "ScrollPane": {
+			// (what it shows: a picture, or the first frame of a symbol, which the export puts in)
+			const src = p.file ?? (p.content ? undefined : typeof p.source === "string" && /[./]/.test(p.source) ? p.source : undefined);
+			return [
+				"div",
+				{ style: `${field};padding:0;overflow-x:${overflow(p.horizontalScrollPolicy)};overflow-y:${overflow(p.verticalScrollPolicy)}` },
+				src ? ["img", { src, alt: "", draggable: "false", style: "display:block;max-width:none" }] : ["div", { "data-f2s-content": "" }, ""],
+			];
+		}
+		case "UIScrollBar": {
+			// (the browser's own scroll bar: a box that scrolls over something three times its length)
+			const across = p.direction === "horizontal";
+			return ["div", { style: `${BOX};overflow-${across ? "x" : "y"}:scroll;overflow-${across ? "y" : "x"}:hidden` }, ["div", { style: across ? `width:${w * 3}px;height:1px` : `width:1px;height:${h * 3}px` }, ""]];
+		}
 		case "DataGrid": {
 			const rows: any[] = items;
 			const cols: string[] = rows.length ? Object.keys(rows[0]) : [];

@@ -81,7 +81,7 @@ const names = list
 	? list.split(",")
 	: [
 			// (HTML controls and video are the browser's to draw: e2e-typing.ts and e2e-as3.ts test those)
-			...readdirSync(out).filter((d) => existsSync(join(out, d, "model", "scene.json")) && !VIDEO.has(d) && !/^f(8[5-9]|9[0-5])-/.test(d)),
+			...readdirSync(out).filter((d) => existsSync(join(out, d, "model", "scene.json")) && !VIDEO.has(d) && !/^f(8[5-9]|9[0-6])-/.test(d)),
 			...(existsSync(join(guideDemos, "ref"))
 				? readdirSync(join(guideDemos, "ref"))
 						.filter((d) => existsSync(join(guideDemos, "models", d, "scene.json")))

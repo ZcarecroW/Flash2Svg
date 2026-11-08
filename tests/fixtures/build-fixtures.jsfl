@@ -3577,7 +3577,8 @@
 		doc.as3StrictMode = false;
 		layer("controls");
 		var add = function (kind, name, x, y, params, w, h) {
-			fl.componentsPanel.addItemToDocument({ x: x, y: y }, "User Interface", kind);
+			// (made away from everything: a UIScrollBar dropped on a text field snaps to it)
+			fl.componentsPanel.addItemToDocument({ x: 380, y: 380 }, "User Interface", kind);
 			var e = doc.selection[0];
 			e.name = name;
 			if (w) e.width = w;
@@ -3759,6 +3760,73 @@
 		layer("actions");
 		var t = tl();
 		t.layers[t.currentLayer].frames[0].actionScript = FLfile.read(root + "/as3/f95-xmlns.as");
+	});
+
+	// ---------------------------------------------------------------- f96: TileList, ScrollPane, UIScrollBar
+	build("f96-panes", function () {
+		newDoc("timeline", 400, 400, 24);
+		doc.as3StrictMode = false;
+		symbol("BigArt", "movie clip", function () {
+			rect(0, 0, 400, 300, "#88AACC");
+			rect(20, 20, 60, 60, "#CC3333");
+			rect(340, 240, 380, 280, "#33CC33");
+		});
+		lib.selectItem("BigArt");
+		lib.setItemProperty("linkageExportForAS", true);
+		lib.setItemProperty("linkageClassName", "BigArt");
+		lib.setItemProperty("linkageExportInFirstFrame", true);
+		layer("story");
+		var lines = [];
+		for (var n = 1; n <= 12; n++) lines.push("Line " + n);
+		var storyBox = { left: 220, top: 20, right: 360, bottom: 80 };
+		doc.selectNone();
+		doc.addNewText(storyBox, " ");
+		var els = tl().layers[tl().currentLayer].frames[0].elements;
+		var st = els[els.length - 1];
+		st.textType = "dynamic";
+		st.setTextAttr("face", "Arial");
+		st.setTextAttr("size", 12);
+		st.setTextAttr("fillColor", "#000000");
+		st.setTextAttr("bold", false);
+		st.setTextAttr("italic", false);
+		st.setTextAttr("alignment", "left");
+		st.lineType = "multiline";
+		st.name = "story";
+		st.autoExpand = false;
+		st.setTextString(lines.join("\r"));
+		// (Scrollable: else the box grows to the text)
+		st.scrollable = true;
+		doc.selectNone();
+		st.selected = true;
+		doc.setTextRectangle(storyBox);
+		doc.selectNone();
+		layer("controls");
+		var add = function (kind, name, x, y, params, w, h) {
+			fl.componentsPanel.addItemToDocument({ x: x, y: y }, "User Interface", kind);
+			var e = doc.selection[0];
+			e.name = name;
+			if (w) e.width = w;
+			if (h) e.height = h;
+			e.x = x;
+			e.y = y;
+			for (var i = 0; params && i < e.parameters.length; i++) {
+				var q = e.parameters[i];
+				if (params[q.name] === undefined) continue;
+				if (q.valueType == "List") {
+					for (var j = 0; j < q.value.length; j++) if (q.value[j].value == params[q.name]) q.listIndex = j;
+				} else q.value = params[q.name];
+			}
+			doc.selectNone();
+		};
+		var pics = [];
+		for (var k = 1; k <= 7; k++) pics.push({ label: "Tile " + k, source: "pic.png" });
+		add("TileList", "tiles", 20, 20, { dataProvider: pics }, 180, 120);
+		add("TileList", "vtiles", 20, 150, { dataProvider: pics, direction: "vertical" }, 120, 90);
+		add("ScrollPane", "pane", 220, 150, { source: "BigArt" }, 150, 100);
+		add("UIScrollBar", "bar", 360, 20, { scrollTargetName: "story", direction: "vertical" }, 15, 60);
+		layer("actions");
+		var t = tl();
+		t.layers[t.currentLayer].frames[0].actionScript = FLfile.read(root + "/as3/f96-panes.as");
 	});
 
 	FLfile.write(outDir + "/build-log.txt", log.join("\n"));

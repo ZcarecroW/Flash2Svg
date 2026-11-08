@@ -984,7 +984,57 @@
 		return out;
 	}
 
-	var CONTROLS = { Button: 1, CheckBox: 1, ColorPicker: 1, ComboBox: 1, CSS: 1, DataGrid: 1, Image: 1, Label: 1, List: 1, NumericStepper: 1, ProgressBar: 1, RadioButton: 1, Slider: 1, TextArea: 1, TextInput: 1, UILoader: 1 };
+	var CONTROLS = { Button: 1, CheckBox: 1, ColorPicker: 1, ComboBox: 1, CSS: 1, DataGrid: 1, Image: 1, Label: 1, List: 1, NumericStepper: 1, ProgressBar: 1, RadioButton: 1, ScrollPane: 1, Slider: 1, TextArea: 1, TextInput: 1, TileList: 1, UIScrollBar: 1, UILoader: 1 };
+
+	/** The library item exported for ActionScript under a class name. */
+	function linkedItem(cls) {
+		var items = job.lib.items;
+		for (var i = 0; i < items.length; i++) if (String(get(items[i], "linkageClassName", "") || "") == cls) return items[i];
+		return null;
+	}
+
+	/** A file of the document's folder copied next to the export (videos/): its new path, or null. */
+	function copyNext(src) {
+		if (!src || /^[a-z]+:/i.test(src)) return null;
+		var from = (job.srcDoc.pathURI || "").replace(/\/[^\/]*$/, "") + "/" + String(src).replace(/\\/g, "/");
+		if (!FLfile.exists(from)) {
+			warn("The file " + src + " was not found next to the document: it stays linked as it is");
+			return null;
+		}
+		FLfile.createFolder(job.outDir + "/videos");
+		var name = from.replace(/^.*\//, "");
+		return FLfile.copy(from, job.outDir + "/videos/" + name) || FLfile.exists(job.outDir + "/videos/" + name) ? "videos/" + name : null;
+	}
+
+	/** What a TileList's tile or a ScrollPane shows: a symbol (its timeline, read), a library bitmap, or a file. */
+	function sourceOf(o, src) {
+		if (!src || typeof src != "string") return;
+		var item = /^[\w.$]+$/.test(src) && !/\.(png|jpe?g|gif|swf)$/i.test(src) ? linkedItem(src) : null;
+		if (item && item.timeline) {
+			o.content = "sym:" + item.name;
+			(job.model.linkage || (job.model.linkage = {}))[src.substr(src.lastIndexOf(".") + 1)] = o.content;
+			queueTimeline(o.content);
+			// (its box, from its registration point: an instance for a moment)
+			var t = job.doc.getTimeline();
+			var at = t.addNewLayer("f2s pane");
+			t.currentLayer = at;
+			job.doc.selectNone();
+			job.lib.addItemToDocument({ x: 0, y: 0 }, item.name);
+			var e = job.doc.selection[0];
+			if (e) {
+				e.x = 0;
+				e.y = 0;
+				o.contentBox = [round(e.left - e.matrix.tx), round(e.top - e.matrix.ty), round(e.width), round(e.height)];
+			}
+			t.deleteLayer(at);
+		} else if (item && item.itemType == "bitmap") {
+			var b = readBitmap(item);
+			if (b && job.model.bitmaps[b]) o.file = job.model.bitmaps[b].file;
+		} else {
+			var c = copyNext(src);
+			if (c) o.file = c;
+		}
+	}
 
 	/** A UI component: what it is and its parameters. */
 	function controlOf(el) {
@@ -1023,6 +1073,8 @@
 			height: round(height),
 			bounds: boundsOf(el)
 		};
+		if (kind == "ScrollPane") sourceOf(params, params.source);
+		if (kind == "TileList") for (var t = 0; params.dataProvider && t < params.dataProvider.length; t++) sourceOf(params.dataProvider[t], params.dataProvider[t].source);
 		// a file of the document's goes next to the export, a style sheet into it
 		var src = kind == "Image" ? params.src : kind == "CSS" ? params.href : null;
 		if (src && !/^[a-z]+:/i.test(src)) {

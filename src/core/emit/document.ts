@@ -10,6 +10,7 @@ import { imageMime } from "../mime.ts";
 import { fontKey, type EmbeddedFont } from "../fonts.ts";
 import type { AccInfo, ControlElement, FilterData, Mat, VideoElement } from "../model.ts";
 import { controlNode } from "./controls.ts";
+import { StaticRenderer } from "./static.ts";
 import type { FontSet } from "./text.ts";
 import { cdata, clone, el, serialize, walk, type XmlNode } from "../xml.ts";
 import { buildFilters, colorMatrix, matrixString, type ColorMatrixValues } from "./filters.ts";
@@ -71,6 +72,18 @@ export class OutputDoc {
 		},
 	};
 
+	/** What a ScrollPane shows of a library symbol: its first frame, in an <svg> of the symbol's size. */
+	private paneContent(e: ControlElement): XmlNode | undefined {
+		const id = e.params.content as string | undefined;
+		const box = e.params.contentBox as [number, number, number, number] | undefined;
+		const prog = id ? this.ctx.programs[id] : undefined;
+		if (!prog || !box) return undefined;
+		const [x, y, w, h] = box;
+		const nodes = new StaticRenderer(this.ctx, this, { movieClips: "first", textAsOutlines: false }).timeline(prog, 0, 0, 1);
+		// (the content stands with its registration point at the pane's corner, as in Flash Player)
+		return el("svg", { xmlns: "http://www.w3.org/2000/svg", width: fmt(Math.max(0, x + w), 2), height: fmt(Math.max(0, y + h), 2), style: "display:block;overflow:visible" }, nodes);
+	}
+
 	/**
 	 * A video component as an HTML <video> in a <foreignObject> over its bounds, its file copied
 	 * next to the output. Autoplay needs `muted` in browsers, so a playing video is muted; `play`
@@ -78,9 +91,9 @@ export class OutputDoc {
 	 */
 	video(e: VideoElement | ControlElement, play: boolean): XmlNode {
 		if (e.kind === "control") {
-			const file = e.params.file as string | undefined;
-			if (file && !this.assets.some((a) => a.path === file)) this.assets.push({ path: file, source: file });
-			return controlNode(e, 2, this.ctx.model.doc.type !== "Flash");
+			const files = [e.params.file, ...((e.params.dataProvider as { file?: string }[] | undefined) ?? []).map((it) => it?.file)];
+			for (const file of files) if (typeof file === "string" && !this.assets.some((a) => a.path === file)) this.assets.push({ path: file, source: file });
+			return controlNode(e, 2, this.ctx.model.doc.type !== "Flash", this.paneContent(e));
 		}
 		if (e.file && !this.assets.some((a) => a.path === e.file)) this.assets.push({ path: e.file, source: e.file });
 		const b = e.bounds;

@@ -1333,6 +1333,8 @@ class TextField extends DisplayObject {
 			// (a field of several lines says its text, and Flash ends it with a line of its own)
 			if (extras?.[8] !== undefined) this._text = extras[8].replace(/\r\n|\n/g, "\r") + (gutter ? "\r" : "");
 			f.align = extras?.[2] ?? "left";
+			// (Flash Player: the line spacing set in Animate is the format's leading)
+			if (gutter && extras?.[6]) f.leading = extras[6];
 			this._chars = Array.from(this._text, () => f);
 			this._selected = [this._text.length, this._text.length];
 			// the field's box is its space: the text's own matrix points inside the gutter
@@ -1355,7 +1357,8 @@ class TextField extends DisplayObject {
 				}
 				this._multi = !!extras[5];
 				this._wrap = !!extras[5] && extras[7] !== 0;
-				(this as any)["$_lh"] = extras[6];
+				// (CreateJS: a line's height from its size and the spacing)
+				(this as any)["$_lh"] = Math.round(f.size! * 1.1 + extras[6]);
 			}
 			if (box) this._take(box);
 			this._lay();
@@ -1533,7 +1536,8 @@ class TextField extends DisplayObject {
 			}
 			parts.push(row);
 			y += line.descent + line.leading;
-			if (y > this._h && !this._i) break;
+			// (the lines that start inside its box show, as in Flash Player)
+			if (this._auto === "none" && y >= this._h - g) break;
 		}
 		t.replaceChildren(...parts);
 		this._backing();
@@ -1679,10 +1683,15 @@ class TextField extends DisplayObject {
 		const l = this._lines[0];
 		if (this._in) this._in.scrollTop = l ? (this._v - 1) * (l.ascent + l.descent + l.leading) : 0;
 		else this._draw();
+		// (Flash Player says so each time it is set, moved or not)
+		this.dispatchEvent(new FEvent(FEvent.SCROLL));
 	}
 	get maxScrollV() {
 		let h = 0,
 			n = this._lines.length;
+		// (the empty line after a last line break takes no room)
+		const last = this._lines[n - 1];
+		if (n > 1 && last && last.from >= this._text.length) n--;
 		while (n > 0) {
 			const l = this._lines[n - 1]!;
 			h += l.ascent + l.descent + l.leading;
@@ -2669,6 +2678,9 @@ export class Scripts {
 	 */
 	born(i: Inst) {
 		this.inPlace.add(i);
+		// (a scroll bar works its text field, a pane plays its symbol: they get their objects at once)
+		const ct = (i.it as PRef).ct?.[0];
+		if (ct === "UIScrollBar" || ct === "ScrollPane") this.safely(() => void this.objOfInst(i));
 		const c = i.clip;
 		const cls = c && c.kind !== 1 ? this.classFor(c) : null;
 		if (!cls && !this.addedHeard) return;

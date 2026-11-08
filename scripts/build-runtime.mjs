@@ -164,7 +164,7 @@ const noScripts = {
  * overwrite them. Their names start with $ and a letter, which AS3 code hardly ever does.
  */
 const SCRIPTED = new RegExp(`^(${INTERNAL.join("|")}|_[A-Za-z0-9][\\w$]*)$`);
-const PARTS = ["media", "filters", "createjs", "query", "input", "controls", "flv", "classes", "xml"];
+const PARTS = ["media", "filters", "createjs", "query", "input", "controls", "flv", "classes", "xml", "panes"];
 
 /** Names already in use as $-names somewhere in the player or in the code scripts compile to. */
 function takenNames() {

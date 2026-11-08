@@ -20,7 +20,8 @@ const MEDIA = /\$f\.(Bitmap|BitmapData|ByteArray|Sound|SoundChannel|SoundMixer|V
 const XML = /\$f\.(XML|XMLList|isXMLName|Namespace|QName)\b|\$r\.x(ml|a|d|c|f|n|s|q|del|eq|dns)\(/;
 const FLV = /\$f\.(FLVPlayback|VideoEvent|VideoState|MetadataEvent|VideoScaleMode|CuePointType)\b/;
 const INPUT = /\$f\.TextFieldType\b|"input"/;
-const CONTROLS = /\$f\.(Button|CheckBox|RadioButton|RadioButtonGroup|ComboBox|List|TextInput|TextArea|Label|NumericStepper|Slider|ColorPicker|ProgressBar|UILoader|DataGrid|DataGridColumn|DataProvider|UIComponent|ComponentEvent|ListEvent|SliderEvent|ColorPickerEvent|DataChangeEvent|DataChangeType|ProgressBarMode|ProgressBarDirection|SliderDirection|ButtonLabelPlacement|ScrollPolicy|StyleManager|LabelButton)\b/;
+const PANES = /\$f\.(TileList|ScrollPane|UIScrollBar|ScrollBar|ScrollEvent|ScrollBarDirection)\b/;
+const CONTROLS = /\$f\.(TileList|ScrollPane|UIScrollBar|ScrollBar|ScrollEvent|ScrollBarDirection|Button|CheckBox|RadioButton|RadioButtonGroup|ComboBox|List|TextInput|TextArea|Label|NumericStepper|Slider|ColorPicker|ProgressBar|UILoader|DataGrid|DataGridColumn|DataProvider|UIComponent|ComponentEvent|ListEvent|SliderEvent|ColorPickerEvent|DataChangeEvent|DataChangeType|ProgressBarMode|ProgressBarDirection|SliderDirection|ButtonLabelPlacement|ScrollPolicy|StyleManager|LabelButton)\b/;
 const FILTERS = /\$f\.(BlurFilter|GlowFilter|DropShadowFilter|BevelFilter|ColorMatrixFilter|BitmapFilterQuality|BitmapFilterType)\b|createjs\.\w*Filter/;
 
 /** A statement the action lists can say. */
@@ -201,7 +202,9 @@ export function playerScripts(ctx: Context, playerId: string, warn: (m: string) 
 		timelines.add(id);
 	}
 	const cls = canvas ? null : classesOf(ctx.model);
-	if (!timelines.size && !cls?.js) return null;
+	// (a UIScrollBar scrolls its text field with the player's code, frame scripts or not)
+	const bars = !canvas && elementOf(ctx, (e) => e.kind === "control" && e.control === "UIScrollBar");
+	if (!timelines.size && !cls?.js && !bars) return null;
 	if (cls) {
 		for (const x of cls.failed) warn(`${x.file}${x.line ? `, line ${x.line}` : ""}: this class can't run (${x.message})`);
 		for (const w of cls.warnings) warn(w);
@@ -233,6 +236,9 @@ export function playerScripts(ctx: Context, playerId: string, warn: (m: string) 
 	for (const m of js.matchAll(/\$r\.cls\("([^"]+)"/g)) if (!use(m[1]!)) missing.add(m[1]!);
 	// (Canvas documents: lib.Name)
 	if (canvas) for (const m of js.matchAll(/\blib\.([A-Za-z_$][\w$]*)/g)) use(m[1]!);
+	// (a ScrollPane's symbol: the player makes it when scripts ask for the pane's content)
+	for (const t of Object.values(ctx.model.timelines))
+		for (const l of t.layers) for (const k of l.keyframes) for (const e of k.elements) if (e.kind === "control" && e.control === "ScrollPane" && e.params.content && typeof e.params.source === "string") use(e.params.source);
 	// (getDefinitionByName: any name in the library may be asked for)
 	if (js.includes("getDefinitionByName")) for (const n in linkage) use(n);
 	const cf = ctx.model.classes;
@@ -253,6 +259,7 @@ export function playerScripts(ctx: Context, playerId: string, warn: (m: string) 
 		const controls = CONTROLS.test(js) || elementOf(ctx, (e) => e.kind === "control");
 		if (controls || INPUT.test(js) || elementOf(ctx, (e) => e.kind === "text" && e.textType === "input")) list.push("input");
 		if (controls) list.push("controls");
+		if (PANES.test(js) || elementOf(ctx, (e) => e.kind === "control" && (e.control === "TileList" || e.control === "ScrollPane" || e.control === "UIScrollBar"))) list.push("panes");
 		if (FLV.test(js) || elementOf(ctx, (e) => e.kind === "video")) list.push("flv");
 		if (cls?.js) list.push("classes");
 		if (XML.test(js)) list.push("xml");
