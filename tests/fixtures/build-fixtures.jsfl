@@ -3734,6 +3734,17 @@
 		t.layers[t.currentLayer].frames[3].actionScript = 'import flash.system.fscommand;\ntrace("root frame 4", numChildren);\ntrace("END");\nfscommand("quit");\nstop();';
 	});
 
+	// ---------------------------------------------------------------- f93: a document class that extends Sprite, and what code-only projects use
+	build("f93-sprite", function () {
+		newDoc("timeline", 400, 300, 24);
+		doc.docClass = "App";
+		doc.sourcePath = "../as3/f93";
+		boxSymbol();
+		layer("art");
+		var l = place("box", 120, 80, 0);
+		l.name = "logo";
+	});
+
 	FLfile.write(outDir + "/build-log.txt", log.join("\n"));
 	fl.closeAll(false);
 	fl.quit(false);

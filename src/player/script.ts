@@ -12,7 +12,9 @@ import type { PInst, PItem, PRef, PScene, PTextExtras, PTimeline, PTrack } from 
 import {
 	ArgumentError,
 	asFlashError,
+	DefinitionError,
 	EOFError,
+	IllegalOperationError,
 	fail,
 	FColorTransform,
 	FMatrix,
@@ -909,6 +911,11 @@ class DisplayObjectContainer extends DisplayObject {
 
 class Sprite extends DisplayObjectContainer {
 	override _cls = "Sprite";
+	constructor(node?: SVGElement) {
+		super(node);
+		// (a document class or a symbol's class extending Sprite: the timeline is its; MovieClip does it for its own)
+		if (!node && new.target !== Sprite && !(this instanceof MovieClip)) current.adopt(this, new.target);
+	}
 	buttonMode = false;
 	useHandCursor = true;
 	doubleClickEnabled = false;
@@ -2035,19 +2042,19 @@ class FTimer extends Dispatcher {
 	delay: number;
 	repeatCount: number;
 	currentCount = 0;
-	private id = 0;
+	private _id = 0;
 	constructor(delay: number, repeat = 0) {
 		super();
 		this.delay = delay;
 		this.repeatCount = repeat;
 	}
 	get ["running"]() {
-		return !!this.id;
+		return !!this._id;
 	}
 	start() {
-		if (this.id) return;
+		if (this._id) return;
 		const s = current;
-		this.id = window.setInterval(() => {
+		this._id = window.setInterval(() => {
 			this.currentCount++;
 			const done = this.repeatCount > 0 && this.currentCount >= this.repeatCount;
 			s.safely(() => {
@@ -2060,8 +2067,8 @@ class FTimer extends Dispatcher {
 		}, Math.max(this.delay, 1000 / 60));
 	}
 	stop() {
-		clearInterval(this.id);
-		this.id = 0;
+		clearInterval(this._id);
+		this._id = 0;
 	}
 	reset() {
 		this.stop();
@@ -2267,6 +2274,8 @@ export class Scripts {
 			IOError,
 			SecurityError,
 			EOFError,
+			IllegalOperationError,
+			DefinitionError,
 			EventDispatcher: Dispatcher,
 			DisplayObject,
 			DisplayObjectContainer,
@@ -2565,7 +2574,7 @@ export class Scripts {
 
 
 	/** A class's object made: its timeline (one being made for it, or a new one of its symbol). */
-	adopt(o: MovieClip, cls: unknown) {
+	adopt(o: Sprite, cls: unknown) {
 		const mk = this.making;
 		let c: Clip;
 		let fresh = false;
@@ -3138,6 +3147,8 @@ function isType(x: unknown, c: unknown): boolean {
 			return typeof x === "boolean";
 		case Object:
 			return x !== null && x !== undefined;
+		case "Class":
+			return typeof x === "function";
 	}
 	return typeof c === "function" && x instanceof c;
 }

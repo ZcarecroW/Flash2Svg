@@ -120,6 +120,8 @@ export const FLASH_API = new Set([
 	"IOError",
 	"SecurityError",
 	"EOFError",
+	"IllegalOperationError",
+	"DefinitionError",
 	"EventDispatcher",
 	"FrameLabel",
 	"Scene",
@@ -507,7 +509,7 @@ export class Emitter {
 
 	/** A class as `is` and `as` take it. */
 	protected classOf(type: string): string {
-		if (type === "int" || type === "uint" || type === "Number" || type === "String" || type === "Boolean") return `"${type}"`;
+		if (type === "int" || type === "uint" || type === "Number" || type === "String" || type === "Boolean" || type === "Class") return `"${type}"`;
 		return type.startsWith("Vector.<") ? JSON.stringify(type) : this.ref(type);
 	}
 
@@ -516,7 +518,7 @@ export class Emitter {
 		if (x.op === "as" || x.op === "is") {
 			if (x.b.k === "vector") return `$r.${x.op}(${a},${this.expr(x.b)})`;
 			const type = x.b.k === "id" ? x.b.name : x.b.k === "member" ? x.b.name : "*";
-			const cls = type === "int" || type === "uint" || type === "Number" || type === "String" || type === "Boolean" ? `"${type}"` : this.expr(x.b);
+			const cls = type === "int" || type === "uint" || type === "Number" || type === "String" || type === "Boolean" || type === "Class" ? `"${type}"` : this.expr(x.b);
 			return `$r.${x.op}(${a},${cls})`;
 		}
 		return `(${a}${x.op === "instanceof" || x.op === "in" ? ` ${x.op} ` : x.op}${this.expr(x.b)})`;

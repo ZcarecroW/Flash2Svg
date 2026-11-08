@@ -40,6 +40,12 @@ export class SecurityError extends Error {
 export class EOFError extends Error {
 	override name = "EOFError";
 }
+export class IllegalOperationError extends Error {
+	override name = "IllegalOperationError";
+}
+export class DefinitionError extends Error {
+	override name = "DefinitionError";
+}
 
 /** A JavaScript error of compiled code, as the AS3 error it stands for. */
 export function asFlashError(e: any): unknown {
@@ -519,5 +525,6 @@ export const PACKAGES: Record<string, string> = {
 	"flash.media": "Sound SoundChannel SoundTransform Video",
 	"flash.net": "URLRequest URLLoader URLVariables NetConnection NetStream SharedObject",
 	"flash.utils": "Timer ByteArray Dictionary",
+	"flash.errors": "IOError EOFError IllegalOperationError",
 	"flash.filters": "BlurFilter GlowFilter DropShadowFilter BevelFilter ColorMatrixFilter",
 };

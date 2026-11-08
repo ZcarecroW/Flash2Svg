@@ -592,15 +592,15 @@ class URLLoader extends Dispatcher {
 	dataFormat = "text";
 	bytesLoaded = 0;
 	bytesTotal = 0;
-	private ask: AbortController | null = null;
+	private _ask: AbortController | null = null;
 	constructor(req?: URLRequest) {
 		super();
 		if (req) this.load(req);
 	}
 	load(req: URLRequest) {
 		const say = (e: FEvent) => current.safely(() => this.dispatchEvent(e));
-		this.ask = new AbortController();
-		const init: RequestInit = { method: req.method, signal: this.ask.signal };
+		this._ask = new AbortController();
+		const init: RequestInit = { method: req.method, signal: this._ask.signal };
 		let url = req.url;
 		if (req.data !== null && req.data !== undefined) {
 			const body = req.data instanceof FByteArray ? Uint8Array.from(req.data) : String(req.data);
@@ -638,7 +638,7 @@ class URLLoader extends Dispatcher {
 		);
 	}
 	close() {
-		this.ask?.abort();
+		this._ask?.abort();
 	}
 }
 
@@ -712,33 +712,33 @@ class Video extends DisplayObject {
 	_cls = "Video";
 	smoothing = false;
 	deblocking = 0;
-	private box: SVGElement;
-	private w: number;
-	private h: number;
-	private ns: NetStream | null = null;
+	private _vb: SVGElement;
+	private _vw: number;
+	private _vh: number;
+	private _ns: NetStream | null = null;
 	constructor(w = 320, h = 240) {
 		super();
-		this.w = w;
-		this.h = h;
-		this.box = this._node.appendChild(svgEl("foreignObject", { width: String(w), height: String(h) }));
+		this._vw = w;
+		this._vh = h;
+		this._vb = this._node.appendChild(svgEl("foreignObject", { width: String(w), height: String(h) }));
 	}
 	attachNetStream(s: NetStream | null) {
-		this.ns = s;
-		if (!s) return this.box.replaceChildren();
+		this._ns = s;
+		if (!s) return this._vb.replaceChildren();
 		s._el.style.cssText = "width:100%;height:100%;display:block";
-		this.box.replaceChildren(s._el);
+		this._vb.replaceChildren(s._el);
 	}
 	clear() {
-		this.box.replaceChildren();
+		this._vb.replaceChildren();
 	}
 	get videoWidth() {
-		return this.ns?._el.videoWidth ?? 0;
+		return this._ns?._el.videoWidth ?? 0;
 	}
 	get videoHeight() {
-		return this.ns?._el.videoHeight ?? 0;
+		return this._ns?._el.videoHeight ?? 0;
 	}
 	_self(): Box {
-		return { l: 0, t: 0, r: this.w, b: this.h };
+		return { l: 0, t: 0, r: this._vw, b: this._vh };
 	}
 }
 
