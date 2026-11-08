@@ -30,9 +30,9 @@ documents.
   frame.
 - **Everything is verified against Animate.** Each tween is sampled from Animate's own
   interpolation (`frame.tweenObj`); the compiler only keeps its compact curve when it reproduces
-  every frame, otherwise it falls back to the samples (motion guides, orient to path, motion
-  objects, anything unusual).
-- **Modern motion tweens** (object-based), motion guides and orient-to-path.
+  every frame, otherwise it fits curves through the samples (motion objects, Motion Editor curves,
+  bent paths, bones, the camera): a few keys with timing curves, within 0.05 px of every frame.
+- **Modern motion tweens** (object-based, bent paths too), motion guides and orient-to-path.
 - **Shape tweens as morphs**: in SMIL and the JS player one drawing whose paths, colours and
   gradients blend, checked against every frame Animate drew (v3: a drawing per frame).
 - **Lottie and dotLottie export** (Animate has none of its own): the same timelines as Lottie
@@ -391,6 +391,7 @@ node dist/cli/flash2svg.js scene.json --format dotlottie -o hero.lottie --begin 
 node dist/cli/flash2svg.js scene.json --format static --svgz  # gzipped: <document>.svgz
 node dist/cli/flash2svg.js scene.json --format css --begin scroll --scroll-range crossing
 node dist/cli/flash2svg.js scene.json --format smil --begin visible --delay 0.3
+node dist/cli/flash2svg.js scene.json --format mp4           # video, encoded by an installed Chrome or Edge
 ```
 
 `--help` lists all options. After the export it prints what the size is made of (drawing,
@@ -432,9 +433,12 @@ write it to `tests/out/<name>/model/`.)
   nested symbols applies to them as a whole (SVG can't multiply inherited alpha).
 - Groups that hold symbol instances are split: the group's drawing first, its instances above
   it (a drawing sub-group placed above an instance inside the same group ends up below it).
-- 9-slice: an animated scale is sliced frame by frame for symbols that only contain drawings;
-  named instances and symbols with nested symbols keep normal scaling then (warned). Nested
-  movie clips, bitmaps and text inside 9-slice symbols scale normally, as in Flash.
+- 9-slice: an animated scale is sliced frame by frame, nested symbols scaling with it; named
+  instances and symbols whose content changes over their own frames keep normal scaling then
+  (warned). Nested symbols (movie clips and graphics), bitmaps and text inside 9-slice symbols
+  scale normally, as Animate draws them.
+- Animate 2024 hangs when it quits after a document with a motion tween was saved (an export
+  saves a copy too) and then closed on its own: quit with it open, or use *File › Close All*.
 - *Source: Current timeline* exports the scene you are in (a warning tells you when the document
   has more than one; jumps into other scenes are then left out); *All scenes in a row* plays them
   one after the other as Flash does.
