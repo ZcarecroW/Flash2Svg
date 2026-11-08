@@ -178,7 +178,7 @@ the AS3 that Animate users actually write is.
 | Filters (all 7), colour effects, blend modes, layer effects | ✅ | tweened filters: one filter whose numbers change in the player (package 9); SMIL and CSS a `<filter>` per frame — cheaper to draw in Chromium, compresses well (filters demo 284 KB, 19 KB gzip) |
 | Masks, 9-slice | ✅ / 🟡 | 9-slice: animated scale of symbols with nested symbols |
 | Classic and motion tweens, eases, shape tweens with hints | ✅ | |
-| Motion guides, orient to path, motion-tween paths | 🟡 | exact, but Animate's frames (a keyframe per frame), not the path |
+| Motion guides, orient to path, motion-tween paths | ✅ | guides as paths (package 8); motion tweens, bent paths and the pace along guides as curves through Animate's frames (package 21, f99) |
 | Graphic looping, frame picker, lip sync, movie clips, scenes | ✅ | SMIL/CSS: clips with unrelated loop lengths jump at the repeat (player exact) |
 | Layer parenting, modern rigging (scale/skew/flip) | ✅ | f65 |
 | Camera pan, zoom, rotate, depth; layer depth (parallax), attached layers; colour effects | ✅ | f61, f62, f82 |
