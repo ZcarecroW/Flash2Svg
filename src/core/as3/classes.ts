@@ -377,6 +377,7 @@ class ClassEmitter extends Emitter {
 			case "this":
 				return this.cls && this.depth === 0 ? this.cls.q : "*";
 			case "id": {
+				if (this.filters) return "XMLList";
 				const local = this.lookup(x.name);
 				if (local !== undefined) return this.qualify(local);
 				const c = this.cls;

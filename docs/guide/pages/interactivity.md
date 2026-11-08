@@ -116,7 +116,22 @@ package game {
 
 Give the symbol *Export for ActionScript* and the class `game.Ball`, save the `.fla` next to a folder `game` holding `Ball.as`, and every ball rolls in the JS player. The classes come with a part of the player of 1.9 KB, only for documents that have them.
 
-**Not supported in classes:** namespaces (`use namespace`, `mx_internal`), `include` in a class file and assets embedded with `[Embed]` (warned). A class that can't be read is named in the warnings with its line; the others still run.
+**Not supported in classes:** namespaces of code (`use namespace`, `mx_internal`), `include` in a class file and assets embedded with `[Embed]` (warned). A class that can't be read is named in the warnings with its line; the others still run.
+
+### XML
+
+XML and E4X work in frame scripts and classes, as Flash Player has them: literals with `{expressions}`, `new XML(text)`, children by name, `.@attributes`, `..descendants`, filters, `for each`, changes, and the same printing, whitespace rules and errors. XML namespaces too (`ns::name`, `default xml namespace`, `Namespace`, `QName`), so Atom and RSS feeds read as they did in Flash. A component's `DataProvider` can be made from XML.
+
+```actionscript-3
+var loader:URLLoader = new URLLoader(new URLRequest("menu.xml"));
+loader.addEventListener(Event.COMPLETE, function (e:Event):void {
+	var menu:XML = new XML(loader.data);
+	for each (var item:XML in menu.item.(@visible != "no")) trace(item.@label, item.price);
+	list.dataProvider = new DataProvider(menu);
+});
+```
+
+Put `menu.xml` next to the exported file. The XML code comes with a part of the player of 16 KB (5.7 KB gzipped), only for documents that use XML.
 
 Plain `stop()`, `play()` and frame jumps, simple mouse handlers and counted loops don't need any of this: they work in every format, and the player stays small (15.6 KB; 86 KB with scripts, and pixels and sounds, filters, classes or CreateJS add to it only if the scripts use them).
 

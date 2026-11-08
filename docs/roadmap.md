@@ -304,7 +304,7 @@ Animate as before: an own test document, real keys and clicks where a user is in
 | # | Goal | Benefit | Effort | Status |
 |---|---|---|---|---|
 | 17 | **Document class and classes in `.as` files:** the parser learns `package`, `class`, `extends`, `super`, statics, getters and setters, interfaces, imports across files. The extractor finds the files through the document's class path. The document class's constructor runs before frame 1 | real AS3 projects, not only frame scripts | high | ✅ f91–f93: 85 lines as Flash Player |
-| 18 | **XML and E4X:** XML, XMLList, `@attributes`, `..` and filters in the AS3 compiler and the runtime | data-driven content; DataProvider from XML | medium–high | ⬜ |
+| 18 | **XML and E4X:** XML, XMLList, `@attributes`, `..` and filters in the AS3 compiler and the runtime | data-driven content; DataProvider from XML | medium–high | ✅ f94, f95: 91 lines as Flash Player, namespaces too |
 | 19 | **The remaining UI components:** TileList, ScrollPane, UIScrollBar, and jQuery UI components in HTML5 Canvas documents (today: warned) | every component exports | medium | ⬜ |
 | 20 | **`BitmapData.draw()` of display objects**, and library BitmapData readable before it is decoded | canvas-style effects in scripts | medium | ⬜ |
 | 21 | **Motion tweens as curves:** fit their X and Y curves instead of a keyframe per frame; bent motion-tween paths; the JS player moving along `offset-path` | smaller, cleaner motion tweens | medium | ⬜ |

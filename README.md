@@ -167,7 +167,8 @@ position (a long one starts in the middle). Lottie JSON carries them on request 
 Frame scripts run in the JS player: AS3 compiled to JavaScript at export, the JavaScript of HTML5
 Canvas documents as it is, on the APIs of Flash Player and CreateJS. Tested line by line against
 both. Documents without scripts pay nothing for this. The document class and classes in `.as` files
-run too, found through the document's class path. See the guide's *Interactivity* page.
+run too, found through the document's class path, and so do XML and E4X (namespaces included). See
+the guide's *Interactivity* page.
 
 ### Forms and components
 
