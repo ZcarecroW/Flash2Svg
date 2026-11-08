@@ -135,7 +135,9 @@ Put `menu.xml` next to the exported file. The XML code comes with a part of the 
 
 Plain `stop()`, `play()` and frame jumps, simple mouse handlers and counted loops don't need any of this: they work in every format, and the player stays small (15.6 KB; 86 KB with scripts, and pixels and sounds, filters, classes or CreateJS add to it only if the scripts use them).
 
-**Not run:** `BitmapData.draw()` of display objects, because a browser can't read them back at once. A SWF can't be loaded, pictures can. Web pages block sound until the visitor clicks or presses a key, also for scripts.
+`BitmapData.draw()` works on display objects too: the player paints the movie clip, sprite or text onto the pixels at once, as Flash Player does (blurs and shadows aren't painted). Library bitmaps have their pixels at once as well, so a frame 1 script can read a collision map or a colour table from them.
+
+**Not run:** a SWF can't be loaded, pictures can. Web pages block sound until the visitor clicks or presses a key, also for scripts.
 
 **In other formats:** SMIL, CSS and Lottie follow plain frame jumps and warn that the rest needs the JS player.
 
