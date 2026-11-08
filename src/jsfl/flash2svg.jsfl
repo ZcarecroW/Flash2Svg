@@ -246,11 +246,17 @@
 		return status();
 	}
 
+	/** The whole export in one call (scripts, tests): Animate's "script running a long time" question kept away meanwhile. */
 	function run(options) {
-		start(options);
-		var s;
-		do { s = step(2000); } while (job.state == "running");
-		return s;
+		try { fl.showIdleMessage(false); } catch (e) {}
+		try {
+			start(options);
+			var s;
+			do { s = step(2000); } while (job.state == "running");
+			return s;
+		} finally {
+			try { fl.showIdleMessage(true); } catch (e) {}
+		}
 	}
 
 	function cancel() {

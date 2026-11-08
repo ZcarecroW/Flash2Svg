@@ -13,6 +13,8 @@
 	var refs = cfg[1] != "noref";
 	var log = [];
 	fl.runScript(repo + "/src/jsfl/flash2svg.jsfl");
+	// (rendering the reference frames of a long document takes a while too)
+	try { fl.showIdleMessage(false); } catch (e) {}
 
 	for (var i = 0; i < names.length; i++) {
 		var name = names[i];
@@ -25,6 +27,7 @@
 			// (documents named for it are exported with all their scenes in a row)
 			var res = Flash2Svg.run({ outDir: outRoot + "/" + name + "/model", allScenes: /scenes$/.test(name) && !/^f(36|58)/.test(name) });
 			log.push(name + " extract: " + res + " (" + (new Date().getTime() - t0) + "ms)");
+			try { fl.showIdleMessage(false); } catch (e) {}
 			if (refs) {
 				FLfile.createFolder(outRoot + "/" + name + "/ref");
 				fl.setActiveWindow(doc);
