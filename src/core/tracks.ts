@@ -137,13 +137,13 @@ function fixCutEases(src: Track, out: Track, from: number, offset: number): Trac
 /**
  * Keys through values sampled at frames t0, t0 + 1, … that pass every one within `tol`, as few as
  * it takes: straight runs linear, curved ones cubic timing functions. Every piece is monotonic
- * (keys at the turning points), so its control points stay inside 0..1 as SMIL's keySplines need;
- * a piece's slopes at its ends come from the neighbouring values, so pieces join smoothly where a
- * key had to go in (at the frame the curve fits worst; afterwards each such key is tried away
- * again). `curve`: what a curved key costs in straight keys (SMIL and CSS write its timing function
- * out, Lottie keys carry their handles anyway): where the frames of a curved piece take no more
- * straight keys than that, they are written straight. The last key is linear, towards whatever
- * follows.
+ * (keys at the turning points, between frames where the values peak there, as a curve from
+ * Animate's Motion Editor does), so its control points stay inside 0..1 as SMIL's keySplines
+ * need; one of the Motion Editor's curves takes a key per such piece. Where one curve doesn't fit,
+ * a key goes in at the frame it misses most; afterwards each such key is tried away again. `curve`: what a curved key costs in straight keys (SMIL and CSS write its timing
+ * function out, Lottie keys carry their handles anyway): where the frames of a curved piece take
+ * no more straight keys than that, they are written straight. The last key is linear, towards
+ * whatever follows.
  */
 export function fitCurve(vals: readonly number[], t0: number, tol: number, curve = 1): Track {
 	const n = vals.length;
@@ -156,55 +156,73 @@ export function fitCurve(vals: readonly number[], t0: number, tol: number, curve
 		if (i === n - 1) return (3 * v[n - 1]! - 4 * v[n - 2]! + v[n - 3]!) / 2;
 		return (v[i + 1]! - v[i - 1]!) / 2;
 	};
-	// one piece from frame i to j with slopes si, sj: its ease, or the frame to split at
-	const one = (i: number, j: number, si: number, sj: number): { ease: Ease } | { at: number; turn: boolean } => {
-		const vi = v[i]!,
-			vj = v[j]!,
-			len = j - i,
-			d = vj - vi;
-		let dev = 0;
-		for (let k = i + 1; k < j; k++) dev = Math.max(dev, Math.abs(vi + (d * (k - i)) / len - v[k]!));
-		if (dev <= tol) return { ease: "linear" };
-		// a turning point: the value furthest beyond the ends' range
-		const lo = Math.min(vi, vj) - tol,
-			hi = Math.max(vi, vj) + tol;
-		let turn = -1,
-			far = 0;
-		for (let k = i + 1; k < j; k++) {
-			const o = v[k]! > hi ? v[k]! - hi : v[k]! < lo ? lo - v[k]! : 0;
-			if (o > far) {
-				far = o;
-				turn = k;
+	const at = (k: number): End => ({ t: k, v: v[k]!, s: slope(k) });
+	// a turning point at frame k: where the parabola through it and its neighbours peaks, when that
+	// is clearly between frames
+	const turning = (k: number, a: End, b: End): End => {
+		if (k > 0 && k < n - 1) {
+			const p = v[k - 1]!,
+				q = v[k]!,
+				r = v[k + 1]!,
+				den = p - 2 * q + r;
+			if (Math.abs(den) > 1e-12) {
+				const dt = Math.round(Math.max(-0.5, Math.min(0.5, (p - r) / (2 * den))) * 1000) / 1000;
+				const t = k + dt;
+				if (Math.abs(dt) > 0.05 && t > a.t + 0.05 && t < b.t - 0.05) return { t, v: q - ((p - r) * dt) / 4, s: 0, flat: true };
 			}
 		}
-		if (turn > 0) return { at: turn, turn: true };
-		const fit = cubicFit(v, i, j, Math.max(0, (si * len) / d), Math.max(0, (sj * len) / d), tol / 2);
-		return fit.err <= tol ? { ease: fit.ease } : { at: fit.worst, turn: false };
+		return { t: k, v: v[k]!, s: 0, flat: true };
 	};
-	// keys: frame, slope there, ease to the next
-	let out: { i: number; s: number; ease: Ease }[] = [];
-	const piece = (i: number, j: number, si: number, sj: number): void => {
-		const r = one(i, j, si, sj);
+	// one piece from a to b: its ease, or where to split it
+	const one = (a: End, b: End): { ease: Ease } | { split: End } => {
+		const len = b.t - a.t,
+			d = b.v - a.v;
+		let dev = 0;
+		for (let k = Math.floor(a.t) + 1; k < b.t; k++) dev = Math.max(dev, Math.abs(a.v + (d * (k - a.t)) / len - v[k]!));
+		if (dev <= tol) return { ease: "linear" };
+		// a turning point: the value furthest beyond the ends' range
+		const lo = Math.min(a.v, b.v) - tol,
+			hi = Math.max(a.v, b.v) + tol;
+		let turn = -1,
+			far = 0;
+		for (let k = Math.floor(a.t) + 1; k < b.t; k++) {
+			const o = v[k]! > hi ? v[k]! - hi : v[k]! < lo ? lo - v[k]! : 0;
+			if (o > far) [far, turn] = [o, k];
+		}
+		if (turn >= 0) return { split: turning(turn, a, b) };
+		const m0 = Math.max(0, (a.s * len) / d),
+			m1 = Math.max(0, (b.s * len) / d);
+		// (flat at a turning point first; its frame may be a little off the true one: free then)
+		let fit = cubicFit(v, a, b, m0, m1, !a.flat, !b.flat, tol / 2);
+		if (fit.err > tol && (a.flat || b.flat)) {
+			const free = cubicFit(v, a, b, m0, m1, true, true, tol / 2);
+			if (free.err < fit.err) fit = free;
+		}
+		return fit.err <= tol ? { ease: fit.ease } : { split: at(fit.worst) };
+	};
+	// keys: where, ease to the next
+	let out: { e: End; ease: Ease }[] = [];
+	const piece = (a: End, b: End): void => {
+		const r = one(a, b);
 		if ("ease" in r) {
-			out.push({ i, s: si, ease: r.ease });
+			out.push({ e: a, ease: r.ease });
 			return;
 		}
-		const sk = r.turn ? 0 : slope(r.at);
-		piece(i, r.at, si, sk);
-		piece(r.at, j, sk, sj);
+		piece(a, r.split);
+		piece(r.split, b);
 	};
 	if (n > 1) {
-		const s1 = slope(n - 1);
-		piece(0, n - 1, slope(0), s1);
-		out.push({ i: n - 1, s: s1, ease: "linear" });
+		const last = at(n - 1);
+		piece(at(0), last);
+		out.push({ e: last, ease: "linear" });
 		for (let k = 1; k < out.length - 1;) {
-			const r = one(out[k - 1]!.i, out[k + 1]!.i, out[k - 1]!.s, out[k + 1]!.s);
+			const r = one(out[k - 1]!.e, out[k + 1]!.e);
 			if ("ease" in r) {
 				out[k - 1]!.ease = r.ease;
 				out.splice(k, 1);
 			} else k++;
 		}
-	} else out.push({ i: 0, s: 0, ease: "linear" });
+	} else out.push({ e: at(0), ease: "linear" });
 	if (curve > 1) {
 		const res: typeof out = [];
 		for (let k = 0; k < out.length; k++) {
@@ -212,137 +230,196 @@ export function fitCurve(vals: readonly number[], t0: number, tol: number, curve
 			res.push(o);
 			if (!Array.isArray(o.ease)) continue;
 			const kept: number[] = [];
-			straight(v, o.i, out[k + 1]!.i, tol, kept);
+			straight(v, o.e, out[k + 1]!.e, tol, kept);
 			if (kept.length + 1 > curve) continue;
 			o.ease = "linear";
-			for (const i of kept.sort((a, b) => a - b)) res.push({ i, s: 0, ease: "linear" });
+			for (const i of kept.sort((a, b) => a - b)) res.push({ e: at(i), ease: "linear" });
 		}
 		out = res;
 	}
-	return out.map((o) => ({ t: t0 + o.i, v: v[o.i]!, ease: o.ease }));
+	return out.map((o) => ({ t: t0 + o.e.t, v: o.e.v, ease: o.ease }));
 }
 
-/** The frames between i and j that straight keys need to pass all within `tol` (Ramer-Douglas-Peucker), into `kept`. */
-function straight(v: readonly number[], i: number, j: number, tol: number, kept: number[]) {
+/** A piece's end: its (frame) time, value and the slope the frames suggest there (value per frame); flat: a turning point, which keeps its slope (0) where it can. */
+interface End {
+	t: number;
+	v: number;
+	s: number;
+	flat?: boolean;
+}
+
+/** The frames between a and b that straight keys need to pass all within `tol` (Ramer-Douglas-Peucker), into `kept`. */
+function straight(v: readonly number[], a: { t: number; v: number }, b: { t: number; v: number }, tol: number, kept: number[]) {
 	let far = tol,
 		at = -1;
-	for (let k = i + 1; k < j; k++) {
-		const e = Math.abs(v[i]! + ((v[j]! - v[i]!) * (k - i)) / (j - i) - v[k]!);
+	for (let k = Math.floor(a.t) + 1; k < b.t; k++) {
+		const e = Math.abs(a.v + ((b.v - a.v) * (k - a.t)) / (b.t - a.t) - v[k]!);
 		if (e > far) [far, at] = [e, k];
 	}
 	if (at < 0) return;
 	kept.push(at);
-	straight(v, i, at, tol, kept);
-	straight(v, at, j, tol, kept);
+	straight(v, a, { t: at, v: v[at]! }, tol, kept);
+	straight(v, { t: at, v: v[at]! }, b, tol, kept);
 }
 
 /**
- * The timing function from v[i] to v[j] with normalised end slopes m0, m1 (its control points on
- * those tangents, inside the unit box) that passes the frames between closest (least squares:
- * the cubic polynomial, a coarse grid, then Levenberg-Marquardt down the valley; it stops once no
- * frame is missed by more than `enough`); err: its largest miss.
+ * The timing function from a to b (the frames between them sampled in v) that passes those frames
+ * closest (least squares; err: its largest miss). An end that is a turning point keeps its slope
+ * (`m0`, `m1`, normalised: 0) with its control point on that tangent unless `free`; elsewhere the control point is
+ * free inside the unit box, starting from the slopes the frames suggest. The search: the cubic
+ * polynomial, a coarse grid along those slopes, then Levenberg-Marquardt down the valley; it stops
+ * once no frame is missed by more than `enough`.
  */
 function cubicFit(
 	v: readonly number[],
-	i: number,
-	j: number,
+	a: { t: number; v: number },
+	b: { t: number; v: number },
 	m0: number,
 	m1: number,
+	free0: boolean,
+	free1: boolean,
 	enough: number,
 ): { ease: [number, number, number, number]; err: number; worst: number } {
-	const len = j - i,
-		vi = v[i]!,
-		d = v[j]! - vi,
-		m = j - i - 1;
+	const len = b.t - a.t,
+		vi = a.v,
+		d = b.v - vi,
+		k0 = Math.floor(a.t) + 1,
+		m = Math.max(0, Math.ceil(b.t) - k0);
 	const max0 = m0 > 1 ? 1 / m0 : 1,
 		max1 = m1 > 1 ? 1 / m1 : 1;
-	const clamp0 = (h: number) => Math.min(max0, Math.max(1e-4, h)),
-		clamp1 = (h: number) => Math.min(max1, Math.max(1e-4, h));
-	let worst = i + 1,
+	// the parameters: per end its control point (free), or its distance along the tangent
+	const lo: number[] = [],
+		hi: number[] = [];
+	if (free0) (lo.push(0, 0), hi.push(1, 1));
+	else (lo.push(1e-4), hi.push(max0));
+	if (free1) (lo.push(0, 0), hi.push(1, 1));
+	else (lo.push(1e-4), hi.push(max1));
+	const P = lo.length;
+	const easeOf = (p: readonly number[]): [number, number, number, number] => {
+		let i = 0;
+		const x1 = p[i++]!,
+			y1 = free0 ? p[i++]! : x1 * m0;
+		const q = p[i++]!,
+			x2 = free1 ? q : 1 - q,
+			y2 = free1 ? p[i++]! : 1 - q * m1;
+		return [x1, y1, x2, y2];
+	};
+	// control points at distances h0, h1 along the slopes
+	const along = (h0: number, h1: number): number[] => {
+		const p: number[] = free0 ? [h0, Math.min(1, h0 * m0)] : [h0];
+		if (free1) p.push(1 - h1, Math.max(0, 1 - h1 * m1));
+		else p.push(h1);
+		return p;
+	};
+	let worst = k0,
 		miss = 0;
-	const r = new Float64Array(m),
-		ra = new Float64Array(m),
-		rb = new Float64Array(m);
-	// the misses at the frames between into `out`; returns their sum of squares
-	const misses = (h0: number, h1: number, out: Float64Array): number => {
-		const x1 = h0,
-			y1 = h0 * m0,
-			x2 = 1 - h1,
-			y2 = 1 - h1 * m1;
-		let sum = 0;
+	// the misses at the frames between into `out` (and their derivatives by the parameters into
+	// `jac`); returns their sum of squares
+	const misses = (p: readonly number[], out: Float64Array, jac?: Float64Array[]): number => {
+		const [x1, y1, x2, y2] = easeOf(p);
+		// x(u) = c1 u + c2 u² + c3 u³
+		const c1 = 3 * x1,
+			c2 = 3 * x2 - 6 * x1,
+			c3 = 1 + 3 * x1 - 3 * x2;
+		let sum = 0,
+			u = 0,
+			prev = 0;
 		miss = 0;
 		for (let k = 0; k < m; k++) {
-			const u = solveTime(x1, x2, (k + 1) / len);
+			const sk = (k0 + k - a.t) / len;
+			// Newton from the last frame's parameter, moved on by the slope there (times grow)
+			let du = c1 + u * (2 * c2 + 3 * c3 * u);
+			u = du > 1e-9 ? Math.min(1, u + (sk - prev) / du) : sk;
+			let ok = false;
+			for (let it = 0; it < 6; it++) {
+				const x = u * (c1 + u * (c2 + c3 * u)) - sk;
+				if (Math.abs(x) < 1e-9) {
+					ok = true;
+					break;
+				}
+				du = c1 + u * (2 * c2 + 3 * c3 * u);
+				if (du < 1e-9) break;
+				const next = u - x / du;
+				if (next < 0 || next > 1) break;
+				u = next;
+			}
+			if (!ok) u = solveTime(x1, x2, sk);
+			prev = sk;
 			const w = 1 - u;
-			const e = vi + d * (3 * w * w * u * y1 + 3 * w * u * u * y2 + u * u * u) - v[i + 1 + k]!;
+			const e = vi + d * (3 * w * w * u * y1 + 3 * w * u * u * y2 + u * u * u) - v[k0 + k]!;
 			out[k] = e;
 			sum += e * e;
 			if (Math.abs(e) > miss) {
 				miss = Math.abs(e);
-				worst = i + 1 + k;
+				worst = k0 + k;
+			}
+			if (jac) {
+				// (x and y by the control points; u moves with the x's: du/dx1 = -dx/dx1 / x'(u))
+				const bx1 = 3 * w * w * u,
+					bx2 = 3 * w * u * u;
+				const xd = Math.max(1e-9, 3 * w * w * x1 + 6 * w * u * (x2 - x1) + 3 * u * u * (1 - x2));
+				const yd = 3 * w * w * y1 + 6 * w * u * (y2 - y1) + 3 * u * u * (1 - y2);
+				const dX1 = (-d * yd * bx1) / xd,
+					dX2 = (-d * yd * bx2) / xd,
+					dY1 = d * bx1,
+					dY2 = d * bx2;
+				let c = 0;
+				if (free0) {
+					jac[c++]![k] = dX1;
+					jac[c++]![k] = dY1;
+				} else jac[c++]![k] = dX1 + m0 * dY1;
+				if (free1) {
+					jac[c++]![k] = dX2;
+					jac[c++]![k] = dY2;
+				} else jac[c++]![k] = -dX2 - m1 * dY2;
 			}
 		}
 		return sum;
 	};
-	let b0 = 0,
-		b1 = 0,
-		best = Infinity,
-		bestMiss = Infinity,
+	const r = new Float64Array(m),
+		trial = new Float64Array(m);
+	const cols = Array.from({ length: P }, () => new Float64Array(m));
+	let bp = along(Math.min(max0, 1 / 3), Math.min(max1, 1 / 3)),
+		best = misses(bp, r),
+		bestMiss = miss,
 		bestWorst = worst;
-	const take = (h0: number, h1: number, e: number) => {
-		[best, b0, b1, bestMiss, bestWorst] = [e, h0, h1, miss, worst];
+	const take = (p: number[], e: number) => {
+		[bp, best, bestMiss, bestWorst] = [p, e, miss, worst];
 	};
 	const done = () => {
 		const box = (x: number) => Math.min(1, Math.max(0, x));
-		return { ease: [box(b0), box(b0 * m0), box(1 - b1), box(1 - b1 * m1)] as [number, number, number, number], err: bestMiss, worst: bestWorst };
+		return { ease: easeOf(bp).map(box) as [number, number, number, number], err: bestMiss, worst: bestWorst };
 	};
-	// (the cubic polynomial in time first: exact for many eases)
-	const p0 = Math.min(max0, 1 / 3),
-		p1 = Math.min(max1, 1 / 3);
-	take(p0, p1, misses(p0, p1, r));
 	if (bestMiss <= enough) return done();
-	for (let a = 1; a <= 3; a++)
+	for (let i = 1; i <= 3; i++)
 		for (let c = 1; c <= 3; c++) {
-			const h0 = (max0 * a) / 3,
-				h1 = (max1 * c) / 3;
-			const e = misses(h0, h1, r);
-			if (e < best) take(h0, h1, e);
+			const p = along((max0 * i) / 3, (max1 * c) / 3);
+			const e = misses(p, trial);
+			if (e < best) take(p, e);
 		}
 	let lambda = 1e-3;
+	const A = new Float64Array(P * P),
+		g = new Float64Array(P);
 	for (let it = 0; it < 8 && best > 1e-12 && bestMiss > enough; it++) {
-		misses(b0, b1, r);
-		const ea = 1e-6 * max0,
-			eb = 1e-6 * max1;
-		// (one-sided differences that stay inside the box)
-		const sa = b0 + ea > max0 ? -ea : ea,
-			sb = b1 + eb > max1 ? -eb : eb;
-		misses(b0 + sa, b1, ra);
-		misses(b0, b1 + sb, rb);
-		let aa = 0,
-			ab = 0,
-			bb = 0,
-			ga = 0,
-			gb = 0;
-		for (let k = 0; k < m; k++) {
-			const ja = (ra[k]! - r[k]!) / sa,
-				jb = (rb[k]! - r[k]!) / sb;
-			aa += ja * ja;
-			ab += ja * jb;
-			bb += jb * jb;
-			ga += ja * r[k]!;
-			gb += jb * r[k]!;
+		misses(bp, r, cols);
+		for (let x = 0; x < P; x++) {
+			let s = 0;
+			for (let k = 0; k < m; k++) s += cols[x]![k]! * r[k]!;
+			g[x] = s;
+			for (let y = x; y < P; y++) {
+				let t = 0;
+				for (let k = 0; k < m; k++) t += cols[x]![k]! * cols[y]![k]!;
+				A[x * P + y] = A[y * P + x] = t;
+			}
 		}
 		let stepped = false;
 		while (lambda < 1e9) {
-			const A = aa * (1 + lambda) + 1e-15,
-				B = bb * (1 + lambda) + 1e-15,
-				det = A * B - ab * ab;
-			const n0 = clamp0(b0 - (B * ga - ab * gb) / det),
-				n1 = clamp1(b1 - (A * gb - ab * ga) / det);
-			const e = misses(n0, n1, ra);
+			const step = solveDamped(A, g, P, lambda);
+			const p = bp.map((x, c) => Math.min(hi[c]!, Math.max(lo[c]!, x - step[c]!)));
+			const e = misses(p, trial);
 			if (e < best) {
-				const moved = Math.abs(n0 - b0) + Math.abs(n1 - b1);
-				take(n0, n1, e);
+				const moved = p.reduce((s, x, c) => s + Math.abs(x - bp[c]!), 0);
+				take(p, e);
 				lambda = Math.max(1e-9, lambda / 3);
 				stepped = moved > 1e-10;
 				break;
@@ -352,6 +429,35 @@ function cubicFit(
 		if (!stepped) break;
 	}
 	return done();
+}
+
+const LL = new Float64Array(16),
+	LX = new Float64Array(4);
+
+/**
+ * x with (A + lambda · diag(A)) x = g, for a small symmetric positive semi-definite A (P × P ≤ 4,
+ * row-major): Cholesky into a shared buffer (read it before the next call).
+ */
+function solveDamped(A: Float64Array, g: Float64Array, P: number, lambda: number): Float64Array {
+	const L = LL,
+		x = LX;
+	for (let i = 0; i < P; i++)
+		for (let j = 0; j <= i; j++) {
+			let s = A[i * P + j]! * (i === j ? 1 + lambda : 1) + (i === j ? 1e-15 : 0);
+			for (let k = 0; k < j; k++) s -= L[i * 4 + k]! * L[j * 4 + k]!;
+			L[i * 4 + j] = i === j ? Math.sqrt(Math.max(s, 1e-30)) : s / L[j * 4 + j]!;
+		}
+	for (let i = 0; i < P; i++) {
+		let s = g[i]!;
+		for (let k = 0; k < i; k++) s -= L[i * 4 + k]! * x[k]!;
+		x[i] = s / L[i * 4 + i]!;
+	}
+	for (let i = P - 1; i >= 0; i--) {
+		let s = x[i]!;
+		for (let k = i + 1; k < P; k++) s -= L[k * 4 + i]! * x[k]!;
+		x[i] = s / L[i * 4 + i]!;
+	}
+	return x;
 }
 
 /** The curve parameter where a timing function with control x's x1, x2 reaches time s. */

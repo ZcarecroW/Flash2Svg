@@ -3879,6 +3879,62 @@
 		t.layers[t.currentLayer].frames[0].actionScript = FLfile.read(root + "/as3/f98-draw.as");
 	});
 
+	// ---------------------------------------------------------------- f99: motion tweens on curves (roadmap package 21)
+	build("f99-curves", function () {
+		newDoc("timeline", 640, 560, 24);
+		boxSymbol();
+		// A motion tween whose property curves get handles, written into its XML: that is how the
+		// Motion Editor and a path bent on stage keep them (a bent path is curved X and Y over time).
+		// Frames 0..23 (a new motion tween lasts a second), then held.
+		function curved(name, x, y, mid, end, edit) {
+			layer(name);
+			var t = tl(),
+				li = t.currentLayer;
+			place("box", x, y, 0);
+			t.createMotionObject(0, 23);
+			if (mid) {
+				t.currentFrame = 11;
+				doc.selectNone();
+				doc.selection = [t.layers[li].frames[11].elements[0]];
+				doc.moveSelectionBy(mid);
+			}
+			t.currentFrame = 23;
+			doc.selectNone();
+			doc.selection = [t.layers[li].frames[23].elements[0]];
+			doc.moveSelectionBy(end);
+			doc.selectNone();
+			var f = t.layers[li].frames[0];
+			var xml = f.getMotionObjectXML();
+			var changed = edit(xml);
+			if (changed == xml) log.push("f99 " + name + ": XML unchanged");
+			f.setMotionObjectXML(changed);
+		}
+		// Motion_Y still (one keyframe) gets handles out of its start and into an end keyframe
+		function yHandles(xml, out, into) {
+			return xml.replace(
+				/(<Property[^>]*id="Motion_Y"[^>]*>)<Keyframe anchor="0,0" next="0,0" previous="0,0" roving="0" timevalue="0"\/>/,
+				'$1<Keyframe anchor="0,0" next="' + out + '" previous="0,0" roving="0" timevalue="0"/><Keyframe anchor="0,0" next="0,0" previous="' + into + '" roving="0" timevalue="23000"/>'
+			);
+		}
+		// an arc: x straight, y up and back down
+		curved("arc", 60, 190, null, { x: 380, y: 0 }, function (xml) {
+			return yHandles(xml, "8000,-200", "-8000,-200");
+		});
+		// an S: y down, then up past its start, then back
+		curved("scurve", 60, 330, null, { x: 380, y: 0 }, function (xml) {
+			return yHandles(xml, "8000,140", "-8000,-140");
+		});
+		// along an arc, turned with it (orient to path)
+		curved("orient", 80, 500, null, { x: 460, y: 0 }, function (xml) {
+			return yHandles(xml, "9000,-160", "-9000,-160").replace(/orientToPath="0"/, 'orientToPath="1"');
+		});
+		// straight pieces through a position keyframe, eased in (the tween's own ease)
+		curved("eased", 520, 60, { x: -150, y: 60 }, { x: -80, y: -60 }, function (xml) {
+			return xml.replace(/<TimeMap strength="0" type="Quadratic"\/>/, '<TimeMap strength="-100" type="Quadratic"/>');
+		});
+		extendAll(40);
+	});
+
 	FLfile.write(outDir + "/build-log.txt", log.join("\n"));
 	fl.closeAll(false);
 	fl.quit(false);

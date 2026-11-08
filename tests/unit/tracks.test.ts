@@ -90,3 +90,48 @@ describe("fitTogether", () => {
 		for (let f = 0; f <= 30; f++) expect(Math.hypot(valueAt(tx!, f) - xs[f]!, valueAt(ty!, f) - ys[f]!)).toBeLessThanOrEqual(0.1 * 1.13);
 	});
 });
+
+describe("fitCurve on the Motion Editor's curves", () => {
+	/** A property curve as Animate keeps it: a cubic Bezier over (frame, value), sampled at frames, in twips. */
+	const editorCurve = (p: [number, number][], frames: number) =>
+		Array.from({ length: frames + 1 }, (_, f) => {
+			let lo = 0,
+				hi = 1;
+			const at = (u: number, i: 0 | 1) => (1 - u) ** 3 * p[0]![i] + 3 * (1 - u) ** 2 * u * p[1]![i] + 3 * (1 - u) * u * u * p[2]![i] + u ** 3 * p[3]![i];
+			for (let it = 0; it < 60; it++) {
+				const u = (lo + hi) / 2;
+				if (at(u, 0) < f) lo = u;
+				else hi = u;
+			}
+			return Math.round(at(lo, 1) * 20) / 20;
+		});
+
+	it("takes a key per rising or falling piece, at the peak between frames", () => {
+		// a bent path's y: up from 190 and back (handles 8 frames out, 200 px up)
+		const arc = editorCurve(
+			[
+				[0, 190],
+				[8, -10],
+				[15, -10],
+				[23, 190],
+			],
+			23,
+		);
+		const track = fitCurve(arc, 0, 0.05);
+		expect(track.map((k) => k.t)).toEqual([0, 11.5, 23]);
+		expect(miss(track, arc)).toBeLessThanOrEqual(0.05 + 1e-9);
+		// an S: down, up past the start, back
+		const s = editorCurve(
+			[
+				[0, 330],
+				[8, 470],
+				[15, 190],
+				[23, 330],
+			],
+			23,
+		);
+		const st = fitCurve(s, 0, 0.05);
+		expect(st).toHaveLength(4);
+		expect(miss(st, s)).toBeLessThanOrEqual(0.05 + 1e-9);
+	});
+});
