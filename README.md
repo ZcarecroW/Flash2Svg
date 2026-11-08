@@ -10,7 +10,7 @@ kind of animation in the file:
 | --- | --- | --- | --- |
 | **SMIL** | `<animate>` / `<animateTransform>` with exact `keySplines` easing | ✓ | button states via CSS, web links, start on click / hover / when visible, scroll |
 | **CSS** | `@keyframes` on the individual transform properties, `cubic-bezier()` or `linear()` easing, class based | ✓ | button states, web links, pause from your page CSS, scroll-driven (inline) |
-| **JS player** | artwork + compact timeline + a 15.6 KB runtime with real Flash semantics (6.3 KB gzipped; 18 KB with shape-tween morphs, 18.7 KB with mouse handlers, 83 KB with frame scripts) | poster frame only | ✓ `play()`, `stop()`, `gotoAndPlay("label")`, buttons, Animate's code snippets, scroll, sounds |
+| **JS player** | artwork + compact timeline + a 15.6 KB runtime with real Flash semantics (6.3 KB gzipped; 18 KB with shape-tween morphs, 18.7 KB with mouse handlers, 86 KB with frame scripts) | poster frame only | ✓ `play()`, `stop()`, `gotoAndPlay("label")`, buttons, Animate's code snippets, scroll, sounds |
 | **Frames** | one still SVG per frame | ✓ | – |
 | **MP4** / **WebM** | video files with their sound, from the panel (H.264 or VP9, through the browser's encoders in Animate), for social media and video players | – | – |
 | **GIF** / **WebP** / **APNG** | animated raster fallbacks of the first pass, running movie clips included (GIF: 256 colours a frame; WebP: full colour with alpha, lossless for flat drawings, only the changed rectangle per frame), for e-mail and apps without SVG animation | ✓ | – |
@@ -166,8 +166,8 @@ position (a long one starts in the middle). Lottie JSON carries them on request 
 
 Frame scripts run in the JS player: AS3 compiled to JavaScript at export, the JavaScript of HTML5
 Canvas documents as it is, on the APIs of Flash Player and CreateJS. Tested line by line against
-both. Documents without scripts pay nothing for this. A document class and classes in `.as` files
-aren't compiled (warned). See the guide's *Interactivity* page.
+both. Documents without scripts pay nothing for this. The document class and classes in `.as` files
+run too, found through the document's class path. See the guide's *Interactivity* page.
 
 ### Forms and components
 

@@ -192,7 +192,7 @@ the AS3 that Animate users actually write is.
 | Frame scripts | ✅ | run in the JS player (package 12); SMIL, CSS and Lottie keep `stop`/`play`/`goto`/counters (warned) |
 | Code snippets | ✅ | all of them run, AS3 and HTML5 Canvas, tested one by one (`tests/out/snipsmoke.ts`, the snippets' text isn't committed) |
 | ActionScript in general (variables, conditions, loops, Math, properties) / Canvas JavaScript | ✅ | package 12; 392 lines identical to Flash Player, 57 to CreateJS |
-| Document class, classes in `.as` files | ⬜ | warned; would need the parser to learn `package` and `class` |
+| Document class, classes in `.as` files | ✅ | package 17 (Part 3) |
 | UI components (Button, CheckBox, ComboBox, … ; Canvas components) | ✅ | real HTML controls; TileList, ScrollPane, UIScrollBar and the jQuery UI components warned |
 | *Export as bitmap* / *cache as bitmap* on instances | ✅ | drawn as vectors: measured the same (f84: 0.00 %) |
 
@@ -303,7 +303,7 @@ Animate as before: an own test document, real keys and clicks where a user is in
 
 | # | Goal | Benefit | Effort | Status |
 |---|---|---|---|---|
-| 17 | **Document class and classes in `.as` files:** the parser learns `package`, `class`, `extends`, `super`, statics, getters and setters, interfaces, imports across files. The extractor finds the files through the document's class path. The document class's constructor runs before frame 1 | real AS3 projects, not only frame scripts | high | ⬜ |
+| 17 | **Document class and classes in `.as` files:** the parser learns `package`, `class`, `extends`, `super`, statics, getters and setters, interfaces, imports across files. The extractor finds the files through the document's class path. The document class's constructor runs before frame 1 | real AS3 projects, not only frame scripts | high | ✅ f91–f93: 85 lines as Flash Player |
 | 18 | **XML and E4X:** XML, XMLList, `@attributes`, `..` and filters in the AS3 compiler and the runtime | data-driven content; DataProvider from XML | medium–high | ⬜ |
 | 19 | **The remaining UI components:** TileList, ScrollPane, UIScrollBar, and jQuery UI components in HTML5 Canvas documents (today: warned) | every component exports | medium | ⬜ |
 | 20 | **`BitmapData.draw()` of display objects**, and library BitmapData readable before it is decoded | canvas-style effects in scripts | medium | ⬜ |

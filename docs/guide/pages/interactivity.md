@@ -85,9 +85,42 @@ stage.addEventListener(MouseEvent.MOUSE_UP, function (e:MouseEvent):void {
 
 A library symbol, bitmap or sound needs *Export for ActionScript* and a class name to be made with `new`; only those your scripts name are exported.
 
-Plain `stop()`, `play()` and frame jumps, simple mouse handlers and counted loops don't need any of this: they work in every format, and the player stays small (15.6 KB; 83 KB with scripts, and pixels and sounds, filters or CreateJS add to it only if the scripts use them).
+### Classes in .as files
 
-**Not run:** the document class and classes in `.as` files (warned at export); `BitmapData.draw()` of display objects, because a browser can't read them back at once. A SWF can't be loaded, pictures can. Web pages block sound until the visitor clicks or presses a key, also for scripts.
+The **document class** and the classes of library symbols run too, with every class they use. Flash2SVG finds the `.as` files where Animate does: through the document's class path (*File > ActionScript Settings > Source path*) and Animate's own, starting from the folder of the saved `.fla`. Then it follows what the classes import, their package and the top level.
+
+- The language of classes: packages, `class` and `interface`, `extends` and `implements`, `super`, `static` members (set up when the class is first used), code in the class body, getters and setters, `private`, `protected`, `internal`, `override`, functions of a package, classes only their file sees, custom events and errors, `Vector.<` a class `>`, `getDefinitionByName`.
+- The document class takes the main timeline: its stage instances are its variables, `stage` is there in its constructor, and the frame scripts are part of it (they reach its members). It may extend `MovieClip` or `Sprite`.
+- A symbol whose class has a file, or whose base class has one, gives every instance its class's object: those on the timeline and those made with `new`. As in Flash Player, the objects are there first, the constructors run children first, then `ADDED` and `ADDED_TO_STAGE`.
+- A class compiled to JavaScript runs Flash Player's order exactly: fields have their values before the base class's constructor runs, a constructor may use `this` before `super()`, a method taken as a value stays bound to its object.
+
+```actionscript-3
+package game {
+	import flash.display.MovieClip;
+	import flash.events.Event;
+
+	public class Ball extends MovieClip {
+		public var speed:Number = 4;
+
+		public function Ball() {
+			addEventListener(Event.ENTER_FRAME, roll);
+		}
+
+		private function roll(e:Event):void {
+			x += speed;
+			if (x > stage.stageWidth) x = 0;
+		}
+	}
+}
+```
+
+Give the symbol *Export for ActionScript* and the class `game.Ball`, save the `.fla` next to a folder `game` holding `Ball.as`, and every ball rolls in the JS player. The classes come with a part of the player of 1.9 KB, only for documents that have them.
+
+**Not supported in classes:** namespaces (`use namespace`, `mx_internal`), `include` in a class file and assets embedded with `[Embed]` (warned). A class that can't be read is named in the warnings with its line; the others still run.
+
+Plain `stop()`, `play()` and frame jumps, simple mouse handlers and counted loops don't need any of this: they work in every format, and the player stays small (15.6 KB; 86 KB with scripts, and pixels and sounds, filters, classes or CreateJS add to it only if the scripts use them).
+
+**Not run:** `BitmapData.draw()` of display objects, because a browser can't read them back at once. A SWF can't be loaded, pictures can. Web pages block sound until the visitor clicks or presses a key, also for scripts.
 
 **In other formats:** SMIL, CSS and Lottie follow plain frame jumps and warn that the rest needs the JS player.
 
