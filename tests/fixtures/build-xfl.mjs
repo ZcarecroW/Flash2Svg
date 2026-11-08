@@ -1,22 +1,25 @@
 // Writes the test documents JSFL can't make as XFL folders (tests/fixtures/xfl/<name>/): armatures,
-// variable-width strokes. build-fixtures.jsfl opens them in Animate and saves them as FLA.
+// variable-width strokes, art and pattern brushes. build-fixtures.jsfl opens them in Animate and
+// saves them as FLA.
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const HEAD = `xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://ns.adobe.com/xfl/2008/"`;
 
-/** A folder Animate opens as a document. `library`: file name -> content of LIBRARY. */
-function writeXfl(root, name, dom, library = {}) {
+/** A folder Animate opens as a document. `library`: file name -> content of LIBRARY; `root`: other files next to DOMDocument.xml. */
+function writeXfl(root, name, dom, library = {}, files = {}) {
 	const dir = join(root, name);
 	rmSync(dir, { recursive: true, force: true });
 	mkdirSync(join(dir, "LIBRARY"), { recursive: true });
 	writeFileSync(join(dir, name + ".xfl"), "PROXY-CS5");
 	writeFileSync(join(dir, "DOMDocument.xml"), `<?xml version="1.0" encoding="UTF-8"?>\n${dom}\n`);
 	for (const [file, xml] of Object.entries(library)) writeFileSync(join(dir, "LIBRARY", file), xml);
+	for (const [file, xml] of Object.entries(files)) writeFileSync(join(dir, file), xml);
 }
 
-const documentTag = (w, h, fps, symbols, body) =>
-	`<DOMDocument ${HEAD} width="${w}" height="${h}" frameRate="${fps}" currentTimeline="1" xflVersion="23.0" creatorInfo="Adobe Animate" platform="Windows" versionInfo="Saved by Animate Windows 23.0" majorVersion="23" buildNumber="0"><symbols>${symbols
+/** `extra`: markup before the symbols (brush definitions). */
+const documentTag = (w, h, fps, symbols, body, extra = "") =>
+	`<DOMDocument ${HEAD} width="${w}" height="${h}" frameRate="${fps}" currentTimeline="1" xflVersion="23.0" creatorInfo="Adobe Animate" platform="Windows" versionInfo="Saved by Animate Windows 23.0" majorVersion="23" buildNumber="0">${extra}<symbols>${symbols
 		.map((s) => `<Include href="${s}.xml"/>`)
 		.join("")}</symbols><timelines><DOMTimeline name="Scene 1"><layers>${body}</layers></DOMTimeline></timelines></DOMDocument>`;
 
@@ -173,7 +176,63 @@ const curves = (...p) => {
 	return s;
 };
 
+// ------------------------------------------------------------------ art and pattern brushes
+
+/**
+ * Paint brush definitions as Animate keeps them (PaintBrushDefinitions.xml): per brush its
+ * parameters as JSON, the art as an SVG document in it. `brushes`: { type: "ArtBrush" |
+ * "PatternBrush", name, guid, svg (inner markup), w, h (the art's size), params }.
+ */
+function brushDefinitions(brushes) {
+	const esc = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/'/g, "&apos;");
+	const defs = brushes.map((b, i) => {
+		const svg = `<?xml version = "1.0" standalone = "no" ?>\n<svg version = "1.1" xmlns = "http://www.w3.org/2000/svg" width = "${b.w}px" height = "${b.h}px">\n<rect x="0" y="0" width="${b.w}" height="${b.h}" fill="none" stroke="none"/>\n${b.svg}\n</svg>\n`;
+		const param = { FlashArtBrushMinorVersion: "0", FlashArtBrushVersion: "1", FlashPaintBrushType: b.type, guid: b.guid, maximumTiltWidthPercentage: "", maximumWidthPercentage: "100.00", minimumTiltWidthPercentage: "", minimumWidthPercentage: "100.00", name: b.name, ...b.params, svgData: svg, svgID: "" };
+		return `<paintbrushdefinition index="${i + 1}" brushParam='${esc(JSON.stringify(param))}'/>`;
+	});
+	return `<paintbrushdefinitions ${HEAD}>${defs.join("")}</paintbrushdefinitions>`;
+}
+
+/** A drawing of strokes, each made with paint brush `def` (index in the definitions) along `edges` (twips). */
+const brushShape = (...strokes) =>
+	`<DOMShape><strokes>${strokes
+		.map(({ def, weight, color }, i) => `<StrokeStyle index="${i + 1}"><PaintBrushStroke scaleMode="normal" weight="${weight}" paintBrushDefinition="${def}"><fill><SolidColor color="${color}"/></fill></PaintBrushStroke></StrokeStyle>`)
+		.join("")}</strokes><edges>${strokes.map(({ edges }, i) => `<Edge strokeStyle="${i + 1}" edges="${edges}"/>`).join("")}</edges></DOMShape>`;
+const brushStroke = (edges, def, weight, color) => brushShape({ edges, def, weight, color });
+
 export function buildXflFixtures(root) {
+	// art and pattern brushes (the Paint Brush tool), brushes of our own: a leaf stretched along the
+	// stroke, a diamond repeated along it; on curves, a line and a symbol that turns and scales
+	{
+		const brushes = [
+			{ type: "ArtBrush", name: "Leaf", guid: "F2500001-0000-4000-8000-000000000001", w: 60, h: 20, svg: `<path d="M 0 10 C 15 -2 45 -2 60 10 C 45 22 15 22 0 10 Z" fill="#000000" stroke="none"/>`, params: { artDirection: "0", diameter: "20", flipArt: "false", foldAdjust: "1", leftEdgePercentage: "20.00", rightEdgePercentage: "80.00", scaleOptionm: "2" } },
+			{ type: "PatternBrush", name: "Diamonds", guid: "F2500001-0000-4000-8000-000000000002", w: 12, h: 12, svg: `<path d="M 6 0 L 12 6 L 6 12 L 0 6 Z" fill="#000000" stroke="none"/>`, params: { FlipAcross: "0", FlipAlong: "0", adjustment: "2", cornerValue: "2", spacing: "0" } },
+		];
+		const layer = (name, frames) => `<DOMLayer name="${name}" color="#4FFF4F"><frames>${frames}</frames></DOMLayer>`;
+		const still = (e) => `<DOMFrame index="0" duration="24" keyMode="9728"><elements>${e}</elements></DOMFrame>`;
+		const inst = (m) => `<DOMSymbolInstance libraryItemName="brushed" symbolType="graphic" loop="loop"><matrix>${matrixXml(m)}</matrix><transformationPoint><Point/></transformationPoint></DOMSymbolInstance>`;
+		writeXfl(
+			root,
+			"f101-brushes",
+			documentTag(
+				500,
+				400,
+				24,
+				["brushed"],
+				layer("leafCurve", still(brushStroke(curves([40, 80], [140, 0], [240, 80], [340, 160], [440, 80]), 1, 20, "#228844"))) +
+					layer("leafLine", still(brushStroke(lines([40, 170], [240, 200]), 1, 30, "#AA4422"))) +
+					layer("diamonds", still(brushStroke(curves([260, 220], [360, 160], [460, 240]), 2, 14, "#3355CC"))) +
+					layer(
+						"turning",
+						`<DOMFrame index="0" duration="23" keyMode="22017" tweenType="motion" motionTweenSnap="true"><elements>${inst({ a: 1, b: 0, c: 0, d: 1, tx: 130, ty: 310 })}</elements></DOMFrame><DOMFrame index="23" keyMode="22017"><elements>${inst({ a: 0.6, b: 0.8, c: -1.3, d: 0.75, tx: 130, ty: 310 })}</elements></DOMFrame>`,
+					),
+				`<brushdefinitions><Include href="PaintBrushDefinitions.xml"/></brushdefinitions>`,
+			),
+			{ "brushed.xml": symbolXml("brushed", brushShape({ edges: curves([-90, 20], [0, -60], [90, 20]), def: 1, weight: 24, color: "#118899" }, { edges: lines([-90, 40], [90, 40]), def: 2, weight: 12, color: "#AA2266" })) },
+			{ "PaintBrushDefinitions.xml": brushDefinitions(brushes) },
+		);
+	}
+
 	// variable-width strokes (the Width tool): profiles along lines and curves; on a symbol that
 	// turns and scales; in a shape tween from one profile to another
 	const taper = [[0, 0, 0], [0.5, 0.5, 0.5], [1, 0, 0]];

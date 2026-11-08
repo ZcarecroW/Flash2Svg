@@ -2842,6 +2842,7 @@
 	buildXfl("f68-ikshape");
 	buildXfl("f69-iknested");
 	buildXfl("f70-width");
+	buildXfl("f101-brushes");
 
 	/**
 	 * Documents made with Animate's own Asset Warp tool (no script can: scripts/animate-session.mjs

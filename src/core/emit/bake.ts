@@ -160,8 +160,9 @@ export function rootTicks(ctx: Context, rootId: string, opts: Pick<BakeOptions, 
 	}
 	if (!frames.length) frames = [0];
 
-	// Movie clips that live for the whole root timeline keep running across the loop: extend the
-	// horizon to a common multiple so they come round exactly.
+	// Movie clips that live for the whole root timeline keep running across the loop (also those
+	// inside them, and inside graphics that live as long): extend the horizon to a common multiple
+	// so they come round exactly.
 	let H = frames.length;
 	// set when running movie clips have no common period within maxTicks
 	let tooLong = false;
@@ -169,12 +170,17 @@ export function rootTicks(ctx: Context, rootId: string, opts: Pick<BakeOptions, 
 		let period = frames.length - intro;
 		for (const layer of prog.layers) {
 			for (const it of layer.items) {
-				if (it.kind !== "instance" || it.symbolType !== "movie clip" || it.start > 0 || it.end < prog.frameCount) continue;
+				if (it.kind !== "instance" || it.start > 0 || it.end < prog.frameCount) continue;
 				const child = ctx.programs[it.symbol];
 				if (!child) continue;
-				const ph = playhead(child);
-				if (ph.prefix.length || !ph.cycle.length) continue;
-				const l = lcm(period, ph.cycle.length);
+				let p: number;
+				if (it.symbolType === "movie clip") {
+					const ph = playhead(child);
+					if (ph.prefix.length || !ph.cycle.length) continue;
+					p = clipPeriod(ctx, child, maxTicks, 0);
+				} else p = insidePeriod(ctx, child, maxTicks, 0);
+				if (p <= 1) continue;
+				const l = lcm(period, p);
 				if (intro + l <= maxTicks) period = l;
 				else tooLong = true;
 			}
@@ -241,18 +247,35 @@ export function bake(ctx: Context, rootId: string, opts: BakeOptions): BakeResul
 /** Ticks after which a running movie clip (and the clips running inside it) repeats; 1 = it stops. */
 function clipPeriod(ctx: Context, prog: Program, max: number, depth: number): number {
 	const ph = playhead(prog);
-	let p = ph.cycle.length || 1;
+	const p = ph.cycle.length || 1;
 	if (depth > 8) return p;
 	const final = ph.cycle.length ? -1 : (ph.prefix[ph.prefix.length - 1] ?? 0);
+	const l = lcm(p, insidePeriod(ctx, prog, max, depth, final));
+	return l <= max ? l : p;
+}
+
+/**
+ * Ticks after which the movie clips running inside a timeline repeat (those inside its graphics
+ * too: a graphic's own frames follow its parent, the clips in it run on). `final`: the frame a
+ * stopped timeline stays on, -1 when it loops: then only what lives through its whole timeline
+ * keeps running across the loop.
+ */
+function insidePeriod(ctx: Context, prog: Program, max: number, depth: number, final = -1): number {
+	let p = 1;
+	if (depth > 8) return p;
 	for (const layer of prog.layers) {
 		for (const it of layer.items) {
-			if (it.kind !== "instance" || it.symbolType !== "movie clip") continue;
-			// looping: only clips that live through the whole timeline keep running across the loop;
-			// stopped: the clips on the frame it stopped at
+			if (it.kind !== "instance") continue;
 			if (final < 0 ? it.start > 0 || it.end < prog.frameCount : final < it.start || final >= it.end) continue;
 			const child = ctx.programs[it.symbol];
-			if (!child || child.frameCount <= 1) continue;
-			const l = lcm(p, clipPeriod(ctx, child, max, depth + 1));
+			if (!child) continue;
+			const q =
+				it.symbolType === "movie clip"
+					? child.frameCount <= 1
+						? insidePeriod(ctx, child, max, depth + 1)
+						: clipPeriod(ctx, child, max, depth + 1)
+					: insidePeriod(ctx, child, max, depth + 1);
+			const l = lcm(p, q);
 			if (l <= max) p = l;
 		}
 	}
