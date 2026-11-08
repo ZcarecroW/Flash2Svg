@@ -1326,7 +1326,7 @@ class TextField extends DisplayObject {
 				}
 				this._multi = !!extras[5];
 				this._wrap = !!extras[5] && extras[7] !== 0;
-				(this as any)._lh = extras[6];
+				(this as any)["$_lh"] = extras[6];
 			}
 			if (box) this._take(box);
 			this._lay();
@@ -2538,7 +2538,15 @@ export class Scripts {
 		if (i) {
 			m._i = i;
 			// (the instance may still be being made: its node comes when asked for)
-			Object.defineProperty(m, "_node", { get: () => i.node ?? c.node });
+			// (written as a literal: the field's name is renamed in the bundle)
+			Object.defineProperties(
+				m,
+				Object.getOwnPropertyDescriptors({
+					get _node() {
+						return i.node ?? c.node;
+					},
+				}),
+			);
 			m._parent = this.objOfClip(i.owner);
 			this.objs.set(i, o);
 		}

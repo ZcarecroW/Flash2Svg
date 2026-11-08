@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **A script's own fields can't break its objects any more:** a frame script or class that set `_name`, `_alpha`, `_parent` or another name starting with `_` on a movie clip, text field or event overwrote the JS player's own field of that name. The player's fields now have names of their own in the runtime with scripts, which also made it 0.5 KB smaller (84.4 KB).
+
 ## 5.0.0 (2026-11-07)
 
 - **Empty dynamic and input fields keep their format:** a field left empty in Animate lost its font, size and colour when a script filled it, and an empty input field got no embedded font.

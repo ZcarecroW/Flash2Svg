@@ -237,9 +237,9 @@ export default function createJS(L: any): Record<string, unknown> {
 				return this._onStage() ? s.stage : null;
 			},
 		},
-		mouseEnabled: plain("_me", true),
-		tickEnabled: plain("_te", true),
-		cursor: plain("_cu", null),
+		mouseEnabled: plain("$_me", true),
+		tickEnabled: plain("$_te", true),
+		cursor: plain("$_cu", null),
 		compositeOperation: {
 			get(this: any) {
 				return this._co ?? null;
@@ -319,8 +319,8 @@ export default function createJS(L: any): Record<string, unknown> {
 
 	// ---- containers
 	define(DisplayObjectContainer.prototype, {
-		mouseChildren: plain("_mc", true),
-		tickChildren: plain("_tc", true),
+		mouseChildren: plain("$_mc", true),
+		tickChildren: plain("$_tc", true),
 		children: {
 			get(this: any) {
 				return this._list().slice();
@@ -386,13 +386,13 @@ export default function createJS(L: any): Record<string, unknown> {
 				else this.play();
 			},
 		},
-		mode: plain("_mo", "independent"),
-		loop: plain("_lo", -1),
-		startPosition: plain("_sp", 0),
-		reversed: plain("_re", false),
-		actionsEnabled: plain("_ae", true),
-		autoReset: plain("_ar", true),
-		framerate: plain("_fr", null),
+		mode: plain("$_mo", "independent"),
+		loop: plain("$_lo", -1),
+		startPosition: plain("$_sp", 0),
+		reversed: plain("$_re", false),
+		actionsEnabled: plain("$_ae", true),
+		autoReset: plain("$_ar", true),
+		framerate: plain("$_fr", null),
 		duration: {
 			get(this: any) {
 				return this.totalFrames;
@@ -509,8 +509,8 @@ export default function createJS(L: any): Record<string, unknown> {
 				this._again();
 			},
 		},
-		textBaseline: plain("_bl", "top"),
-		lineHeight: plain("_lh", 0),
+		textBaseline: plain("$_bl", "top"),
+		lineHeight: plain("$_lh", 0),
 		lineWidth: {
 			get(this: any) {
 				return this._lw ?? null;
@@ -522,8 +522,8 @@ export default function createJS(L: any): Record<string, unknown> {
 				this._again();
 			},
 		},
-		outline: plain("_ol", 0),
-		maxWidth: plain("_mw", null),
+		outline: plain("$_ol", 0),
+		maxWidth: plain("$_mw", null),
 	});
 	Object.assign(TextField.prototype, {
 		_again(this: any) {

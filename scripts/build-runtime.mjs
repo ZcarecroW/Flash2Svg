@@ -1,7 +1,7 @@
 // Bundles the player runtime (src/player/runtime.ts) into a minified IIFE and stores it as a
 // string module the player emitter imports (src/core/emit/runtime-code.generated.ts).
 import * as esbuild from "esbuild";
-import { writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -130,9 +130,61 @@ const noScripts = {
 	},
 };
 
+/**
+ * The runtimes with scripts also rename the fields of the objects scripts see (_node, _parent,
+ * _alpha...): a script's own `_name` or `_speed` on a MovieClip or one of its classes would
+ * overwrite them. Their names start with $ and a letter, which AS3 code hardly ever does.
+ */
+const SCRIPTED = new RegExp(`^(${INTERNAL.join("|")}|_[A-Za-z0-9][\\w$]*)$`);
+const PARTS = ["media", "filters", "createjs", "query", "input", "controls", "flv"];
+
+/** Names already in use as $-names somewhere in the player or in the code scripts compile to. */
+function takenNames() {
+	const taken = new Set(["$"]);
+	const walk = (dir) => {
+		for (const e of readdirSync(dir, { withFileTypes: true })) {
+			const p = join(dir, e.name);
+			if (e.isDirectory()) walk(p);
+			else if (/\.ts$/.test(e.name) && !e.name.endsWith(".generated.ts")) for (const m of readFileSync(p, "utf8").matchAll(/\$[A-Za-z]\w*/g)) taken.add(m[0]);
+		}
+	};
+	walk(join(repo, "src/player"));
+	walk(join(repo, "src/core/as3"));
+	walk(join(repo, "src/core/emit"));
+	return taken;
+}
+
+/** esbuild's names in the order it hands them out (the most used first). */
+const FIRST = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_$";
+const REST = FIRST + "0123456789";
+const rank = (n) => [...n].reduce((r, c, i) => r * 64 + (i ? REST : FIRST).indexOf(c), 0) + n.length * 64 ** 6;
+
+/** $-names in the same order: $a, $b ... $Z, $aa ... (letters only, none taken). */
+function dollarNames(cache) {
+	const taken = takenNames();
+	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+	let i = 0;
+	const next = () => {
+		for (;;) {
+			let n = "",
+				k = i++;
+			do {
+				n = letters[k % 52] + n;
+				k = Math.floor(k / 52) - 1;
+			} while (k >= 0);
+			if (!taken.has(`$${n}`)) return `$${n}`;
+		}
+	};
+	const out = {};
+	for (const [prop] of Object.entries(cache)
+		.filter(([, v]) => typeof v === "string")
+		.sort((a, b) => rank(a[1]) - rank(b[1])))
+		out[prop] = next();
+	return out;
+}
+
 export async function buildRuntime() {
-	const shared = {};
-	const build = async (sound, morph, events, scripts) => {
+	const build = async (sound, morph, events, scripts, cache) => {
 		const r = await esbuild.build({
 			entryPoints: [join(repo, "src/player/runtime.ts")],
 			bundle: true,
@@ -142,21 +194,16 @@ export async function buildRuntime() {
 			write: false,
 			legalComments: "none",
 			define: { __SOUND__: String(sound), __MORPH__: String(morph), __EVENTS__: String(events), __SCRIPTS__: String(scripts) },
-			mangleProps: new RegExp(`^(${INTERNAL.join("|")})$`),
-			...(scripts ? { mangleCache: shared } : {}),
+			mangleProps: scripts ? SCRIPTED : new RegExp(`^(${INTERNAL.join("|")})$`),
+			...(scripts ? { mangleCache: cache } : {}),
 			// (without scripts the module isn't used, but its top level would stay: it builds tables)
 			plugins: scripts ? [] : [noScripts],
 		});
-		if (scripts) Object.assign(shared, r.mangleCache);
+		if (scripts) Object.assign(cache, r.mangleCache);
 		// "]]>" can't appear in CDATA-less script text either; guard anyway
 		return r.outputFiles[0].text.trim().replace(/<\/script/gi, "<\\/script");
 	};
-	const plain = await Promise.all([...Array(8).keys()].map((i) => build(!!(i & 1), !!(i & 2), !!(i & 4), false)));
-	// (the runtimes with scripts and their parts work on each other's objects: one set of short names)
-	const scripted = [];
-	for (let i = 0; i < 4; i++) scripted.push(await build(!!(i & 1), !!(i & 2), true, true));
-	const parts = {};
-	for (const name of ["media", "filters", "createjs", "query", "input", "controls", "flv"]) {
+	const part = async (name, cache) => {
 		const r = await esbuild.build({
 			entryPoints: [join(repo, `src/player/parts/${name}.ts`)],
 			bundle: true,
@@ -166,12 +213,26 @@ export async function buildRuntime() {
 			target: "es2020",
 			write: false,
 			legalComments: "none",
-			mangleProps: new RegExp(`^(${INTERNAL.join("|")})$`),
-			mangleCache: shared,
+			mangleProps: SCRIPTED,
+			mangleCache: cache,
 		});
-		Object.assign(shared, r.mangleCache);
-		parts[name] = r.outputFiles[0].text.trim().replace(/<\/script/gi, "<\\/script");
-	}
+		Object.assign(cache, r.mangleCache);
+		return r.outputFiles[0].text.trim().replace(/<\/script/gi, "<\\/script");
+	};
+	const plain = await Promise.all([...Array(8).keys()].map((i) => build(!!(i & 1), !!(i & 2), !!(i & 4), false)));
+	// (the runtimes with scripts and their parts work on each other's objects: one set of names.
+	// A first round finds them all, the second builds with their $-names.)
+	const found = {};
+	for (let i = 0; i < 4; i++) await build(!!(i & 1), !!(i & 2), true, true, found);
+	for (const name of PARTS) await part(name, found);
+	const fixed = dollarNames(found);
+	const shared = { ...fixed };
+	const scripted = [];
+	for (let i = 0; i < 4; i++) scripted.push(await build(!!(i & 1), !!(i & 2), true, true, shared));
+	const parts = {};
+	for (const name of PARTS) parts[name] = await part(name, shared);
+	const strays = Object.keys(shared).filter((k) => typeof shared[k] === "string" && shared[k] !== fixed[k]);
+	if (strays.length) throw new Error(`Names the first round didn't find: ${strays.join(", ")}`);
 	const sound = await esbuild.build({
 		entryPoints: [join(repo, "src/player/soundtrack.ts")],
 		bundle: true,
