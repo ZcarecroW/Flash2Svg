@@ -1174,7 +1174,11 @@ class LottieWriter {
 				return it.art ? this.art(it.art, vis, mode) : [];
 			}
 			case "video":
-				this.warn((n.item as Extract<typeof n.item, { kind: "video" }>).element.kind === "control" ? "UI components aren't exported to Lottie (it shows no HTML)" : "Videos aren't exported to Lottie (Lottie has no video layer)");
+				this.warn(
+					(n.item as Extract<typeof n.item, { kind: "video" }>).element.kind === "control"
+						? "UI components aren't exported to Lottie (it shows no HTML)"
+						: "Videos aren't exported to Lottie (Lottie has no video layer)",
+				);
 				return [];
 			case "bitmap": {
 				const it = n.item as Extract<typeof n.item, { kind: "bitmap" }>;
@@ -1612,8 +1616,16 @@ class LottieWriter {
 			let lum: PrecompRef;
 			if (f.bevel && !strong) lum = bevelGreys(strengths);
 			else if (f.bevel) {
-				const { hi, sh } = bevelSides(bevelGreys(per.map(() => 1)), white, black, null, null);
-				lum = pre([use(pre([sh, hi, solid(fixed(0.5), st(100))]))]);
+				// 1/2 + s (o1 - o2) / 2, clamped: grey 1/2 screened with the strengthened highlight
+				// (1/2 + h/2), multiplied by one minus the strengthened shadow (1/2 - s/2 where it is):
+				// blend modes only. (Coloured sides have track mattes, and these grey levels become the
+				// source of luma mattes below: lottie-web draws no matte inside a matte's source, the
+				// bevel came out nearly empty there.)
+				const L1 = bevelGreys(per.map(() => 1));
+				const high = use(strengthened(lookup(L1, [white, black, black]), strengths), {}, { bm: 2 });
+				const low = use(lookup(pre([use(strengthened(lookup(L1, [black, black, white]), strengths))]), [black, st([0.5, 0.5, 0.5, 1]), white]), {}, { bm: 1 });
+				// (one level down twice: ThorVG ignores blending right inside a layer with effects)
+				lum = pre([use(pre([low, high, solid(fixed(0.5), st(100))]))]);
 			} else lum = pre([use(strengthened(silhouette(fixed(1), st(100), false, 1), strengths))]);
 			const gs = per as GradientBuilt[];
 			const greys = (pick: (s: GradientBuilt) => number[]) =>
@@ -2575,7 +2587,18 @@ function audioLayers(track: SoundSchedule, out: Json[], assets: Json[], H: numbe
 		if (sync === 1 && open.some((l) => l.refId === `snd${id}` && (l.op as number) > t)) continue;
 		const seconds = typeof file === "string" ? 0 : file[1];
 		const length = sync === 3 ? end : seconds ? t + Math.ceil(seconds * track.fps * Math.min(loops, 999)) : H;
-		const layer: Json = { ty: 6, ind: out.length + 1, nm: id, refId: `snd${id}`, sr: 1, ip: t, op: Math.min(H, length), st: t, ks: {}, au: { lv: { a: 0, k: [100, 100] } } };
+		const layer: Json = {
+			ty: 6,
+			ind: out.length + 1,
+			nm: id,
+			refId: `snd${id}`,
+			sr: 1,
+			ip: t,
+			op: Math.min(H, length),
+			st: t,
+			ks: {},
+			au: { lv: { a: 0, k: [100, 100] } },
+		};
 		out.unshift(layer);
 		open.push(layer);
 	}
@@ -2638,7 +2661,12 @@ export function renderLottie(ctx: Context, rootId: string, s: ExportSettings, im
 	// lottie-web plays audio layers with Howler, if the page has it; other players leave them
 	const track = s.lottieSounds && s.format === "lottie" ? schedule(ctx, root, horizon, () => soundTable(ctx, true, [])) : null;
 	if (track) audioLayers(track, out, w.assets, H);
-	else if (Object.keys(ctx.model.sounds).length) w.warn(s.format === "lottie" ? "Sounds aren't in this Lottie file (Sounds in Lottie adds them, for lottie-web with Howler)" : "Sounds aren't exported to .lottie files");
+	else if (Object.keys(ctx.model.sounds).length)
+		w.warn(
+			s.format === "lottie"
+				? "Sounds aren't in this Lottie file (Sounds in Lottie adds them, for lottie-web with Howler)"
+				: "Sounds aren't exported to .lottie files",
+		);
 	const animation: Json = {
 		v: "5.12.0",
 		fr: horizon.fps,

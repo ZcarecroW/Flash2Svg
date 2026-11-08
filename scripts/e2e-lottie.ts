@@ -58,16 +58,13 @@ const TOLERANCE: Record<string, number> = {
 	// an advanced colour effect on a bitmap (unequal multipliers) has no Lottie effect: only its alpha
 	// (warned); tint and brightness are Fill effects and match
 	"f50-bitmap-tint": 0.014,
-	// the guide's filters demo: lottie-web draws its inner gradient bevel (default stops: white,
-	// transparent, black) only faintly — Skottie draws it exactly, gradient glows and plain bevels are
-	// right in lottie-web too (2026-11-01; open, roadmap); ThorVG's narrower blur on the bevels
+	// the guide's filters demo: ThorVG's narrower blur on the bevels
 	// warped objects are bitmaps at fractional positions: ThorVG samples their edges differently
 	"f71-warp/dotlottie": 0.006,
 	"f72-warp2/dotlottie": 0.006,
 	"f73-warp3/dotlottie": 0.006,
 	// the quiz demo's UI components and text field borders: Lottie shows no HTML and no borders (both warned)
 	"guide:quiz": 0.014,
-	"guide:filters/lottie-web": 0.009,
 	"guide:filters/dotlottie": 0.0017,
 };
 const limit = (name: string, player: string) => TOLERANCE[`${name}/${player}`] ?? TOLERANCE[name] ?? threshold;

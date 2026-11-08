@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Gradient bevels stronger than 100 % in lottie-web** (roadmap package 23): lottie-web drew them nearly empty (the guide's filters demo, 0.9 % off), because their grey levels held track mattes and then became the source of another matte, which it can't draw. They are now made with blend modes only: 0.00 % in lottie-web, Skottie and dotLottie as before.
 - **Movie clips running inside other clips or graphics come round right in SMIL and CSS:** a looping export repeats after the common period of every clip that keeps running, also those nested in clips and graphics; before only the root's own clips counted, so a clip inside a panel restarted each time the root looped.
 - **Art and pattern brushes checked** (roadmap package 22): a test document of brushes of our own (an art brush stretched along curves and a line, a pattern brush repeated along a curve, both on a symbol that turns and scales) matches Animate's frames at 0.00 % in every format; they come through Animate's own drawing as outlines.
 - **Vector warps export** (Asset Warp with *Auto convert vector to bitmap* off; roadmap package 22): their frames are shapes Animate only works out when it draws them, and copying those frames (as the exporter did) loses them; they came out empty (a rider's warped hair was missing). Each frame is now drawn alone in a scene of the working copy and exported from there: Animate's own bicycle sample matches its frames (0.00 %, was 1 %), its robot and jellyfish samples too.
