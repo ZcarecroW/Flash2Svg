@@ -65,6 +65,8 @@ const TOLERANCE: Record<string, number> = {
 	"f71-warp/dotlottie": 0.006,
 	"f72-warp2/dotlottie": 0.006,
 	"f73-warp3/dotlottie": 0.006,
+	// the quiz demo's UI components and text field borders: Lottie shows no HTML and no borders (both warned)
+	"guide:quiz": 0.014,
 	"guide:filters/lottie-web": 0.009,
 	"guide:filters/dotlottie": 0.0017,
 };
