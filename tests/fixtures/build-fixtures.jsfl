@@ -3935,6 +3935,33 @@
 		extendAll(40);
 	});
 
+	// ---------------------------------------------------------------- f100: 9-slice symbols with nested symbols, their scale animated (roadmap package 22)
+	build("f100-nineslice", function () {
+		newDoc("timeline", 600, 400, 24);
+		boxSymbol();
+		symbol("deco", "graphic", function () { rect(0, 0, 10, 10, "#CC3333"); });
+		// a movie clip that turns on its own (12 frames)
+		symbol("spin", "movie clip", function () {
+			classicTween("box", 0, 0, 11, function (el) { el.rotation = 90; });
+		});
+		symbol("panel9", "movie clip", function () {
+			rect(0, 0, 80, 50, "#88AA44", "#000000");
+			place("deco", 5, 5, 0);
+			var s = place("spin", 40, 25, 0);
+			s.scaleX = s.scaleY = 0.3;
+		});
+		var p = lib.items[lib.findItemIndex("panel9")];
+		p.scalingGrid = true;
+		p.scalingGridRect = { left: 15, top: 12, right: 65, bottom: 38 };
+		layer("grow");
+		classicTween("panel9", 60, 60, 23, function (el) { el.scaleX = 3; el.scaleY = 2; });
+		layer("still");
+		var st = place("panel9", 360, 260, 0);
+		st.scaleX = 2;
+		st.scaleY = 1.5;
+		extendAll(30);
+	});
+
 	FLfile.write(outDir + "/build-log.txt", log.join("\n"));
 	fl.closeAll(false);
 	fl.quit(false);

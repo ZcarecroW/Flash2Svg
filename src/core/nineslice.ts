@@ -2,18 +2,19 @@
  * 9-slice scaling ("Enable guides for 9-slice scaling" on movie clip symbols). Corners keep
  * their size, the top/bottom edges stretch horizontally, the left/right edges vertically and the
  * centre in both directions. Like Flash, the drawing's vertices are moved piecewise (no seams);
- * gradients, bitmaps, text and nested movie clips scale normally, graphic symbols are sliced too.
- * Flash ignores the grid on rotated or skewed instances, and so do we.
+ * gradients, bitmaps, text and nested symbols (movie clips and graphics alike, as Animate draws
+ * them: f100) scale normally. Flash ignores the grid on rotated or skewed instances, and so do we.
  *
  * Each sliced instance gets a derived copy of its symbol drawn at the instance's scale; the
- * instance itself keeps only its position. Instances whose scale is animated keep normal scaling.
+ * instance itself keeps only its position. Where the scale is animated the copy is a graphic with
+ * the drawing sliced anew for every frame and nested symbols scaled with the frame.
  */
 import type { Artwork } from "./artwork.ts";
 import { compactPath } from "./artwork.ts";
-import { apply, concat, fmt, fmtMatrix, IDENTITY, parseTransform } from "./geom.ts";
+import { apply, concat, fmt, fmtMatrix, IDENTITY, nearestAngle, parseTransform } from "./geom.ts";
 import type { Mat, Point, SceneModel } from "./model.ts";
 import { fromProps, toProps, TRANSFORM_PROPS, type InstanceItem, type Item, type Program, type TransformTracks } from "./program.ts";
-import { isConstant, simplify, valueAt, type Track } from "./tracks.ts";
+import { fitCurve, isConstant, simplify, valueAt, type Track } from "./tracks.ts";
 import { clone, el, isNode, walk, type XmlNode } from "./xml.ts";
 
 /** One axis of the grid, in the 9-slice symbol's space: content a..b, guides l..r, scale s. */
@@ -437,16 +438,9 @@ export function applyNineSlice(
 				return it;
 			case "text":
 				return { ...it, art: it.art ? artFor(it.art, m, false) : it.art, element: { ...it.element, matrix: concat(it.element.matrix, L) } };
-			case "instance": {
-				const child = programs[it.symbol];
-				if (it.symbolType === "graphic" && child && constantTransform(it.transform)) {
-					// graphic symbols are sliced along with the drawing
-					const inner: SliceMap = { ...m, pre: concat(matrixOf(it.transform, it.start), m.pre) };
-					const tr = Object.fromEntries(TRANSFORM_PROPS.map((k) => [k, constTrack(k === "sx" || k === "sy" ? 1 : 0, it.transform[k])])) as TransformTracks;
-					return { ...it, symbol: programFor(child, inner), transform: tr };
-				}
+			case "instance":
+				// (graphics too: Animate scales a nested symbol normally, f100)
 				return { ...it, transform: scaleTracks(it.transform, L, it.start, it.end) };
-			}
 		}
 	};
 
@@ -470,18 +464,57 @@ export function applyNineSlice(
 	};
 
 	/**
-	 * Animated scale: a drawing-only symbol becomes a graphic that shows the drawing sliced for
-	 * the scale of each frame (Flash slices every frame anew); the instance keeps its position.
+	 * Animated scale: a symbol laid out once (drawings and nested symbols on its whole timeline)
+	 * becomes a graphic that shows the drawing sliced for the scale of each frame (Flash slices
+	 * every frame anew) and the nested symbols scaled with the frame; the instance keeps its
+	 * position.
 	 */
 	const animatedSlice = (it: InstanceItem, child: Program, mapAt: (sx: number, sy: number) => SliceMap): InstanceItem | null => {
-		const staticArt = child.layers.every((l) => l.items.every((i) => i.kind === "art" && i.start <= 0 && i.end >= child.frameCount));
-		if (!staticArt || it.name) {
+		const laidOut = child.layers.every(
+			(l) =>
+				!l.rig &&
+				l.items.every(
+					(i) =>
+						(i.kind === "art" || (i.kind === "instance" && (child.frameCount === 1 || i.symbolType === "movie clip"))) &&
+						i.start <= 0 &&
+						i.end >= child.frameCount,
+				),
+		);
+		if (!laidOut || it.name) {
 			warn(`9-slice symbol ${child.name}: animated scaling is exported without 9-slice`);
 			return null;
 		}
 		const tr = it.transform;
 		const n = it.end - it.start;
 		const scales = Array.from({ length: n }, (_, i) => [valueAt(tr.sx, it.start + i), valueAt(tr.sy, it.start + i)] as const);
+		// a nested symbol's matrix (in the symbol's own time, which loops) times the frame's scale
+		const nested = (i: InstanceItem): InstanceItem => {
+			const out = Object.fromEntries(TRANSFORM_PROPS.map((k) => [k, [] as number[]])) as Record<(typeof TRANSFORM_PROPS)[number], number[]>;
+			let prevRot: number | undefined;
+			for (let f = 0; f < n; f++) {
+				const tc = child.frameCount > 1 ? f % child.frameCount : 0;
+				const tp = { x: valueAt(i.transform.tpx, tc), y: valueAt(i.transform.tpy, tc) };
+				const p = toProps(concat(matrixOf(i.transform, tc), linearOf(mapAt(scales[f]![0], scales[f]![1]))), tp);
+				if (prevRot !== undefined) p.rot = nearestAngle(p.rot, prevRot);
+				prevRot = p.rot;
+				for (const k of TRANSFORM_PROPS) out[k].push(p[k]);
+			}
+			const transform = Object.fromEntries(
+				TRANSFORM_PROPS.map((k) => {
+					const track: Track = smooth
+						? fitCurve(out[k], 0, k === "sx" || k === "sy" ? 0.0015 : k === "rot" || k === "skw" ? 0.075 : 0.05)
+						: simplify(
+								out[k].map((v, f) => ({ t: f, v, ease: "hold" as const })),
+								0,
+							);
+					track[track.length - 1]!.ease = "hold";
+					return [k, track];
+				}),
+			) as TransformTracks;
+			// (a graphic in a symbol of one frame shows one frame of its own)
+			const graphic = i.graphic?.map((g) => ({ ...g, start: 0, end: n, loop: "single frame" }));
+			return { ...i, start: 0, end: n, transform, ...(graphic ? { graphic } : {}) };
+		};
 		const id = `${child.id}#9s${counter++}`;
 		programs[id] = {
 			...child,
@@ -496,7 +529,9 @@ export function applyNineSlice(
 				items: l.items.map((i): Item =>
 					i.kind === "art"
 						? { kind: "artSeq", uid: i.uid, start: 0, end: n, slot: i.slot, arts: scales.map(([sx, sy]) => artFor(i.art, mapAt(sx, sy), true)) }
-						: i,
+						: i.kind === "instance"
+							? nested(i)
+							: i,
 				),
 			})),
 		};
