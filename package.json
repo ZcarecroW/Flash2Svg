@@ -1,6 +1,6 @@
 {
   "name": "flash2svg",
-  "version": "5.0.0",
+  "version": "5.1.0",
   "description": "Animated SVG exporter for Adobe Animate (SMIL, CSS and JS-player output)",
   "license": "MIT",
   "private": true,

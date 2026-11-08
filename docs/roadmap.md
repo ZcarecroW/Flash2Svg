@@ -364,8 +364,8 @@ draws a 1 px softer rim than Animate (~0.1 % of the filters demo).
 
 ## Part 3: after 5.0.0 (goals of 2026-11-07)
 
-Parts 1 and 2 are done and released. These are the goals for later, biggest first; work starts when
-the user says go, in this order unless the user changes it. Each is compared with Flash Player or
+Parts 1 and 2 were released in 4.1.0–5.0.0; Part 3 is done and released in 5.1.0 (2026-11-08). These were the goals, biggest first; work started when
+the user said go (2026-11-08), in this order. Each is compared with Flash Player or
 Animate as before: an own test document, real keys and clicks where a user is involved.
 
 | # | Goal | Benefit | Effort | Status |
