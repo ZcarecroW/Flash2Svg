@@ -13,6 +13,8 @@ Flash2SVG reads the timeline the way Flash plays it, and checks every tween agai
 
 ::: demo easing smil,css,player,lottie Five classic tweens of the same length: no ease, ease in, ease out, and two custom curves (a bounce and an overshoot).
 
+Motion that has no ease setting of its own — motion tweens whose curves were changed in the Motion Editor, paths bent on stage, bones, the camera — is written as **curves through Animate's frames**: a few keys with timing curves (one per rising or falling stretch of a Motion Editor curve) instead of a key per frame, within 0.05 px of every frame.
+
 *Smooth tweens* (on by default) interpolates between frames at the screen's rate. Turn it off for one step per frame, exactly like the SWF — the "limited animation" look.
 
 Rotations (*CW*, *CCW* with a number of turns, *Auto*) and tweens of colour effects and filters are all covered.

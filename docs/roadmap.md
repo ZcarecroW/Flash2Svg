@@ -219,6 +219,21 @@ JSFL to measure it: a curve fitted through the frames). The JS player could move
 with `offset-path` in its Web Animations too. Firefox's SMIL draws f09 wrong far into the loop
 (~8 minutes, before this package too).
 
+**21. Motion as curves** (2026-11-08): motion tweens, armatures, the camera, layer depth, guided
+paces and classic tweens whose ease Animate's settings don't describe were written as Animate's
+frames simplified to straight pieces; now cubic timing functions are fitted through the frames
+(least squares, Levenberg-Marquardt with an analytic Jacobian): keys at turning points (between
+frames where the peak is smooth), a group moving along straight lines keyed together (x/y, a
+uniform scale, a tint: one animation for SMIL's and CSS's translate), turn and scale tolerances
+sized by how far the content reaches. A bent path can be made from JSFL after all: handles
+written into the motion tween's XML (`setMotionObjectXML`) bend it, so a bent path is simply X
+and Y curved over time; one of those curves takes a key per rising or falling piece (f99: arc,
+S, orient to path, a corner; every frame within 0.05 px, 0.00 % against Animate). The JS player
+moves along the fitted curves, smooth between frames: `offset-path` would not be smaller (CSS
+already writes x and y as nested animations of their own). Over the 99 test documents Lottie
+1.6 %, SMIL 0.4 % smaller; the transforms document 39 % in SMIL, armatures up to 63 % in
+Lottie; building the programs 27.6 → 46 ms for all of them.
+
 **13. Appearance** (2026-11-06): the camera's tint and Adjust Color go on one wrapper around all layers, the
 way layer effects do, so every format has them (f82). Strokes: Animate's pen stays round under an uneven scale
 where SVG and Lottie stretch it; widths measured for 16 scale pairs: Normal width x sqrt((sx² + sy²) / 2),
@@ -307,7 +322,7 @@ Animate as before: an own test document, real keys and clicks where a user is in
 | 18 | **XML and E4X:** XML, XMLList, `@attributes`, `..` and filters in the AS3 compiler and the runtime | data-driven content; DataProvider from XML | medium–high | ✅ f94, f95: 91 lines as Flash Player, namespaces too |
 | 19 | **The remaining UI components:** TileList, ScrollPane, UIScrollBar, and jQuery UI components in HTML5 Canvas documents (today: warned) | every component exports | medium | ✅ f96 (29 lines as Flash Player), f97 (7 lines as the published page) |
 | 20 | **`BitmapData.draw()` of display objects**, and library BitmapData readable before it is decoded | canvas-style effects in scripts | medium | ✅ f98: 9 lines as Flash Player (`src/player/paint.ts`, `png.ts`) |
-| 21 | **Motion tweens as curves:** fit their X and Y curves instead of a keyframe per frame; bent motion-tween paths; the JS player moving along `offset-path` | smaller, cleaner motion tweens | medium | ⬜ |
+| 21 | **Motion tweens as curves:** fit their X and Y curves instead of a keyframe per frame; bent motion-tween paths; the JS player moving along `offset-path` | smaller, cleaner motion tweens | medium | ✅ curves through Animate's frames (`src/core/tracks.ts` fitCurve, fitTogether), f99: bent paths (see below) |
 | 22 | **Unverified Animate features:** test documents for art, pattern and fluid brushes, Flexi bones, the envelope deformer, warps with "Auto convert vector to bitmap" off, 9-slice on animated symbols with nested symbols | certainty, fixes for what they show | medium | ⬜ |
 | 23 | **Smaller gaps in the output:** lottie-web's faint inner gradient bevel, the rim of a gradient bevel, CSS filter functions, Firefox's SMIL drifting far into long loops | fidelity | low–medium | ⬜ |
 | 24 | **MP4 and WebM from the command line:** the CLI has no video encoder; through an installed browser or a WebAssembly encoder | batch export of video | medium | ⬜ |
