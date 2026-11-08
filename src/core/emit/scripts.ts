@@ -252,6 +252,8 @@ export function playerScripts(ctx: Context, playerId: string, warn: (m: string) 
 	const any = js.includes("getDefinitionByName");
 	if (canvas || any || MEDIA.test(js) || Object.keys(bitmaps).length || Object.keys(classes).some((n) => ctx.model.sounds[classes[n]!])) list.push("media");
 	if (any || FILTERS.test(js)) list.push("filters");
+	// (BitmapData: drawing display objects, library pictures read at once)
+	if (!canvas && (any || /\$f\.BitmapData\b|\.draw\(/.test(js) || Object.keys(bitmaps).length)) list.push("pixels");
 	if (canvas) {
 		list.push("createjs");
 		if (/\$\(|\bjQuery\b/.test(js)) list.push("query");

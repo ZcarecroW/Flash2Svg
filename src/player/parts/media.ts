@@ -2,11 +2,14 @@
  * Part of the Flash API for scripts that use it: pixels, sounds, loading, video, tweens, bytes. It
  * comes with a document only if its scripts name any of this (src/core/emit/scripts.ts).
  */
-import { Painter } from "../paint.ts";
-import { decodePng } from "../png.ts";
+import type { Painter as PainterClass } from "../paint.ts";
+import type { decodePng as DecodePng } from "../png.ts";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export default function media(L: any): Record<string, unknown> {
+	// (from the pixels part, when the document has it: asked for when they are needed)
+	const painter = (): typeof PainterClass | undefined => L.$painter;
+	const readPng = (): typeof DecodePng | undefined => L.$png;
 	const { Dispatcher, DisplayObject, DisplayObjectContainer, FEvent, FLoaderInfo, FRectangle, FPoint, FSoundTransform, URLVariables, fail, ArgumentError, EOFError, svgEl, htmlEl, scripts: current } = L;
 	type URLRequest = any;
 	type FEvent = any;
@@ -208,8 +211,9 @@ class FBitmapData {
 		if (!this._px) {
 			// (its PNG read here and now, as Flash Player has the pixels at once)
 			const data = this._png ?? (this._href && /^data:image\/png;base64,/.test(this._href) ? this._href.slice(22) : null);
-			if (data) {
-				const r = decodePng(Uint8Array.from(atob(data), (c) => c.charCodeAt(0)));
+			const decode = readPng();
+			if (data && decode) {
+				const r = decode(Uint8Array.from(atob(data), (c) => c.charCodeAt(0)));
 				if (r && r.w === this.width && r.h === this.height) {
 					if (!this.transparent) for (let i = 0; i < r.px.length; i++) r.px[i] = (r.px[i]! | 0xff000000) >>> 0;
 					return (this._px = r.px);
@@ -332,7 +336,10 @@ class FBitmapData {
 		if (pixels) {
 			y.imageSmoothingEnabled = !!smoothing;
 			y.drawImage(pixels._canvas(), 0, 0);
-		} else if (src._node) new Painter(current.player.svg, (e) => current.paintInfo(e)).paintInside(y, src._node);
+		} else if (src._node) {
+			const P = painter();
+			if (P) new P(current.player.svg, (e) => current.paintInfo(e)).paintInside(y, src._node);
+		}
 		y.setTransform(1, 0, 0, 1, 0, 0);
 		const img = y.getImageData(0, 0, w, h);
 		const d = img.data;
