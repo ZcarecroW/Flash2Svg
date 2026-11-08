@@ -59,6 +59,14 @@ export function tileSpec(label: string, src: string | undefined, selected: boole
 	];
 }
 
+/** jQuery UI's base look for a RadioSet, kept to its own box (the published page loads all of jQuery UI's CSS). */
+const radioSetCss = (id: string) => {
+	const at = `#${CSS_ID(id)}`;
+	return `${at} input{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);border:0}${at} label{display:inline-block;margin:0 0 0 -1px;padding:.4em 1em;border:1px solid #c5c5c5;background:#f6f6f6;color:#454545;font:1em Arial,Helvetica,sans-serif;line-height:normal;cursor:pointer;user-select:none;vertical-align:middle}${at} label:first-of-type{margin-left:0;border-radius:3px 0 0 3px}${at} label:last-of-type{border-radius:0 3px 3px 0}${at} label:hover{border-color:#ccc;background:#ededed;color:#2b2b2b}${at} input:checked+label{border-color:#003eff;background:#007fff;color:#fff}${at} span:first-child{display:inline-block;width:16px;height:16px;vertical-align:middle;margin-top:-.25em;border-radius:1em;box-sizing:border-box;box-shadow:inset 1px 1px 1px #ccc;background:#fff}${at} input:checked+label span:first-child{border:4px solid #fff;background:#007fff;box-shadow:none}`;
+};
+/** (an instance name as a CSS id) */
+const CSS_ID = (s: string) => s.replace(/[^\w-]/g, (c) => `\\${c}`);
+
 const overflow = (policy: unknown) => (policy === "on" ? "scroll" : policy === "off" ? "hidden" : "auto");
 
 /** The element for a component (`w`, `h`: its box); null if there is none to make. */
@@ -141,6 +149,25 @@ export function controlSpec(kind: string, p: Params, canvas: boolean, w = 100, h
 			const across = p.direction === "horizontal";
 			return ["div", { style: `${BOX};overflow-${across ? "x" : "y"}:scroll;overflow-${across ? "y" : "x"}:hidden` }, ["div", { style: across ? `width:${w * 3}px;height:1px` : `width:1px;height:${h * 3}px` }, ""]];
 		}
+		case "RadioSet": {
+			// (jQuery UI's RadioSet as Animate publishes it: a fieldset with its legend, radio buttons and their labels)
+			const id = String(p.$id ?? "radioset");
+			const raw = Array.isArray(items) ? items.map((it) => itemLabel(it)) : String(items).split(",").slice(9);
+			const group = `${id}-radio`;
+			return [
+				"fieldset",
+				{ class: `${cls ?? "jqueryui-radioset"} ui-controlgroup ui-controlgroup-horizontal ui-helper-clearfix`, role: "toolbar", style: `${BOX};padding:0 .5em .5em;border:2px groove #ddd;font:13.333px Arial,Helvetica,sans-serif` },
+				["style", {}, radioSetCss(id)],
+				["legend", {}, String(p.label ?? "")],
+				...raw.flatMap((label, i): Spec[] => [
+					["input", { type: "radio", name: group, id: `${group}${i}`, class: "ui-checkboxradio ui-helper-hidden-accessible" }],
+					["label", { for: `${group}${i}`, class: "ui-button ui-widget ui-checkboxradio-radio-label ui-checkboxradio-label ui-controlgroup-item" }, ["span", { class: "ui-checkboxradio-icon ui-corner-all ui-icon ui-icon-background ui-icon-blank" }, ""], ["span", { class: "ui-checkboxradio-icon-space" }, " "], ` ${label.trim()} `],
+				]),
+			];
+		}
+		case "DatePicker":
+			// (jQuery UI's DatePicker as Animate publishes it: its label and a text field, the date in it as mm/dd/yyyy)
+			return ["div", { style: `${BOX};white-space:nowrap;font:13.333px Arial,Helvetica,sans-serif` }, `${String(p.label ?? "")} `, ["input", { type: "text", id: p.$id, class: cls ?? "jqueryui-datepicker", autocomplete: "off", style: `box-sizing:border-box;width:${w}px;height:${h}px` }]];
 		case "DataGrid": {
 			const rows: any[] = items;
 			const cols: string[] = rows.length ? Object.keys(rows[0]) : [];

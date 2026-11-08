@@ -97,7 +97,12 @@ const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
 await page.route("**/createjs*.js", (r) => r.fulfill({ path: createjs, contentType: "text/javascript" }));
 // (what a published document with components loads: from Animate)
 const components = join(dirname(createjs), "..", "..", "..", "..", "HTML5Components");
-await page.route("**/jquery-*.min.js", (r) => r.fulfill({ path: join(components, "lib", "jquery-3.4.1.min.js"), contentType: "text/javascript" }));
+await page.route("**/jquery-3*.min.js", (r) => r.fulfill({ path: join(components, "lib", "jquery-3.4.1.min.js"), contentType: "text/javascript" }));
+// (jQuery UI, its style sheet and its icons, for the jQuery UI components)
+const jqui = join(components, "jqueryui", "jquery-ui-1.12.0");
+await page.route("**/ui/1.12.1/jquery-ui.min.js", (r) => r.fulfill({ path: join(jqui, "jquery-ui.min.js"), contentType: "text/javascript" }));
+await page.route("**/themes/base/jquery-ui.css", (r) => r.fulfill({ path: join(jqui, "jquery-ui.min.css"), contentType: "text/css" }));
+await page.route("**/ui/images/*.png", (r) => r.fulfill({ path: join(jqui, "images", new URL(r.request().url()).pathname.replace(/^.*\//, "")), contentType: "image/png" }));
 await page.route("**/components/**", (r) => r.fulfill({ path: join(components, new URL(r.request().url()).pathname.replace(/^.*\/components\//, "")), contentType: "text/javascript" }));
 
 /** What a user does to the components. */
@@ -115,7 +120,16 @@ async function useUi(p: Page) {
 	await p.keyboard.press("Tab");
 	await p.mouse.click(70, 31);
 }
-const stepsFor: Record<string, (p: Page) => Promise<void>> = { "f89-canvasui": useUi };
+/** What a user does to the jQuery UI components: picks a radio button by its label, types a date. */
+async function useJq(p: Page) {
+	await p.waitForTimeout(400);
+	await p.locator("#rs label").nth(1).click();
+	await p.locator("#rs label").nth(2).click();
+	await p.locator("#dp").fill("12/24/2026");
+	await p.locator("#dp").press("Tab");
+	await p.keyboard.press("Escape");
+}
+const stepsFor: Record<string, (p: Page) => Promise<void>> = { "f89-canvasui": useUi, "f97-jqueryui": useJq };
 for (const name of names) {
 	const expected = await play(page, `${origin}/${name}/canvas/${name}.html`, stepsFor[name]);
 	writeFileSync(join(out, name, "canvas-expected.txt"), expected.join("\n"));

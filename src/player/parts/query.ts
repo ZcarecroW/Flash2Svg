@@ -156,7 +156,127 @@ export default function query(L: any): Record<string, unknown> {
 		change(f?: any) {
 			return f ? this.on("change", f) : this.trigger("change");
 		}
+		next(sel?: string) {
+			return new Q(this.els.flatMap((e) => (e.nextElementSibling && (!sel || e.nextElementSibling.matches(sel)) ? [e.nextElementSibling] : [])));
+		}
+		prev(sel?: string) {
+			return new Q(this.els.flatMap((e) => (e.previousElementSibling && (!sel || e.previousElementSibling.matches(sel)) ? [e.previousElementSibling] : [])));
+		}
+		closest(sel: string) {
+			return new Q(this.els.flatMap((e) => (e.closest?.(sel) ? [e.closest(sel)] : [])));
+		}
+		children(sel?: string) {
+			return new Q(this.els.flatMap((e) => [...e.children].filter((c) => !sel || c.matches(sel))));
+		}
+		is(sel: string) {
+			return this.els.some((e) => e.matches?.(sel));
+		}
+		// jQuery UI, as far as the components Animate publishes use it
+		checkboxradio() {
+			return this;
+		}
+		controlgroup() {
+			return this;
+		}
+		/** A DatePicker's field: its date read and set in its format (jQuery UI's mm/dd/yy by default). */
+		datepicker(a?: any, b?: any, c?: any): any {
+			const e = this[0];
+			if (!e) return this;
+			const o = (picks.get(e) ?? picks.set(e, { dateFormat: "mm/dd/yy" }).get(e))!;
+			if (a === "getDate") return readDate(e.value, String(o.dateFormat));
+			if (a === "setDate") {
+				const d = b instanceof Date ? b : typeof b === "string" ? readDate(b, String(o.dateFormat)) : typeof b === "number" ? new Date(Date.now() + b * 864e5) : null;
+				e.value = d ? writeDate(d, String(o.dateFormat)) : "";
+				return this;
+			}
+			if (a === "option") {
+				if (typeof b === "string" && c === undefined) return o[b];
+				Object.assign(o, typeof b === "string" ? { [b]: c } : b);
+				return this;
+			}
+			if (a === "show") return void openPicker(e), this;
+			if (a && typeof a === "object") Object.assign(o, a);
+			return this;
+		}
 	}
+	/** Options of DatePicker fields. */
+	const picks = new WeakMap<Element, Record<string, unknown>>();
+	const NAMES = { D: "Sun Mon Tue Wed Thu Fri Sat", DD: "Sunday Monday Tuesday Wednesday Thursday Friday Saturday", M: "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec", MM: "January February March April May June July August September October November December" } as Record<string, string>;
+	const pad = (n: number) => String(n).padStart(2, "0");
+	/** A date in jQuery UI's format letters (d dd D DD m mm M MM y yy). */
+	function writeDate(d: Date, f: string): string {
+		return f.replace(/dd|DD|d|D|mm|MM|m|M|yy|y/g, (t) => {
+			switch (t) {
+				case "d":
+					return String(d.getDate());
+				case "dd":
+					return pad(d.getDate());
+				case "D":
+				case "DD":
+					return NAMES[t]!.split(" ")[d.getDay()]!;
+				case "m":
+					return String(d.getMonth() + 1);
+				case "mm":
+					return pad(d.getMonth() + 1);
+				case "M":
+				case "MM":
+					return NAMES[t]!.split(" ")[d.getMonth()]!;
+				case "y":
+					return pad(d.getFullYear() % 100);
+				default:
+					return String(d.getFullYear());
+			}
+		});
+	}
+	/** A date read in such a format (its numbers), or null. */
+	function readDate(v: string, f: string): Date | null {
+		const order = f.match(/dd|d|mm|m|yy|y/g) ?? [];
+		const nums = v.match(/\d+/g);
+		if (!nums || nums.length < order.length) return null;
+		let day = 1,
+			month = 0,
+			year = new Date().getFullYear();
+		order.forEach((t, i) => {
+			const n = +nums[i]!;
+			if (t[0] === "d") day = n;
+			else if (t[0] === "m") month = n - 1;
+			else year = t === "y" ? 2000 + n : n;
+		});
+		const d = new Date(year, month, day);
+		return Number.isNaN(+d) ? null : d;
+	}
+	/** The browser's own date picker for a DatePicker's field: the date goes into the field in its format. */
+	function openPicker(field: HTMLInputElement) {
+		const o = picks.get(field) ?? { dateFormat: "mm/dd/yy" };
+		const pick = document.createElementNS("http://www.w3.org/1999/xhtml", "input") as HTMLInputElement;
+		pick.type = "date";
+		pick.tabIndex = -1;
+		pick.style.cssText = "position:absolute;left:0;top:100%;width:1px;height:1px;opacity:0;pointer-events:none";
+		const now = readDate(field.value, String(o.dateFormat));
+		if (now) pick.value = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+		pick.addEventListener("change", () => {
+			const [y, m, d] = pick.value.split("-").map(Number);
+			if (y) {
+				field.value = writeDate(new Date(y, m! - 1, d), String(o.dateFormat));
+				field.dispatchEvent(new Event("input", { bubbles: true }));
+				field.dispatchEvent(new Event("change", { bubbles: true }));
+			}
+			pick.remove();
+		});
+		pick.addEventListener("blur", () => setTimeout(() => pick.remove(), 0));
+		(field.parentNode as HTMLElement).style.position ||= "relative";
+		field.parentNode!.appendChild(pick);
+		try {
+			pick.showPicker();
+		} catch {
+			pick.remove();
+		}
+	}
+	// (a click on a DatePicker's field opens the browser's date picker)
+	box().addEventListener("click", (e) => {
+		const t = e.target as HTMLInputElement;
+		if (t?.matches?.("input.jqueryui-datepicker")) openPicker(t);
+	});
 	const $ = (x: any) => {
 		if (typeof x === "function") return void queueMicrotask(() => s.safely(x));
 		if (typeof x !== "string") return new Q(x ? [x] : []);

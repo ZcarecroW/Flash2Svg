@@ -50,14 +50,14 @@ if (!names) failed += run("e2e-hit.ts");
 if (!names) failed += run("e2e-as3.ts", ["f74-as3lang,f75-as3timeline,f76-as3order,f78-as3display,f80-as3scenes,f81-as3language,f85-controls,f86-input,f90-video,f91-classes,f92-symbols,f93-sprite,f94-xml,f95-xmlns,f96-panes", ...(args.includes("--skip-animate") ? ["--no-flash"] : [])]);
 if (!names) failed += run("e2e-typing.ts", ["f87-typing,f88-clicks", ...(args.includes("--skip-animate") ? ["--no-flash"] : [])]);
 if (!names) failed += run("e2e-scripts.ts");
-if (!names) failed += run("e2e-canvas.ts", ["f79-canvas,f89-canvasui", ...(args.includes("--skip-animate") ? ["--no-publish"] : [])]);
+if (!names) failed += run("e2e-canvas.ts", ["f79-canvas,f89-canvasui,f97-jqueryui", ...(args.includes("--skip-animate") ? ["--no-publish"] : [])]);
 if (!names) failed += run("e2e-soundtrack.ts");
 if (!names) failed += run("e2e-videofile.ts");
 if (!names)
 	for (const b of ["firefox", "webkit"]) {
 		failed += run("e2e-as3.ts", ["f74-as3lang,f75-as3timeline,f76-as3order,f78-as3display,f80-as3scenes,f81-as3language,f85-controls,f86-input,f90-video,f91-classes,f92-symbols,f93-sprite,f94-xml,f95-xmlns,f96-panes", "--no-flash", `--browser=${b}`]);
 		failed += run("e2e-typing.ts", ["f87-typing,f88-clicks", "--no-flash", `--browser=${b}`]);
-		failed += run("e2e-canvas.ts", ["f79-canvas,f89-canvasui", "--no-publish", `--browser=${b}`]);
+		failed += run("e2e-canvas.ts", ["f79-canvas,f89-canvasui,f97-jqueryui", "--no-publish", `--browser=${b}`]);
 	}
 if (!names) failed += run("e2e-inline.ts");
 failed += run("e2e-lottie.ts", names ? [names] : []);

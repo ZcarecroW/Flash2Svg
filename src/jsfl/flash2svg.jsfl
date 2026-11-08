@@ -984,7 +984,7 @@
 		return out;
 	}
 
-	var CONTROLS = { Button: 1, CheckBox: 1, ColorPicker: 1, ComboBox: 1, CSS: 1, DataGrid: 1, Image: 1, Label: 1, List: 1, NumericStepper: 1, ProgressBar: 1, RadioButton: 1, ScrollPane: 1, Slider: 1, TextArea: 1, TextInput: 1, TileList: 1, UIScrollBar: 1, UILoader: 1 };
+	var CONTROLS = { Button: 1, CheckBox: 1, ColorPicker: 1, ComboBox: 1, CSS: 1, DataGrid: 1, DatePicker: 1, Image: 1, Label: 1, List: 1, NumericStepper: 1, ProgressBar: 1, RadioButton: 1, RadioSet: 1, ScrollPane: 1, Slider: 1, TextArea: 1, TextInput: 1, TileList: 1, UIScrollBar: 1, UILoader: 1 };
 
 	/** The library item exported for ActionScript under a class name. */
 	function linkedItem(cls) {

@@ -22,9 +22,10 @@ export function controlNode(c: ControlElement, digits: number, canvas: boolean, 
 	const params = c.name ? { ...c.params, $id: c.name } : c.params;
 	const spec = controlSpec(c.control, params, canvas, c.width, c.height);
 	// (scripts find an HTML5 Canvas document's components by their instance names; radio buttons and check boxes have it on the box)
-	if (spec && canvas && c.name && c.control !== "CheckBox" && c.control !== "RadioButton") spec[1].id = c.name;
+	// (a DatePicker's field has the name, its box _datepicker_ and the name, as Animate publishes it)
+	if (spec && canvas && c.name && c.control !== "CheckBox" && c.control !== "RadioButton") spec[1].id = c.control === "DatePicker" ? `_datepicker_${c.name}` : c.name;
 	return el("g", { transform: fmtMatrix(c.matrix, digits) || undefined, "data-name": c.name || undefined, display: c.params.visible === false ? "none" : undefined }, [
 		// (tabindex: Chromium stops at a foreignObject on the way through with the Tab key)
-		el("foreignObject", { x: b.x ? fmt(b.x, 2) : undefined, y: b.y ? fmt(b.y, 2) : undefined, width: fmt(b.w, 2), height: fmt(b.h, 2), tabindex: "-1" }, spec ? [node(spec, true, inner)] : []),
+		el("foreignObject", { x: b.x ? fmt(b.x, 2) : undefined, y: b.y ? fmt(b.y, 2) : undefined, width: fmt(b.w, 2), height: fmt(b.h, 2), tabindex: "-1", style: c.control === "DatePicker" ? "overflow:visible" : undefined }, spec ? [node(spec, true, inner)] : []),
 	]);
 }

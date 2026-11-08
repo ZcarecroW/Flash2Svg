@@ -3829,6 +3829,29 @@
 		t.layers[t.currentLayer].frames[0].actionScript = FLfile.read(root + "/as3/f96-panes.as");
 	});
 
+	// ---------------------------------------------------------------- f97: jQuery UI components of an HTML5 Canvas document
+	build("f97-jqueryui", function () {
+		newDoc("htmlcanvas", 400, 300, 24);
+		layer("controls");
+		var add = function (kind, name, x, y, params) {
+			fl.componentsPanel.addItemToDocument({ x: x, y: y }, "jQuery UI", kind);
+			var e = doc.selection[0];
+			e.name = name;
+			e.x = x;
+			e.y = y;
+			for (var i = 0; params && i < e.parameters.length; i++) {
+				var q = e.parameters[i];
+				if (params[q.name] !== undefined) q.value = params[q.name];
+			}
+			doc.selectNone();
+		};
+		add("RadioSet", "rs", 20, 20, { label: "Size", items: [{ "": "Small" }, { "": "Medium" }, { "": "Large" }] });
+		add("DatePicker", "dp", 20, 120, { label: "Day" });
+		layer("actions");
+		var t = tl();
+		t.layers[t.currentLayer].frames[0].actionScript = FLfile.read(root + "/as3/f97-jqueryui.js");
+	});
+
 	FLfile.write(outDir + "/build-log.txt", log.join("\n"));
 	fl.closeAll(false);
 	fl.quit(false);
