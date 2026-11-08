@@ -1580,7 +1580,7 @@
 		if (!first) return null;
 		var batch = [first];
 		job.atlasIndex++;
-		if (!wholeFrame(first)) return batch;
+		if (isPuppet(first.tl) || !wholeFrame(first)) return batch;
 		var last = first;
 		while (job.atlasIndex < job.atlasJobs.length && batch.length < 500) {
 			var j = job.atlasJobs[job.atlasIndex];
@@ -1590,6 +1590,65 @@
 			job.atlasIndex++;
 		}
 		return batch;
+	}
+
+	/** Whether a timeline is a warped object's (Asset Warp: a symbol of type puppet). */
+	function isPuppet(tlId) {
+		if (!job.puppets) job.puppets = {};
+		if (job.puppets[tlId] === undefined) {
+			var item = tlId.indexOf("sym:") == 0 ? job.lib.items[job.lib.findItemIndex(tlId.substr(4))] : null;
+			job.puppets[tlId] = !!item && get(item, "symbolType", "") == "puppet";
+		}
+		return job.puppets[tlId];
+	}
+
+	/**
+	 * A frame of a vector warp (Asset Warp with "Auto convert vector to bitmap" off). Its shape is
+	 * worked out when Animate draws it (see renderWarps) and lost when its frame is copied, as the
+	 * atlas does: the warped symbol is drawn alone instead, in a scene of its own in the working
+	 * copy, at the origin, and that frame exported as SVG.
+	 */
+	function exportWarpFrame(j) {
+		var d = job.doc;
+		if (fl.getDocumentDOM() != d) fl.setActiveWindow(d);
+		if (job.warpScene === undefined) {
+			// (not while a symbol is open for editing: scenes can't be added then)
+			for (var x = 0; x < 8; x++) {
+				try { d.exitEditMode(); } catch (e) { break; }
+			}
+			var before = d.timelines.length;
+			try { d.addNewScene("_f2s_warp"); } catch (e) {}
+			job.warpScene = d.timelines.length > before ? d.timelines.length - 1 : -1;
+			job.warpCount = 0;
+			if (job.warpScene < 0) warn("Vector warps (Asset Warp without \"Auto convert vector to bitmap\") could not be drawn: their frames are left out");
+		}
+		if (job.warpScene < 0) return;
+		d.editScene(job.warpScene);
+		var tl = d.getTimeline();
+		tl.currentFrame = 0;
+		var name = j.tl.substr(4);
+		var els = tl.layers[0].frames[0].elements;
+		var el = els.length ? els[0] : null;
+		if (!el || !el.libraryItem || el.libraryItem.name != name) {
+			if (els.length) {
+				d.selectAll();
+				d.deleteSelection();
+			}
+			d.library.addItemToDocument({ x: 0, y: 0 }, name);
+			el = tl.layers[0].frames[0].elements[0];
+			if (!el) {
+				warn("A frame of the warped object " + name + " could not be drawn: left out");
+				return;
+			}
+			el.symbolType = "graphic";
+			el.loop = "single frame";
+		}
+		el.matrix = { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 };
+		el.firstFrame = j.frame;
+		var file = "atlas/w" + ++job.warpCount + ".svg";
+		d.exportSVG(job.outDir + "/" + file, true, true);
+		job.model.atlas[j.id] = { file: file, source: j.tl + " layer " + j.layer + " frame " + j.frame, offset: { x: 0, y: 0 } };
+		job.doneCount++;
 	}
 
 	function wholeFrame(j) {
@@ -1609,9 +1668,15 @@
 			return;
 		}
 		var first = batch[0];
+		job.message = "Collecting artwork " + job.atlasIndex + "/" + job.atlasJobs.length;
+		if (isPuppet(first.tl)) {
+			exportWarpFrame(first);
+			lap("warps");
+			job.queue.unshift(nextAtlasJob);
+			return;
+		}
 		var lastJob = batch[batch.length - 1];
 		var count = lastJob.frame + lastJob.count - first.frame;
-		job.message = "Collecting artwork " + job.atlasIndex + "/" + job.atlasJobs.length;
 
 		// Shape tweens are baked into keyframes of the working copy first: a pasted tween is not
 		// always recomputed in the atlas document (from the second document of an Animate session
@@ -1678,17 +1743,32 @@
 		job.queue.unshift(nextAtlasJob);
 	}
 
+	/**
+	 * Deletes elements of the atlas document's current frame; false when they couldn't be selected.
+	 * (A pasted drawing can list its raw shape as several elements that merge into one as soon as
+	 * one is selected: nothing is left to delete then.)
+	 */
+	function removeElements(list) {
+		var d = job.atlasDoc;
+		d.selectNone();
+		d.selection = list;
+		if (!d.selection.length) return false;
+		try {
+			d.deleteSelection();
+			return true;
+		} catch (e) {
+			return false;
+		}
+	}
+
 	/** Keeps only the job's elements in atlas frame k (and outlines text). */
 	function isolate(at, k, j) {
 		at.currentFrame = k;
 		var els = at.layers[0].frames[k].elements;
 		var del = [];
 		for (var i = 0; i < els.length; i++) if (i < j.startElement || i > j.endElement) del.push(els[i]);
-		if (del.length) {
-			job.atlasDoc.selectNone();
-			job.atlasDoc.selection = del;
-			job.atlasDoc.deleteSelection();
-		}
+		if (del.length && !removeElements(del) && at.layers[0].frames[k].elements.length > j.endElement - j.startElement + 1)
+			warn("Could not separate a drawing from what is next to it (" + j.tl + ", layer " + j.layer + ", frame " + (j.frame + 1) + "): it may show more than its own shapes");
 		if (j.what == "group") {
 			// keep the group's drawing only: its instances are exported as elements of their own
 			for (var sweep = 0; sweep < 8; sweep++) {
@@ -1698,9 +1778,7 @@
 					else if (parts[q].isGroup && hasInstances(parts[q])) groups.push(parts[q]);
 				}
 				if (insts.length) {
-					job.atlasDoc.selectNone();
-					job.atlasDoc.selection = insts;
-					job.atlasDoc.deleteSelection();
+					removeElements(insts);
 					continue;
 				}
 				if (!groups.length) break;

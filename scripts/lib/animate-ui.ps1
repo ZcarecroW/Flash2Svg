@@ -6,6 +6,7 @@
 #   -Do key -Keys w            keys (SendKeys syntax) to Animate
 #   -Do dialogs                open dialogs (text by OCR), as JSON
 #   -Do shot                   a picture of the main window
+#   -Do find -Keys "text"      where words are in the main window (OCR): their lines' boxes on the screen, as JSON
 # Real input: the mouse really moves for a moment, Animate comes to the front.
 param([int]$AnimatePid, [string]$Do, [string]$Marker = "FF00FF", [string]$Path = "", [string]$Keys = "", [switch]$Post)
 $ErrorActionPreference = "Stop"
@@ -103,6 +104,35 @@ function Read-Picture([string]$file) {
 	} catch { return "" }
 }
 
+# The lines of text OCR finds in a picture, with their boxes (picture pixels)
+function Read-Lines([string]$file) {
+	try {
+		Add-Type -AssemblyName System.Runtime.WindowsRuntime
+		[void][Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType = WindowsRuntime]
+		[void][Windows.Graphics.Imaging.BitmapDecoder, Windows.Foundation, ContentType = WindowsRuntime]
+		[void][Windows.Storage.StorageFile, Windows.Foundation, ContentType = WindowsRuntime]
+		$asTask = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq "AsTask" -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' })[0]
+		function Wait-Op($op, [type]$t) { $task = $asTask.MakeGenericMethod($t).Invoke($null, @($op)); [void]$task.Wait(5000); $task.Result }
+		$sf = Wait-Op ([Windows.Storage.StorageFile]::GetFileFromPathAsync($file)) ([Windows.Storage.StorageFile])
+		$stream = Wait-Op ($sf.OpenAsync([Windows.Storage.FileAccessMode]::Read)) ([Windows.Storage.Streams.IRandomAccessStream])
+		$decoder = Wait-Op ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)) ([Windows.Graphics.Imaging.BitmapDecoder])
+		$bitmap = Wait-Op ($decoder.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
+		$engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()
+		$result = Wait-Op ($engine.RecognizeAsync($bitmap)) ([Windows.Media.Ocr.OcrResult])
+		$stream.Dispose()
+		$lines = @()
+		foreach ($l in $result.Lines) {
+			$x0 = 1e9; $y0 = 1e9; $x1 = -1; $y1 = -1
+			foreach ($w in $l.Words) {
+				$r = $w.BoundingRect
+				$x0 = [Math]::Min($x0, $r.X); $y0 = [Math]::Min($y0, $r.Y); $x1 = [Math]::Max($x1, $r.X + $r.Width); $y1 = [Math]::Max($y1, $r.Y + $r.Height)
+			}
+			$lines += @{ text = $l.Text; left = [int]$x0; top = [int]$y0; right = [int]$x1; bottom = [int]$y1 }
+		}
+		return $lines
+	} catch { return @() }
+}
+
 function Points() { return $Path.Trim() -split "\s+" | ForEach-Object { $a = $_ -split ","; , @([int]$a[0], [int]$a[1]) } }
 function Front() { [void][F2sUi]::ShowWindow($main, 9); [void][F2sUi]::SetForegroundWindow($main); Start-Sleep -Milliseconds 250 }
 
@@ -179,6 +209,17 @@ switch ($Do) {
 			$out += @{ title = $t.ToString(); text = (Read-Picture $s.file); picture = $s.file; handle = $h.ToInt64() }
 		}
 		ConvertTo-Json -Compress -Depth 3 @($out)
+	}
+	"find" {
+		$s = Save-Window $main "main"
+		$s.bitmap.Save($s.file, [System.Drawing.Imaging.ImageFormat]::Png)
+		$s.bitmap.Dispose()
+		$hits = @()
+		foreach ($l in (Read-Lines $s.file)) {
+			if ($Keys -and $l.text -notlike "*$Keys*") { continue }
+			$hits += @{ text = $l.text; left = $s.left + $l.left; top = $s.top + $l.top; right = $s.left + $l.right; bottom = $s.top + $l.bottom }
+		}
+		ConvertTo-Json -Compress -Depth 3 @($hits)
 	}
 	"shot" {
 		$s = Save-Window $main "main"

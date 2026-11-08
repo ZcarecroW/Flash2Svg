@@ -8,6 +8,8 @@
 //   node scripts/animate-session.mjs key w                 keys, in SendKeys syntax
 //   node scripts/animate-session.mjs dialogs               open dialogs and their text
 //   node scripts/animate-session.mjs shot                  a picture of the main window
+//   node scripts/animate-session.mjs find "text"            where a text is in the window (OCR; screen px)
+//   node scripts/animate-session.mjs press "x,y"           one click at a point of the screen (panels)
 //   node scripts/animate-session.mjs stop                  closes everything, quits
 // With --post the mouse goes as window messages: the real mouse stays where it is. The drawing tools
 // follow those; Asset Warp reads the real mouse, and takes a press only when it lasts a moment (drag
@@ -145,6 +147,12 @@ switch (cmd) {
 	case "shot":
 		console.log(ui(["-Do", "shot"]));
 		break;
+	case "find":
+		console.log(ui(["-Do", "find", "-Keys", args[0] ?? ""]));
+		break;
+	case "press":
+		ui(["-Do", "click", "-Path", args[0], ...post]);
+		break;
 	case "stop": {
 		const f = join(dir, "stop.jsfl");
 		writeFileSync(f, "fl.closeAll(false);\nfl.quit(false);\n");
@@ -158,5 +166,5 @@ switch (cmd) {
 		break;
 	}
 	default:
-		console.log("start | run | stage | drag | click | key | dialogs | shot | stop");
+		console.log("start | run | stage | drag | click | press | key | dialogs | shot | find | stop");
 }
