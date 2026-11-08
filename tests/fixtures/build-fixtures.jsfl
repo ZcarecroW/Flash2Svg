@@ -3680,6 +3680,60 @@
 		t.layers[t.currentLayer].frames[1].actionScript = 'import flash.system.fscommand;\ntrace("frame 2", currentFrame, currentLabel, frames);\ntrace("END");\nfscommand("quit");';
 	});
 
+	// ---------------------------------------------------------------- f92: classes of library symbols
+	build("f92-symbols", function () {
+		newDoc("timeline", 400, 300, 24);
+		doc.docClass = "Game";
+		doc.sourcePath = "../as3/f92";
+		var linkTo = function (item, cls, base) {
+			lib.selectItem(item);
+			lib.setItemProperty("linkageExportForAS", true);
+			lib.setItemProperty("linkageClassName", cls);
+			if (base) lib.setItemProperty("linkageBaseClass", base);
+		};
+		symbol("Eye", "movie clip", function () { oval(-4, -4, 4, 4, "#FFFFFF"); });
+		linkTo("Eye", "game.Eye");
+		symbol("Ball", "movie clip", function () {
+			oval(-20, -20, 20, 20, "#CC3333");
+			layer("eye");
+			var e = place("Eye", 6, -6, 0);
+			e.name = "eye";
+			var s = tl();
+			s.insertFrames(2, true, 0);
+			layer("actions");
+			s = tl();
+			s.layers[s.currentLayer].frames[0].actionScript = 'trace("Ball frame 1", nameOf(), color, made);';
+			s.convertToKeyframes(2);
+			s.layers[s.currentLayer].frames[2].actionScript = 'trace("Ball frame 3", bounce(3));\nstop();';
+		});
+		linkTo("Ball", "game.Ball");
+		symbol("Star", "movie clip", function () {
+			rect(-10, -10, 10, 10, "#FFCC00");
+			tl().insertFrames(1, true, 0);
+		});
+		linkTo("Star", "Star", "game.Spinner");
+		boxSymbol();
+		layer("low");
+		var b1 = place("Ball", 80, 100, 0);
+		b1.name = "ball1";
+		var t = tl();
+		t.insertFrames(3, true, 0);
+		t.convertToBlankKeyframes(2);
+		layer("plain");
+		var p = place("box", 200, 100, 0);
+		p.name = "plain";
+		layer("high");
+		var b2 = place("Ball", 300, 100, 0);
+		b2.name = "ball2";
+		layer("actions");
+		t = tl();
+		t.layers[t.currentLayer].frames[0].actionScript = 'trace("root frame 1", ball1.nameOf(), ticks);';
+		t.convertToKeyframes(2);
+		t.layers[t.currentLayer].frames[2].actionScript = 'trace("root frame 3", ball1);';
+		t.convertToKeyframes(3);
+		t.layers[t.currentLayer].frames[3].actionScript = 'import flash.system.fscommand;\ntrace("root frame 4", numChildren);\ntrace("END");\nfscommand("quit");\nstop();';
+	});
+
 	FLfile.write(outDir + "/build-log.txt", log.join("\n"));
 	fl.closeAll(false);
 	fl.quit(false);

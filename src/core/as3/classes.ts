@@ -586,7 +586,7 @@ function emitClass(world: World, c: ClassInfo, opts: ClassOptions, linked: Set<s
 	// (AS3's Object prints the class's name)
 	if (!c.base && !c.baseJs && !d.members.some((m) => m.name === "toString" && !m.isStatic)) parts.push(`toString(){return $r.objStr(this)}`);
 	const ext = c.base ? ` extends $c.${c.base.key}` : c.baseJs ? ` extends ${c.baseJs}` : "";
-	const make = `var C=class $${d.name}${ext}{${parts.join("")}};C.$n=${JSON.stringify(name)};${c.ifaces.length ? `C.$i=[${c.ifaces.map((i) => `$c.${i.key}`).join(",")}];` : ""}return C`;
+	const make = `var C=class $${d.name}${ext}{${parts.join("")}};C.prototype.$ctor=C.prototype.$${c.id};C.$n=${JSON.stringify(name)};${c.ifaces.length ? `C.$i=[${c.ifaces.map((i) => `$c.${i.key}`).join(",")}];` : ""}return C`;
 	// statics and the code in the class body, in the order written
 	let setup = "";
 	const run = (stmts: Stmt[]) => (setup += em.statics(stmts));

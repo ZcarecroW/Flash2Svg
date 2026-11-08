@@ -253,6 +253,7 @@ export function playerScripts(ctx: Context, playerId: string, warn: (m: string) 
 		if (controls || INPUT.test(js) || elementOf(ctx, (e) => e.kind === "text" && e.textType === "input")) list.push("input");
 		if (controls) list.push("controls");
 		if (FLV.test(js) || elementOf(ctx, (e) => e.kind === "video")) list.push("flv");
+		if (cls?.js) list.push("classes");
 	}
 	const parts = list.map((p) => `${PLAYER_PARTS[p as keyof typeof PLAYER_PARTS]};((window.__f2s[${JSON.stringify(playerId)}].$p=window.__f2s[${JSON.stringify(playerId)}].$p||[]).push(__f2sPart.default));`);
 	const bases: Record<string, string> = {};

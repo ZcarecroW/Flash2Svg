@@ -303,6 +303,7 @@ export class Clip {
 			}
 		}
 		this.fresh = false;
+		if (__SCRIPTS__) this.player.scripts?.leaving(this);
 		this.sync();
 		for (const inst of this.items.values()) {
 			const c = inst.clip;

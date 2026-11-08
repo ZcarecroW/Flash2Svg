@@ -844,7 +844,7 @@ class DisplayObjectContainer extends DisplayObject {
 		o._gone = false;
 		this._place(o, index);
 		if (!same) o.dispatchEvent(new FEvent(FEvent.ADDED, true));
-		if (!on && o._onStage()) o.dispatchEvent(new FEvent(FEvent.ADDED_TO_STAGE));
+		if (!on && o._onStage()) current.toStage(o, FEvent.ADDED_TO_STAGE);
 		current.touched();
 		return o;
 	}
@@ -866,7 +866,7 @@ class DisplayObjectContainer extends DisplayObject {
 		if (!o) throw fail(TypeError, 2007, "Parameter child must be non-null.");
 		if (o.parent !== this) throw fail(ArgumentError, 2025, "The supplied DisplayObject must be a child of the caller.");
 		o.dispatchEvent(new FEvent(FEvent.REMOVED, true));
-		if (o._onStage()) o.dispatchEvent(new FEvent(FEvent.REMOVED_FROM_STAGE));
+		if (o._onStage()) current.toStage(o, FEvent.REMOVED_FROM_STAGE);
 		const a = this._dyn.indexOf(o);
 		if (a >= 0) this._dyn.splice(a, 1);
 		o._node.remove();
@@ -2193,7 +2193,7 @@ export class Scripts {
 	heard = new Map<string, Set<Dispatcher>>();
 	drag: { o: Sprite; dx: number; dy: number; b: FRectangle | null } | null = null;
 	uid = 0;
-	private queue: { c: Clip; f: number; fn: () => void }[] = [];
+	private queue: { c: Clip; f: number; fn: (() => void) | null }[] = [];
 	private busy = 0;
 	private dirty = false;
 	private front = -1;
@@ -2351,36 +2351,6 @@ export class Scripts {
 			as: (x: unknown, c: unknown) => (isType(x, c) ? x : null),
 			cls: (n: string, t: Record<string, unknown> | null) => self.classOf(n) ?? t?.[n],
 			NEW,
-			// (a method taken as a value: bound to its object, the same function each time)
-			m: (o: any, k: string) => {
-				let b = o.$m;
-				if (!b) Object.defineProperty(o, "$m", { value: (b = {}) });
-				return (b[k] ??= o[k].bind(o));
-			},
-			// (super(...) of a class of the player's: what its constructor makes with them)
-			base: (o: any, B: any, a: unknown[]) => {
-				if (B === Error || B.prototype instanceof Error) {
-					o.message = a[0] === undefined ? "" : String(a[0]);
-					if (a[1] !== undefined) o.errorID = a[1];
-					return;
-				}
-				Object.defineProperties(o, Object.getOwnPropertyDescriptors(Reflect.construct(B, a)));
-			},
-			iface: (name: string, bases: any[]) => {
-				const I: any = function () {};
-				I.$n = name;
-				I.$b = bases;
-				const meets = (i: any): boolean => i === I || i.$b.some(meets);
-				Object.defineProperty(I, Symbol.hasInstance, {
-					value: (x: any) => {
-						if (x === null || typeof x !== "object") return false;
-						for (let c = x.constructor; c && c !== Function.prototype; c = Object.getPrototypeOf(c)) if (hasOwn(c, "$i") && c.$i.some(meets)) return true;
-						return false;
-					},
-				});
-				return I;
-			},
-			objStr: (o: any) => `[object ${bareName(o)}]`,
 			err: asFlashError,
 			vec: makeVector,
 			vget: vectorGet,
@@ -2437,6 +2407,7 @@ export class Scripts {
 			free,
 			run,
 			stagePoint,
+			bareName,
 			canvasMatrix: (f: (x: Frozen) => Mat) => (canvasMatrix = f),
 			scripts: this,
 		} as Record<string, unknown>;
@@ -2445,33 +2416,20 @@ export class Scripts {
 			Object.assign(L, made);
 			Object.assign(this.api, made);
 		}
-		const classes = (code as unknown as { $c?: (f: unknown, r: unknown) => { c: Record<string, unknown>; n: Record<string, string> } }).$c;
-		if (classes)
-			try {
-				this.user = classes(this.api, this.helpers);
-			} catch (e) {
-				console.error(e);
-			}
 		this.listen();
 	}
 
-	/** The document's own classes: the registry (each made when first asked for) and their keys. */
-	user: { c: Record<string, any>; n: Record<string, string> } | null = null;
+	// (the document's own classes, with the part that has them: parts/classes.ts)
 	/** A class of the document's own by its name, qualified or not. */
-	userClass(name: string): any {
-		const u = this.user;
-		if (!u) return undefined;
-		let key = u.n[name];
-		if (key === undefined) for (const q in u.n) if (q.slice(q.lastIndexOf(".") + 1) === name) key = u.n[q];
-		if (key === undefined) return undefined;
-		// (made when first asked for: its statics are set up then, which may go wrong)
-		try {
-			return u.c[key];
-		} catch (e) {
-			console.error(e);
-			return undefined;
-		}
+	userClass(_name: string): any {
+		return undefined;
 	}
+	/** The class whose object a timeline's is: the document class, a symbol's class with AS3 code. */
+	classFor(_c: Clip): any {
+		return null;
+	}
+	/** The object of a timeline's class: its constructor runs, or (`unbuilt`) not yet. */
+	declare make: (c: Clip, cls: any, unbuilt?: boolean) => any;
 
 	/** Canvas documents: what the frame event carries; the ticker's listeners and tweens. */
 	tickEvent: (() => any) | null = null;
@@ -2578,7 +2536,7 @@ export class Scripts {
 	}
 
 	/** Classes Animate makes for symbols; the timelines of classes. */
-	private generated = new WeakSet<object>();
+	generated = new WeakSet<object>();
 	private links = new Map<unknown, string | undefined>();
 	/** The timeline of a class's symbol (the class's own, or one it extends). */
 	private linkedKey(cls: any): string | undefined {
@@ -2594,37 +2552,17 @@ export class Scripts {
 		this.links.set(cls, key);
 		return key;
 	}
-	/** A class with AS3 code of the document's own in it (not only one Animate made). */
-	private ownCode(cls: any): boolean {
-		for (let x = cls; x && x !== MovieClip && x !== Function.prototype; x = Object.getPrototypeOf(x)) if (hasOwn(x, "$n") && !this.generated.has(x)) return true;
-		return false;
-	}
-	/** The class whose object a timeline's is: the document class, a symbol's class with AS3 code. */
-	private classFor(c: Clip): any {
-		if (!this.user) return null;
-		const name = c.kind === -1 ? this.P.dc : this.classNames.get(c.tl);
-		if (!name) return null;
-		const K = this.classOf(name);
-		return K && this.ownCode(K) ? K : null;
-	}
 
 	/** The timeline being given to the object of its class now (the class's constructor takes it). */
-	private making: { c: Clip; cls: unknown } | null = null;
-	/** Set while events of instances coming and going travel: parents not made yet are left out. */
-	private quiet = false;
+	making: { c: Clip; cls: unknown } | null = null;
+	/**
+	 * Objects of classes whose constructor hasn't run yet: made for a child's constructor (its parent
+	 * is there in Flash Player), built when their own instance is in place (children's first).
+	 */
+	unbuilt = new WeakSet<object>();
+	/** Instances in place (their object built, or none needed). */
+	private inPlace = new WeakSet<Inst>();
 
-	/** The object of a timeline's class: its constructor runs (an error in it stops there, the object is made). */
-	private make(c: Clip, cls: any): any {
-		this.making = { c, cls };
-		try {
-			return Reflect.construct(cls, []);
-		} catch (e) {
-			console.error(e);
-			return this.clips.get(c);
-		} finally {
-			this.making = null;
-		}
-	}
 
 	/** A class's object made: its timeline (one being made for it, or a new one of its symbol). */
 	adopt(o: MovieClip, cls: unknown) {
@@ -2674,13 +2612,11 @@ export class Scripts {
 					get _node() {
 						return i.node ?? c.node;
 					},
-					// (its parent's object when first asked for; not made for events on the way)
+					// (its parent's object when first asked for)
 					get _parent() {
-						const p = self.quiet ? (self.clips.get(i.owner) ?? null) : self.objOfClip(i.owner);
-						if (!self.quiet) {
-							delete this._parent;
-							this._parent = p;
-						}
+						const p = self.objOfClip(i.owner);
+						delete this._parent;
+						this._parent = p;
 						return p;
 					},
 					set _parent(v: any) {
@@ -2718,26 +2654,40 @@ export class Scripts {
 		return false;
 	}
 
-	/** An instance the timeline put on stage: its class's object is made (its constructor runs), and hears it was added. */
+	/**
+	 * An instance the timeline put in place (its own instances are in place already): its class's
+	 * constructor runs, then it hears it was added, as in Flash Player.
+	 */
 	born(i: Inst) {
+		this.inPlace.add(i);
 		const c = i.clip;
 		const cls = c && c.kind !== 1 ? this.classFor(c) : null;
 		if (!cls && !this.addedHeard) return;
 		this.safely(() => {
-			let o: any = this.objs.get(i);
-			if (!o && cls) {
-				const made: any = this.make(c!, cls);
-				o = this.clips.get(c!) ?? made;
+			let o: any = this.objs.get(i) ?? (c ? this.clips.get(c) : undefined);
+			if (cls) {
+				if (!o) o = this.clips.get(c!) ?? this.make(c!, cls);
+				else if (this.unbuilt.has(o)) {
+					this.unbuilt.delete(o);
+					run(() => o.$ctor());
+				}
 			}
 			o ??= this.objOfInst(i);
-			this.quiet = true;
-			try {
-				o.dispatchEvent(new FEvent(FEvent.ADDED, true));
-				if (this.onStage(i)) o.dispatchEvent(new FEvent(FEvent.ADDED_TO_STAGE));
-			} finally {
-				this.quiet = false;
-			}
+			o.dispatchEvent(new FEvent(FEvent.ADDED, true));
+			// (its own instances heard it in their turn)
+			if (this.onStage(i)) o.dispatchEvent(new FEvent(FEvent.ADDED_TO_STAGE));
 		});
+	}
+
+	/** Movie clips with frame scripts that a timeline takes off this frame (before it does). */
+	private leavers: Clip[] = [];
+	leaving(c: Clip) {
+		for (const [it, i] of c.items) {
+			const k = i.clip;
+			if (!k || k.kind !== 0 || (c.frame >= it.s && c.frame < it.e)) continue;
+			const key = this.keyOf(k.tl);
+			if (key !== undefined && this.code[key]) this.leavers.push(k);
+		}
 	}
 
 	/** An instance the timeline takes off: its object hears it. */
@@ -2745,35 +2695,30 @@ export class Scripts {
 		const o: any = this.objs.get(i) ?? (i.clip ? this.clips.get(i.clip) : undefined);
 		if (!o) return;
 		this.safely(() => {
-			this.quiet = true;
-			try {
-				o.dispatchEvent(new FEvent(FEvent.REMOVED, true));
-				if (this.onStage(i)) o.dispatchEvent(new FEvent(FEvent.REMOVED_FROM_STAGE));
-			} finally {
-				this.quiet = false;
-			}
+			o.dispatchEvent(new FEvent(FEvent.REMOVED, true));
+			if (this.onStage(i)) this.toStage(o, FEvent.REMOVED_FROM_STAGE);
 		});
+	}
+
+	/** ADDED_TO_STAGE or REMOVED_FROM_STAGE: to the object, then to everything inside it that has an object. */
+	toStage(o: any, type: string) {
+		o.dispatchEvent(new FEvent(type));
+		const c: Clip | null = o._c;
+		if (c) for (const i of c.items.values()) {
+			const k = this.objs.get(i) ?? (i.clip ? this.clips.get(i.clip) : undefined);
+			if (k) this.toStage(k, type);
+		}
+		for (const d of o._dyn ?? []) if (!d._i) this.toStage(d, type);
 	}
 	/** Someone listens for ADDED (it bubbles up from every instance the timeline puts on stage). */
 	addedHeard = false;
-
-	private newClip(tl: PTimeline): MovieClip {
-		const c = new this.ClipClass(this.player, tl, 0);
-		c.up = this.player.root;
-		c.fresh = true;
-		c.sync();
-		const o = this.objOfClip(c);
-		c.runActions();
-		c.updateAdvance();
-		return o;
-	}
 
 	objOfClip(c: Clip): MovieClip {
 		let o = this.clips.get(c);
 		if (o) return o;
 		const cls = this.classFor(c);
 		if (cls) {
-			const made = this.make(c, cls);
+			const made = this.make(c, cls, !!c.inst && !this.inPlace.has(c.inst));
 			return this.clips.get(c) ?? made;
 		}
 		const self = this;
@@ -2882,7 +2827,7 @@ export class Scripts {
 	}
 
 	/** Timelines with a class of their own (linkage). */
-	private classNames = new Map<PTimeline, string>();
+	classNames = new Map<PTimeline, string>();
 	private keys: Map<PTimeline, string> | null = null;
 	private keyOf(tl: PTimeline) {
 		if (!this.keys) {
@@ -2894,12 +2839,20 @@ export class Scripts {
 
 	/** A frame's script: after the code running and the frame's construction are through. */
 	frame(c: Clip) {
-		const fs = (c.fs ??= this.bind(c));
-		const fn = fs[c.frame];
-		if (!fn) return;
-		// (a goto's frame comes before what was waiting)
-		if (this.front < 0) this.queue.push({ c, f: c.frame, fn });
-		else this.queue.splice(this.front++, 0, { c, f: c.frame, fn });
+		let fn: (() => void) | null = null;
+		// (a timeline of a class: its object isn't made to bind its scripts, it is made in its turn)
+		if (!c.fs && !this.clips.has(c) && this.classFor(c)) {
+			const key = this.keyOf(c.tl);
+			if (key === undefined || !this.code[key]) return;
+		} else {
+			fn = (c.fs ??= this.bind(c))[c.frame] ?? null;
+			if (!fn) return;
+		}
+		// (a goto's frame comes before what was waiting; a parent's script before its children's)
+		if (this.front >= 0) return void this.queue.splice(this.front++, 0, { c, f: c.frame, fn });
+		let at = this.queue.length;
+		for (let k = 0; k < at; k++) for (let p = this.queue[k]!.c.up; p; p = p.up) if (p === c) at = k;
+		this.queue.splice(at, 0, { c, f: c.frame, fn });
 	}
 
 	/** Outside of scripts and frames: what is waiting runs now. */
@@ -2975,8 +2928,10 @@ export class Scripts {
 
 	private flush() {
 		for (let n = 0; this.queue.length && n < 4096; n++) {
-			const { c, f, fn } = this.queue.shift()!;
+			const { c, f, fn: given } = this.queue.shift()!;
 			if (c.frame !== f) continue;
+			const fn = given ?? (c.fs ??= this.bind(c))[f];
+			if (!fn) continue;
 			c.inScript = true;
 			run(fn);
 			c.inScript = false;
@@ -2998,6 +2953,11 @@ export class Scripts {
 		this.busy++;
 		this.ticks++;
 		advance();
+		// (clips this frame took off still went on to their next frame first: its script runs, after the others)
+		for (const c of this.leavers.splice(0)) {
+			if (c.playing) c.frame = c.frame + 1 >= c.tl.n ? 0 : c.frame + 1;
+			c.runActions();
+		}
 		for (const c of this.orphans) c.tick();
 		if (this.base) this.broadcast(FEvent.ENTER_FRAME);
 		else this.tock();
