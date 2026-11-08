@@ -219,6 +219,21 @@ JSFL to measure it: a curve fitted through the frames). The JS player could move
 with `offset-path` in its Web Animations too. Firefox's SMIL draws f09 wrong far into the loop
 (~8 minutes, before this package too).
 
+**23. Smaller gaps** (2026-11-08): lottie-web's faint inner gradient bevel was a matte inside a
+matte's source (the strong path coloured the bevel's sides with luma mattes, then used the result
+as the source of the gradient's mattes; lottie-web draws no matte there): now blend modes only
+(grey 1/2 screened with the strengthened highlight, multiplied by the inverted strengthened shadow,
+wrapped twice for ThorVG), the filters demo 0.9 % → 0.00 % in lottie-web. Measured and kept:
+(1) the rim: Animate's low quality is one box-blur pass, ours a Gaussian of the same variance; per
+tile of the filters demo 0.03–0.16 % against Animate, the gradient bevel 0.15 % more at low
+quality. An exact box needs `feConvolveMatrix`, whose taps are device pixels (Chromium ignores
+`kernelUnitLength`): it would change with zoom and screen density. (2) CSS filter functions:
+WebKit doesn't apply `blur()`/`drop-shadow()` to SVG elements at all; Edge and Firefox draw
+`blur()` like our filter (0.00 %) but shadows 0.4–0.7 % and glows 3–4 % off. (3) Firefox's SMIL
+drift: Firefox keeps each loop's length in whole milliseconds, so only whole-millisecond loops stay
+in step; at 24 fps that means unrolling two documents in three ×3 (their animation data three
+times), at 23.976 fps no unrolling helps; a drift visible after minutes doesn't justify it.
+
 **22. Unverified features** (2026-11-08): 9-slice symbols whose scale is animated now keep their
 9-slice with nested symbols inside, and nested graphics scale normally as Animate draws them
 (f100; it showed the old rule, graphics sliced, was a guess). Art and pattern brushes: their XFL is
@@ -340,7 +355,7 @@ Animate as before: an own test document, real keys and clicks where a user is in
 | 20 | **`BitmapData.draw()` of display objects**, and library BitmapData readable before it is decoded | canvas-style effects in scripts | medium | ✅ f98: 9 lines as Flash Player (`src/player/paint.ts`, `png.ts`) |
 | 21 | **Motion tweens as curves:** fit their X and Y curves instead of a keyframe per frame; bent motion-tween paths; the JS player moving along `offset-path` | smaller, cleaner motion tweens | medium | ✅ curves through Animate's frames (`src/core/tracks.ts` fitCurve, fitTogether), f99: bent paths (see below) |
 | 22 | **Unverified Animate features:** test documents for art, pattern and fluid brushes, Flexi bones, the envelope deformer, warps with "Auto convert vector to bitmap" off, 9-slice on animated symbols with nested symbols | certainty, fixes for what they show | medium | ✅ f100, f101; vector warps fixed (see below); fluid brush, Flexi bones, envelope ❓ |
-| 23 | **Smaller gaps in the output:** lottie-web's faint inner gradient bevel, the rim of a gradient bevel, CSS filter functions, Firefox's SMIL drifting far into long loops | fidelity | low–medium | ⬜ |
+| 23 | **Smaller gaps in the output:** lottie-web's faint inner gradient bevel, the rim of a gradient bevel, CSS filter functions, Firefox's SMIL drifting far into long loops | fidelity | low–medium | ✅ lottie-web bevel fixed; the other three measured and kept (see below) |
 | 24 | **MP4 and WebM from the command line:** the CLI has no video encoder; through an installed browser or a WebAssembly encoder | batch export of video | medium | ⬜ |
 | 25 | **Why Animate crashes quitting:** after the full batch of test documents, 2 of 4 runs, all work done by then. Find out whether a document or the extractor causes it | a user's Animate must not crash | low, if it can be reproduced | ⬜ |
 
