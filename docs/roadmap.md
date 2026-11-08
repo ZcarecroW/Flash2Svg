@@ -193,7 +193,7 @@ the AS3 that Animate users actually write is.
 | Code snippets | ✅ | all of them run, AS3 and HTML5 Canvas, tested one by one (`tests/out/snipsmoke.ts`, the snippets' text isn't committed) |
 | ActionScript in general (variables, conditions, loops, Math, properties) / Canvas JavaScript | ✅ | package 12; 392 lines identical to Flash Player, 57 to CreateJS |
 | Document class, classes in `.as` files | ✅ | package 17 (Part 3) |
-| UI components (Button, CheckBox, ComboBox, … ; Canvas components) | ✅ | real HTML controls; TileList, ScrollPane, UIScrollBar and the jQuery UI components warned |
+| UI components (Button, CheckBox, ComboBox, … ; Canvas components) | ✅ | real HTML controls; TileList, ScrollPane, UIScrollBar and the jQuery UI components since package 19 |
 | *Export as bitmap* / *cache as bitmap* on instances | ✅ | drawn as vectors: measured the same (f84: 0.00 %) |
 
 ### Packages, in the suggested order
@@ -305,7 +305,7 @@ Animate as before: an own test document, real keys and clicks where a user is in
 |---|---|---|---|---|
 | 17 | **Document class and classes in `.as` files:** the parser learns `package`, `class`, `extends`, `super`, statics, getters and setters, interfaces, imports across files. The extractor finds the files through the document's class path. The document class's constructor runs before frame 1 | real AS3 projects, not only frame scripts | high | ✅ f91–f93: 85 lines as Flash Player |
 | 18 | **XML and E4X:** XML, XMLList, `@attributes`, `..` and filters in the AS3 compiler and the runtime | data-driven content; DataProvider from XML | medium–high | ✅ f94, f95: 91 lines as Flash Player, namespaces too |
-| 19 | **The remaining UI components:** TileList, ScrollPane, UIScrollBar, and jQuery UI components in HTML5 Canvas documents (today: warned) | every component exports | medium | ⬜ |
+| 19 | **The remaining UI components:** TileList, ScrollPane, UIScrollBar, and jQuery UI components in HTML5 Canvas documents (today: warned) | every component exports | medium | ✅ f96 (29 lines as Flash Player), f97 (7 lines as the published page) |
 | 20 | **`BitmapData.draw()` of display objects**, and library BitmapData readable before it is decoded | canvas-style effects in scripts | medium | ⬜ |
 | 21 | **Motion tweens as curves:** fit their X and Y curves instead of a keyframe per frame; bent motion-tween paths; the JS player moving along `offset-path` | smaller, cleaner motion tweens | medium | ⬜ |
 | 22 | **Unverified Animate features:** test documents for art, pattern and fluid brushes, Flexi bones, the envelope deformer, warps with "Auto convert vector to bitmap" off, 9-slice on animated symbols with nested symbols | certainty, fixes for what they show | medium | ⬜ |

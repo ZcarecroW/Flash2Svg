@@ -153,10 +153,13 @@ Plain `stop()`, `play()` and frame jumps, simple mouse handlers and counted loop
 | NumericStepper, Slider | number field, range slider | minimum, maximum, step, snap, direction |
 | ColorPicker, ProgressBar | colour field, `<progress>` | |
 | DataGrid, UILoader | table, picture | |
+| TileList | a grid of pictures and labels | columns, rows, column width, row height, direction |
+| ScrollPane | a box that scrolls | a picture, or a library symbol by its class name |
+| UIScrollBar | the browser's scroll bar | the text field it scrolls |
 
 In the **JS player**, frame scripts use them through `fl.controls` as in Flash Player: `ok.label`, `pick.dataProvider`, `one.group.selection`, `slide.value`, `new Button()`, `ComponentEvent.ENTER`, with the same events in the same order. A field's `restrict`, `maxChars`, `stage.focus` and `TextEvent.TEXT_INPUT` work too.
 
-In **HTML5 Canvas** documents the components are what Animate publishes, found by their instance names: Animate's snippets work as they are (`$("#dom_overlay_container").on("click", "#ok", ...)`, `$("#name").val()`).
+In **HTML5 Canvas** documents the components are what Animate publishes, found by their instance names: Animate's snippets work as they are (`$("#dom_overlay_container").on("click", "#ok", ...)`, `$("#name").val()`). The jQuery UI components (RadioSet, DatePicker) come with jQuery UI's look, and `$("#day").datepicker("getDate")` works without loading jQuery UI.
 
 ## Links
 
