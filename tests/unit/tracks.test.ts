@@ -135,3 +135,14 @@ describe("fitCurve on the Motion Editor's curves", () => {
 		expect(miss(st, s)).toBeLessThanOrEqual(0.05 + 1e-9);
 	});
 });
+
+describe("fitCurve at jumps", () => {
+	it("keeps a jump (a flip of the rotation) a jump, without peaks the values never reach", () => {
+		const vals = Array.from({ length: 36 }, (_, f) => (f < 18 ? -3.025 * f : 108.92 - 3.025 * f));
+		const track = fitCurve(vals, 0, 0.075);
+		const lo = Math.min(...vals),
+			hi = Math.max(...vals);
+		for (const k of track) expect(k.v >= lo - 1e-9 && k.v <= hi + 1e-9).toBe(true);
+		expect(track.map((k) => k.t)).toEqual([0, 17, 18, 35]);
+	});
+});

@@ -150,7 +150,8 @@ describe("motion guides", () => {
 		const smil = compileScene(model, files, { format: "smil" }).files[0]!.svg;
 		expect(smil).toContain(`<animateMotion path="${c.d}"`);
 		expect(smil).toMatch(/<animateMotion [^>]*rotate="auto"/);
-		expect(smil).toMatch(/<animateMotion [^>]*calcMode="linear"/);
+		// (never the default "paced": it would leave out keyTimes)
+		expect(smil).toMatch(/<animateMotion [^>]*calcMode="(linear|spline)"/);
 		const css = compileScene(model, files, { format: "css" }).files[0]!.svg;
 		expect(css).toContain(`offset-path:path("${c.d}")`);
 		expect(css).toContain("offset-rotate:auto");

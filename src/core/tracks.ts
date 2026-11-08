@@ -158,7 +158,8 @@ export function fitCurve(vals: readonly number[], t0: number, tol: number, curve
 	};
 	const at = (k: number): End => ({ t: k, v: v[k]!, s: slope(k) });
 	// a turning point at frame k: where the parabola through it and its neighbours peaks, when that
-	// is clearly between frames
+	// is clearly between frames and the peak is smooth (the parabola foretells the frames two away
+	// too; a jump, a flip, would put a peak where the values never go)
 	const turning = (k: number, a: End, b: End): End => {
 		if (k > 0 && k < n - 1) {
 			const p = v[k - 1]!,
@@ -167,8 +168,10 @@ export function fitCurve(vals: readonly number[], t0: number, tol: number, curve
 				den = p - 2 * q + r;
 			if (Math.abs(den) > 1e-12) {
 				const dt = Math.round(Math.max(-0.5, Math.min(0.5, (p - r) / (2 * den))) * 1000) / 1000;
-				const t = k + dt;
-				if (Math.abs(dt) > 0.05 && t > a.t + 0.05 && t < b.t - 0.05) return { t, v: q - ((p - r) * dt) / 4, s: 0, flat: true };
+				const t = k + dt,
+					top = q - ((p - r) * dt) / 4;
+				const foretold = (j: number) => j < 0 || j >= n || Math.abs(top + (den / 2) * (j - t) ** 2 - v[j]!) <= 0.25 * Math.abs(v[j]! - q) + tol;
+				if (Math.abs(dt) > 0.05 && t > a.t + 0.05 && t < b.t - 0.05 && foretold(k - 2) && foretold(k + 2)) return { t, v: top, s: 0, flat: true };
 			}
 		}
 		return { t: k, v: v[k]!, s: 0, flat: true };

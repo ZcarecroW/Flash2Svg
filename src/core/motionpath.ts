@@ -20,7 +20,7 @@
 import { evalBezier, subBezier } from "./easing.ts";
 import { fmt, nearestAngle, parseTransform } from "./geom.ts";
 import type { Mat } from "./model.ts";
-import { simplify, type Ease, type Key, type Track } from "./tracks.ts";
+import { fitCurve, simplify, type Ease, type Key, type Track } from "./tracks.ts";
 
 /** One piece of the guide: a line, quadratic or cubic, as flat [x0, y0, x1, y1, ...]. */
 interface Piece {
@@ -240,9 +240,10 @@ export interface GuidedFit {
  * curve a frame may be (Animate follows its own approximation of a curve: up to 0.14 px beside
  * the true one in tight bends, measured on f60). `ease`: the tween's position ease as progress
  * keys over 0..duration (as the program builds them): the pace is then simplified against the
- * eased progress, with the ease between the keys — far fewer keys for an eased tween. With
- * `orient`, the rotations at the same frames and the rotation's ease. Null when the point leaves
- * the curve or turns back on it: those tweens keep Animate's frames.
+ * eased progress, with the ease between the keys — far fewer keys for an eased tween; else curves
+ * through the frames (tracks.ts fitCurve; `curve`: what a curved key costs). With `orient`, the
+ * rotations at the same frames and the rotation's ease. Null when the point leaves the curve or
+ * turns back on it: those tweens keep Animate's frames.
  */
 export function fitGuided(
 	c: GuideCurve,
@@ -251,6 +252,7 @@ export function fitGuided(
 	orient?: { rot: number[]; ease: Track; tol: number },
 	near = tol,
 	ease?: Track,
+	curve = 1,
 ): GuidedFit | null {
 	const dur = pos.length - 1;
 	if (dur < 1) return null;
@@ -266,9 +268,13 @@ export function fitGuided(
 	// on the curve the distance along it is the position: its error is the position's error
 	const at =
 		(ease && easedPace(c, s, ease, tol)) ??
-		simplify(
-			s.map((v, f) => ({ t: f, v: v / c.length, ease: (f === dur ? "hold" : "linear") as Ease })),
-			tol / c.length,
+		held(
+			fitCurve(
+				s.map((v) => v / c.length),
+				0,
+				tol / c.length,
+				curve,
+			),
 		);
 	if (!orient) return { at };
 	const tan: number[] = [];
@@ -284,13 +290,15 @@ export function fitGuided(
 		turn = rest[dur]! - r0;
 	let rule = true;
 	for (let f = 0; f <= dur && rule; f++) if (Math.abs(r0 + valueOf(orient.ease, f) * turn - rest[f]!) > orient.tol) rule = false;
-	const rot: Key[] = rule
-		? orient.ease.map((k) => ({ ...k, v: r0 + k.v * turn }))
-		: simplify(
-				rest.map((v, f) => ({ t: f, v, ease: (f === dur ? "hold" : "linear") as Ease })),
-				orient.tol / 2,
-			);
+	const rot: Key[] = rule ? orient.ease.map((k) => ({ ...k, v: r0 + k.v * turn })) : held(fitCurve(rest, 0, orient.tol / 2, curve));
 	return { at, rot };
+}
+
+/** The track with its last key held (nothing follows it). */
+function held(track: Track): Track {
+	const last = track[track.length - 1];
+	if (last) last.ease = "hold";
+	return track;
 }
 
 function valueOf(track: Track, t: number): number {

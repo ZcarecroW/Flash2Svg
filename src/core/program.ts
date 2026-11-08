@@ -7,7 +7,7 @@
  * objects, exotic options) falls back to the samples themselves, simplified.
  */
 import { classicEase, easePieces, evalBezier as evalEaseBezier, evalEase, isLinear, type EaseCurve } from "./easing.ts";
-import { compose, decompose, nearestAngle } from "./geom.ts";
+import { apply, compose, decompose, invert, nearestAngle } from "./geom.ts";
 import type {
 	AccInfo,
 	VideoElement,
@@ -381,7 +381,14 @@ function wrapRigs(programs: Record<string, Program>, prog: Program, opts: Compil
 			actions: {},
 		};
 		const frames = Array.from({ length: prog.frameCount }, (_, t) => ({ t, m: rig[Math.min(t, rig.length - 1)] ?? ([1, 0, 0, 1, 0, 0] as Mat) }));
-		const transform = matrixTracks(frames, opts);
+		const transform = matrixTracks(
+			frames,
+			opts,
+			reachOf(
+				frames.map((f) => f.m),
+				itemCorners(pl.items),
+			),
+		);
 		const bounds = pl.items.find((it): it is InstanceItem => it.kind === "instance")?.bounds ?? { left: 0, top: 0, width: 50, height: 50 };
 		const wrapper: InstanceItem = {
 			kind: "instance",
@@ -414,7 +421,7 @@ const MATRIX_GROUPS: TransformProp[][] = [
 ];
 
 /** Tracks of a matrix per frame (angles unwrapped; when smooth curves through them, see appendFrames). */
-function matrixTracks(frames: { t: number; m: Mat }[], opts: CompileOptions): TransformTracks {
+function matrixTracks(frames: { t: number; m: Mat }[], opts: CompileOptions, reach?: Reach): TransformTracks {
 	const out = emptyTracks(TRANSFORM_PROPS);
 	const series = Object.fromEntries(TRANSFORM_PROPS.map((k) => [k, [] as number[]])) as Record<TransformProp, number[]>;
 	let prevRot: number | undefined, prevSkw: number | undefined;
@@ -436,6 +443,7 @@ function matrixTracks(frames: { t: number; m: Mat }[], opts: CompileOptions): Tr
 				frames[0]!.t,
 				opts,
 				(k) => out[k],
+				reach,
 			);
 	else
 		for (const k of TRANSFORM_PROPS)
@@ -554,7 +562,14 @@ function wrapDepth(programs: Record<string, Program>, prog: Program, tl: Timelin
 						),
 						start: place.start,
 						end: place.end,
-						transform: matrixTracks(frames, opts),
+						transform: matrixTracks(
+							frames,
+							opts,
+							reachOf(
+								frames.map((f) => f.m),
+								itemCorners(pl.items),
+							),
+						),
 						graphic: [{ start: place.start, end: place.end, loop: "play once", firstFrame: place.start, lastFrame: n - 1 }],
 					},
 				];
@@ -870,7 +885,27 @@ function buildProgram(tl: TimelineData, opts: CompileOptions, warnings: string[]
  */
 function cameraView(tl: TimelineData, li: number, opts: CompileOptions, warnings: string[], doc: SceneModel["doc"]): TransformTracks | undefined {
 	const frames = cameraMatrices(tl, li, opts, warnings, doc).flatMap((m, t) => (m ? [{ t, m }] : []));
-	return frames.length ? matrixTracks(frames, opts) : undefined;
+	if (!frames.length) return undefined;
+	// (the view moves the world: what reaches far is the world under the stage's corners)
+	const corners: Point[] = [];
+	for (const { m } of frames) {
+		const inv = invert(m);
+		for (const [x, y] of [
+			[0, 0],
+			[doc.width, 0],
+			[0, doc.height],
+			[doc.width, doc.height],
+		] as const)
+			corners.push(apply(inv, { x, y }));
+	}
+	return matrixTracks(
+		frames,
+		opts,
+		reachOf(
+			frames.map((f) => f.m),
+			corners.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y)),
+		),
+	);
 }
 
 /** The view transform per frame; null in frames without a camera. */
@@ -1284,6 +1319,9 @@ function finishInstance(
 		return c === undefined ? v : nearestAngle(v, c);
 	};
 
+	// (curves through frames: turns and scales as exact as the instance is large)
+	const reach = instanceReach(segs.map((s) => s.el));
+
 	// an armature's frames are one motion, like a motion tween's samples
 	const motions = layer.ik && segs.length > 1 ? [{ ...segs[0]!, b: n, kf: { ...segs[0]!.kf, tween: BONE_MOTION } }] : segs;
 	for (let si = 0; si < motions.length; si++) {
@@ -1347,7 +1385,7 @@ function finishInstance(
 					if (group !== "color") cursor[p as TransformProp] = prev;
 					return out;
 				});
-				appendFrames(props, series, s.a, opts, tracks);
+				appendFrames(props, series, s.a, opts, tracks, group === "color" ? undefined : reach);
 			}
 		}
 	}
@@ -1357,7 +1395,7 @@ function finishInstance(
 
 	// along a motion guide: the whole item on one curve (see motionpath.ts)
 	if (guideAt) {
-		const motion = guidedMotion(segs, tv, n, item.start, guideAt);
+		const motion = guidedMotion(segs, tv, n, item.start, guideAt, opts.curveCost ?? 2.5);
 		if (motion) item.motion = motion;
 	}
 
@@ -1446,6 +1484,7 @@ function guidedMotion(
 	n: number,
 	start: number,
 	guideAt: (f: number) => GuideCurve | null,
+	curveCost: number,
 ): InstanceItem["motion"] | null {
 	let curve: GuideCurve | null = null;
 	for (const s of segs) {
@@ -1488,6 +1527,7 @@ function guidedMotion(
 				ease ? { rot: frames.map((f) => tv[f]!.rot), ease, tol: TOL.rot } : undefined,
 				NEAR_GUIDE,
 				pace ? easeTrack(pace, s.b - s.a) : undefined,
+				curveCost,
 			);
 			if (!fit) return null;
 			put(at, fit.at, s.a, false);
@@ -1528,16 +1568,24 @@ function easeTrack(curve: EaseCurve, dur: number): Track {
  * a straight path wavers a little across, by up to the tolerance tweens are fitted with), each on
  * its own where that takes fewer keys (a bent path); else a step per frame.
  */
-function appendFrames<P extends TransformProp | ColorProp>(props: P[], series: number[][], a: number, opts: CompileOptions, tracks: (p: P) => Track) {
+function appendFrames<P extends TransformProp | ColorProp>(
+	props: P[],
+	series: number[][],
+	a: number,
+	opts: CompileOptions,
+	tracks: (p: P) => Track,
+	reach?: Reach,
+) {
+	const tol = tolsFor(reach);
 	let keys: Track[];
 	if (!opts.smooth) keys = series.map((v) => v.map((x, i): Key => ({ t: a + i, v: x, ease: "hold" })));
 	else {
 		const curve = opts.curveCost ?? 2.5;
-		const own = () => series.map((v, i) => fitCurve(v, a, TOL[props[i]!] / 2, curve));
+		const own = () => series.map((v, i) => fitCurve(v, a, tol(props[i]!) / 2, curve));
 		const joint = fitTogether(
 			series,
 			a,
-			props.map((p) => TOL[p]),
+			props.map((p) => tol(p)),
 			curve,
 		);
 		if (!joint) keys = own();
@@ -1550,6 +1598,67 @@ function appendFrames<P extends TransformProp | ColorProp>(props: P[], series: n
 		}
 	}
 	props.forEach((p, i) => appendKeys(tracks(p), keys[i]!));
+}
+
+/**
+ * How far what a transform moves reaches: `r` from its origin (the transformation point) in its
+ * own units, `s` its largest scale. A turn or scale that is off by a little moves the far edge by
+ * that much more, so the tolerances of the turn and the scale shrink with it.
+ */
+interface Reach {
+	r: number;
+	s: number;
+}
+
+/** The tolerance of each value, those of turn and scale sized by the reach (never looser than TOL). */
+function tolsFor(reach?: Reach): (p: TransformProp | ColorProp) => number {
+	if (!reach || !(reach.r > 0)) return (p) => TOL[p];
+	const scale = TOL.x / reach.r,
+		turn = ((TOL.x / (reach.r * Math.max(reach.s, 1e-6))) * 180) / Math.PI;
+	return (p) => (p === "sx" || p === "sy" ? Math.min(TOL[p], scale) : p === "rot" || p === "skw" ? Math.min(TOL[p], turn) : TOL[p]);
+}
+
+/** The reach of matrices over the points they move (in their own space, around 0,0). */
+function reachOf(ms: Mat[], points: Point[], origin: Point = { x: 0, y: 0 }): Reach {
+	let r = 0,
+		sc = 0;
+	for (const p of points) r = Math.max(r, Math.hypot(p.x - origin.x, p.y - origin.y));
+	for (const m of ms) sc = Math.max(sc, Math.hypot(m[0], m[1]), Math.hypot(m[2], m[3]));
+	return { r, s: sc };
+}
+
+/** An instance's reach: its bounds (parent space at each keyframe) taken back into its own space, from its transformation point. */
+function instanceReach(els: InstanceElement[]): Reach {
+	let r = 0,
+		sc = 0;
+	for (const el of els) {
+		const b = el.bounds;
+		if (!b || !(b.width >= 0)) continue;
+		const inv = invert(el.matrix);
+		const tp = el.transformPoint;
+		for (const [x, y] of [
+			[b.left, b.top],
+			[b.left + b.width, b.top],
+			[b.left, b.top + b.height],
+			[b.left + b.width, b.top + b.height],
+		] as const) {
+			const q = apply(inv, { x, y });
+			if (Number.isFinite(q.x) && Number.isFinite(q.y)) r = Math.max(r, Math.hypot(q.x - tp.x, q.y - tp.y));
+		}
+		sc = Math.max(sc, Math.hypot(el.matrix[0], el.matrix[1]), Math.hypot(el.matrix[2], el.matrix[3]));
+	}
+	return { r, s: sc };
+}
+
+/** The corners of the instances' bounds among layer items (for the reach of a wrapper around them). */
+function itemCorners(items: Item[]): Point[] {
+	const out: Point[] = [];
+	for (const it of items) {
+		if (it.kind !== "instance") continue;
+		const b = it.bounds;
+		out.push({ x: b.left, y: b.top }, { x: b.left + b.width, y: b.top }, { x: b.left, y: b.top + b.height }, { x: b.left + b.width, y: b.top + b.height });
+	}
+	return out;
 }
 
 function appendKeys(track: Track, keys: Key[]) {
