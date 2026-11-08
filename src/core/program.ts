@@ -31,7 +31,7 @@ import type {
 import { focalOf, homographyOf, isFlat, residual, tangentAt, unproject, type Homography, type Perspective } from "./persp.ts";
 import { angleAtLength, fitGuided, project, type GuideCurve } from "./motionpath.ts";
 import { blankComments, splitScript, type Interaction } from "./snippets.ts";
-import { simplify, type Ease, type Key, type Track } from "./tracks.ts";
+import { fitCurve, fitTogether, simplify, type Ease, type Key, type Track } from "./tracks.ts";
 
 export interface CompileOptions {
 	/** Interpolate tweens smoothly between frames (high FPS). False = one step per frame. */
@@ -44,6 +44,12 @@ export interface CompileOptions {
 	pensInDrawings?: boolean;
 	/** The document's 3D view. */
 	perspective?: Perspective;
+	/**
+	 * What a curved key costs in straight keys, when frames are fitted with curves (tracks.ts
+	 * fitCurve): SMIL and CSS write each timing function out (default 2.5), Lottie keys carry their
+	 * handles anyway (1).
+	 */
+	curveCost?: number;
 }
 
 export const TRANSFORM_PROPS = ["x", "y", "rot", "skw", "sx", "sy", "tpx", "tpy"] as const;
@@ -400,22 +406,44 @@ function wrapRigs(programs: Record<string, Program>, prog: Program, opts: Compil
 	}
 }
 
-/** Tracks of a matrix per frame (angles unwrapped, interpolated when smooth, simplified). */
+const MATRIX_GROUPS: TransformProp[][] = [
+	["x", "y"],
+	["rot", "skw"],
+	["sx", "sy"],
+	["tpx", "tpy"],
+];
+
+/** Tracks of a matrix per frame (angles unwrapped; when smooth curves through them, see appendFrames). */
 function matrixTracks(frames: { t: number; m: Mat }[], opts: CompileOptions): TransformTracks {
 	const out = emptyTracks(TRANSFORM_PROPS);
+	const series = Object.fromEntries(TRANSFORM_PROPS.map((k) => [k, [] as number[]])) as Record<TransformProp, number[]>;
 	let prevRot: number | undefined, prevSkw: number | undefined;
-	for (const { t, m } of frames) {
+	for (const { m } of frames) {
 		const p = toProps(m, { x: 0, y: 0 });
 		if (prevRot !== undefined) p.rot = nearestAngle(p.rot, prevRot);
 		if (prevSkw !== undefined) p.skw = nearestAngle(p.skw, prevSkw);
 		prevRot = p.rot;
 		prevSkw = p.skw;
-		for (const k of TRANSFORM_PROPS) out[k].push({ t, v: p[k], ease: opts.smooth ? "linear" : "hold" });
+		for (const k of TRANSFORM_PROPS) series[k].push(p[k]);
 	}
-	for (const k of TRANSFORM_PROPS) {
-		out[k] = simplify(out[k], TOL[k] / 2);
-		closeTrack(out[k]);
-	}
+	// (frames in a row: curves through them; with gaps the frames themselves, fewer)
+	const row = opts.smooth && frames.every((f, i) => !i || f.t === frames[i - 1]!.t + 1);
+	if (row)
+		for (const g of MATRIX_GROUPS)
+			appendFrames(
+				g,
+				g.map((k) => series[k]),
+				frames[0]!.t,
+				opts,
+				(k) => out[k],
+			);
+	else
+		for (const k of TRANSFORM_PROPS)
+			out[k] = simplify(
+				frames.map((f, i) => ({ t: f.t, v: series[k][i]!, ease: opts.smooth ? "linear" : "hold" })),
+				TOL[k] / 2,
+			);
+	for (const k of TRANSFORM_PROPS) closeTrack(out[k]);
 	return out;
 }
 
@@ -518,7 +546,12 @@ function wrapDepth(programs: Record<string, Program>, prog: Program, tl: Timelin
 				const frames = Array.from({ length: place.end - place.start }, (_, i) => ({ t: place.start + i, m: matrixOf(pl, place.start + i) }));
 				out.items = [
 					{
-						...syncedWrapper(prog, id, `${prog.id}|${pl.index}|depth${copy}`, pl.items.find((it): it is InstanceItem => it.kind === "instance")?.bounds ?? { left: 0, top: 0, width: 50, height: 50 }),
+						...syncedWrapper(
+							prog,
+							id,
+							`${prog.id}|${pl.index}|depth${copy}`,
+							pl.items.find((it): it is InstanceItem => it.kind === "instance")?.bounds ?? { left: 0, top: 0, width: 50, height: 50 },
+						),
 						start: place.start,
 						end: place.end,
 						transform: matrixTracks(frames, opts),
@@ -539,7 +572,7 @@ function commonOrder(a: number[], b: number[]): Set<number> {
 	for (let i = a.length - 1; i >= 0; i--)
 		for (let j = b.length - 1; j >= 0; j--) len[i]![j] = a[i] === b[j] ? len[i + 1]![j + 1]! + 1 : Math.max(len[i + 1]![j]!, len[i]![j + 1]!);
 	const out = new Set<number>();
-	for (let i = 0, j = 0; i < a.length && j < b.length; ) {
+	for (let i = 0, j = 0; i < a.length && j < b.length;) {
 		if (a[i] === b[j]) {
 			out.add(a[i]!);
 			i++;
@@ -712,7 +745,16 @@ function wrapCameraColor(programs: Record<string, Program>, prog: Program, tl: T
 	const filters: InstanceItem["filters"] = [];
 	cam.forEach((c, t) => {
 		const p = c.tint?.percent ?? 0;
-		const v: Record<ColorProp, number> = { rP: 100 - p, gP: 100 - p, bP: 100 - p, aP: 100, rA: ((c.tint?.red ?? 0) * p) / 100, gA: ((c.tint?.green ?? 0) * p) / 100, bA: ((c.tint?.blue ?? 0) * p) / 100, aA: 0 };
+		const v: Record<ColorProp, number> = {
+			rP: 100 - p,
+			gP: 100 - p,
+			bP: 100 - p,
+			aP: 100,
+			rA: ((c.tint?.red ?? 0) * p) / 100,
+			gA: ((c.tint?.green ?? 0) * p) / 100,
+			bA: ((c.tint?.blue ?? 0) * p) / 100,
+			aA: 0,
+		};
 		for (const k of COLOR_PROPS) {
 			const track = color[k];
 			if (!track.length || track[track.length - 1]!.v !== v[k]) track.push({ t, v: v[k], ease: "hold" });
@@ -890,7 +932,10 @@ function concatM(first: Mat, then: Mat): Mat {
  * the passes over the frame they apply to. Other conditional actions always run (warned).
  * Only the current `scene` is exported: jumps into other scenes are left out (warned).
  */
-export function parseActions(script: string, opts: { zeroBased?: boolean; scene?: string; anyScene?: boolean; warn?: (m: string) => void } = {}): FrameAction[] {
+export function parseActions(
+	script: string,
+	opts: { zeroBased?: boolean; scene?: string; anyScene?: boolean; warn?: (m: string) => void } = {},
+): FrameAction[] {
 	const out: FrameAction[] = [];
 	// (string-aware: "//" in a label or address isn't a comment)
 	const code = blankComments(script);
@@ -1289,19 +1334,20 @@ function finishInstance(
 					if (group !== "color") cursor[p as TransformProp] = endOf(p);
 				}
 			} else {
-				for (const p of props) {
+				const series = props.map((p) => {
 					const vals = values(p);
-					const keys: Key[] = [];
+					const out: number[] = [];
 					let prev = group === "color" ? undefined : cursor[p as TransformProp];
 					for (let f = s.a; f < s.b; f++) {
 						let v = vals[f]!;
 						if ((p === "rot" || p === "skw") && prev !== undefined) v = nearestAngle(v, prev);
 						prev = v;
-						keys.push({ t: f, v, ease: opts.smooth ? "linear" : "hold" });
+						out.push(v);
 					}
 					if (group !== "color") cursor[p as TransformProp] = prev;
-					appendKeys(tracks(p), opts.smooth ? simplify(keys, TOL[p] / 2) : keys);
-				}
+					return out;
+				});
+				appendFrames(props, series, s.a, opts, tracks);
 			}
 		}
 	}
@@ -1373,7 +1419,17 @@ function inPerspective(item: InstanceItem, truth: FrameTruth[], segs: { a: numbe
 /** Layer depth's distance of the stage from the camera: fixed in Animate. */
 export const DEPTH_FOCAL = 528.25;
 
-const BONE_MOTION: TweenData = { type: "motionObject", easing: 0, rotate: "none", rotateTimes: 0, orientToPath: false, scale: true, snap: false, sync: false, guided: false };
+const BONE_MOTION: TweenData = {
+	type: "motionObject",
+	easing: 0,
+	rotate: "none",
+	rotateTimes: 0,
+	orientToPath: false,
+	scale: true,
+	snap: false,
+	sync: false,
+	guided: false,
+};
 
 /** How far beside its guide's true curve a frame may be (Animate follows an approximation of it). */
 const NEAR_GUIDE = 0.25;
@@ -1463,6 +1519,37 @@ function easeTrack(curve: EaseCurve, dur: number): Track {
 	const keys: Track = easePieces(curve, { clampY: true }).map((p) => ({ t: p.x0 * dur, v: p.y0, ease: p.bezier }));
 	keys.push({ t: dur, v: 1, ease: "hold" });
 	return keys;
+}
+
+/**
+ * A group's values at frames a, a + 1, … onto its tracks: when smooth, curves through them
+ * (fitCurve) — the group's values together while they move along straight lines (fitTogether: one
+ * animation, as SMIL's translate and CSS's translate need; Animate rounds in-betweens to twips, so
+ * a straight path wavers a little across, by up to the tolerance tweens are fitted with), each on
+ * its own where that takes fewer keys (a bent path); else a step per frame.
+ */
+function appendFrames<P extends TransformProp | ColorProp>(props: P[], series: number[][], a: number, opts: CompileOptions, tracks: (p: P) => Track) {
+	let keys: Track[];
+	if (!opts.smooth) keys = series.map((v) => v.map((x, i): Key => ({ t: a + i, v: x, ease: "hold" })));
+	else {
+		const curve = opts.curveCost ?? 2.5;
+		const own = () => series.map((v, i) => fitCurve(v, a, TOL[props[i]!] / 2, curve));
+		const joint = fitTogether(
+			series,
+			a,
+			props.map((p) => TOL[p]),
+			curve,
+		);
+		if (!joint) keys = own();
+		else if (joint[0]!.length <= 3) keys = joint;
+		else {
+			const apart = own();
+			// (a value that doesn't change costs nothing)
+			const cost = apart.reduce((n, t) => n + (t.every((k) => Math.abs(k.v - t[0]!.v) < 1e-9) ? 0 : t.length), 0);
+			keys = joint[0]!.length <= cost ? joint : apart;
+		}
+	}
+	props.forEach((p, i) => appendKeys(tracks(p), keys[i]!));
 }
 
 function appendKeys(track: Track, keys: Key[]) {

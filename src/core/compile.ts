@@ -161,7 +161,9 @@ function chooseFormat(model: SceneModel, files: FileSource, partial: Partial<Exp
 		const out = compileScene(model, files, { ...partial, format: "player" }, rootIndex, hooks);
 		// handlers that are only web links work in SMIL/CSS too: the player's program tells
 		if (sounds || scripted || out.files[0]?.svg.includes('"ev":')) {
-			out.warnings.unshift(`Automatic format: JS player (${sounds ? "it has sounds" : scripted ? "it has frame scripts to run" : "frame scripts add mouse handlers"})`);
+			out.warnings.unshift(
+				`Automatic format: JS player (${sounds ? "it has sounds" : scripted ? "it has frame scripts to run" : "frame scripts add mouse handlers"})`,
+			);
 			out.stats.format = "player";
 			return out;
 		}
@@ -230,6 +232,7 @@ export function compileScene(
 		includeGuides: s.includeGuides,
 		digits: s.digits,
 		pensInDrawings: s.format === "lottie" || s.format === "dotlottie",
+		curveCost: s.format === "lottie" || s.format === "dotlottie" ? 1 : undefined,
 	});
 	ctx.scale = s.scale ?? "fixed";
 	ctx.background = s.includeBackground;
@@ -252,7 +255,11 @@ export function compileScene(
 	const lottie = s.format === "lottie" || s.format === "dotlottie";
 	const zeroBased = model.doc.type !== "Flash";
 	if (s.format !== "player" && modelRuns(model))
-		out.warnings.push(model.classes?.files.length ? "Scripts and classes run only in the JS player format: here only plain stop(), play() and frame jumps count" : "Frame scripts run only in the JS player format: here only plain stop(), play() and frame jumps count");
+		out.warnings.push(
+			model.classes?.files.length
+				? "Scripts and classes run only in the JS player format: here only plain stop(), play() and frame jumps count"
+				: "Frame scripts run only in the JS player format: here only plain stop(), play() and frame jumps count",
+		);
 	for (const p of Object.values(ctx.programs)) {
 		if (!p.scriptNotes) continue;
 		const tl = model.timelines[p.source ?? p.id];
@@ -260,12 +267,20 @@ export function compileScene(
 		// (a layer wrap copies its program)
 		for (const n of p.scriptNotes) if (!out.warnings.includes(n)) out.warnings.push(n);
 	}
-	if (s.format !== "player" && !lottie && Object.values(model.timelines).some((t) => t.layers.some((l) => l.keyframes.some((k) => k.elements.some((e) => e.kind === "control" && e.control === "UIScrollBar")))))
+	if (
+		s.format !== "player" &&
+		!lottie &&
+		Object.values(model.timelines).some((t) =>
+			t.layers.some((l) => l.keyframes.some((k) => k.elements.some((e) => e.kind === "control" && e.control === "UIScrollBar"))),
+		)
+	)
 		out.warnings.push("A UIScrollBar scrolls its text field in the JS player only");
 	if (lottie && (s.begin === "visible" || s.begin === "scroll"))
 		out.warnings.push(`Start "${s.begin === "visible" ? "when visible" : "on scroll"}" is up to the page that shows a Lottie animation: it plays when loaded`);
 	if (s.format !== "player" && !lottie && Object.keys(model.sounds).length)
-		out.warnings.push(s.format === "static" ? "Still frames have no sound" : "Sounds play where a script can run (inline, as a file, in <object>), not in <img>");
+		out.warnings.push(
+			s.format === "static" ? "Still frames have no sound" : "Sounds play where a script can run (inline, as a file, in <object>), not in <img>",
+		);
 	// buttons from code snippets in a .lottie: labels as states, clicks as transitions (interactive.ts)
 	const interactive = s.format === "dotlottie" && hasRootInteractions(prog);
 	if (s.format !== "player" && !interactive) {
