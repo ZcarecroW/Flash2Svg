@@ -45,7 +45,8 @@ Wrong options get a message, not a stack trace, and the exit code is 1 — handy
 | Option | |
 |---|---|
 | `-o`, `--out <file>` | output file, or a folder (existing, or ending in `/`) to write the default name into (default: `<document>.svg`, `.json` or `.lottie` next to the scene folder). A scene of several library symbols gives one file each, `<name>_<symbol>`. |
-| `--format <f>` | `smil` (default), `css`, `player`, `static`, `lottie`, `dotlottie`, `auto`, `gif`, `webp`, `apng`. MP4 and WebM come from the panel: they need a browser's video encoders |
+| `--format <f>` | `smil` (default), `css`, `player`, `static`, `lottie`, `dotlottie`, `auto`, `gif`, `webp`, `apng`, `mp4`, `webm`. MP4 and WebM are encoded by an installed Chrome or Edge, run hidden (`FLASH2SVG_BROWSER` can name another Chromium browser) |
+| `--video-bitrate <kbps>` | MP4 and WebM (default: enough for clean edges at the size) |
 | `--frames <a-b>` | frame range, 1-based, inclusive (`1-24`, or one frame: `5`) |
 | `--loop <m>` | `auto` (follow `stop()` scripts), `always`, `never` |
 | `--begin <m>` | `auto`, `click`, `hover`, `manual` (from script), `visible`, `scroll` |

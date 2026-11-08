@@ -219,6 +219,17 @@ JSFL to measure it: a curve fitted through the frames). The JS player could move
 with `offset-path` in its Web Animations too. Firefox's SMIL draws f09 wrong far into the loop
 (~8 minutes, before this package too).
 
+**24. Video from the command line** (2026-11-08): the panel's encoding moved behind an interface
+(`src/core/video-codecs.ts`: WebCodecs and Web Audio, nothing more); the command line loads that
+code (4.3 KB) into an installed Chrome or Edge it starts hidden and drives over the DevTools
+protocol with Node's own WebSocket, draws the frames itself as for GIF and APNG and hands them over
+as I420. Chosen over a WebAssembly encoder: H.264 for MP4 (the patents keep it out of a bundle),
+native speed, the panel's own code. Found on the way: from an elevated shell Chrome and Edge
+relaunch themselves as the user and the started process ends at once (`--do-not-de-elevate`); a
+blank page the protocol opens is no secure context, so WebCodecs is hidden there (a page from
+127.0.0.1 is). f02, f16, f43: H.264 + AAC and VP9 + Opus, frames 0.00 %, length and sound right;
+1.4 s for a 2 s document, the browser's start included.
+
 **23. Smaller gaps** (2026-11-08): lottie-web's faint inner gradient bevel was a matte inside a
 matte's source (the strong path coloured the bevel's sides with luma mattes, then used the result
 as the source of the gradient's mattes; lottie-web draws no matte there): now blend modes only
@@ -356,7 +367,7 @@ Animate as before: an own test document, real keys and clicks where a user is in
 | 21 | **Motion tweens as curves:** fit their X and Y curves instead of a keyframe per frame; bent motion-tween paths; the JS player moving along `offset-path` | smaller, cleaner motion tweens | medium | ✅ curves through Animate's frames (`src/core/tracks.ts` fitCurve, fitTogether), f99: bent paths (see below) |
 | 22 | **Unverified Animate features:** test documents for art, pattern and fluid brushes, Flexi bones, the envelope deformer, warps with "Auto convert vector to bitmap" off, 9-slice on animated symbols with nested symbols | certainty, fixes for what they show | medium | ✅ f100, f101; vector warps fixed (see below); fluid brush, Flexi bones, envelope ❓ |
 | 23 | **Smaller gaps in the output:** lottie-web's faint inner gradient bevel, the rim of a gradient bevel, CSS filter functions, Firefox's SMIL drifting far into long loops | fidelity | low–medium | ✅ lottie-web bevel fixed; the other three measured and kept (see below) |
-| 24 | **MP4 and WebM from the command line:** the CLI has no video encoder; through an installed browser or a WebAssembly encoder | batch export of video | medium | ⬜ |
+| 24 | **MP4 and WebM from the command line:** the CLI has no video encoder; through an installed browser or a WebAssembly encoder | batch export of video | medium | ✅ an installed Chrome or Edge, driven over its DevTools protocol (`src/cli/browser-codecs.ts`); `e2e-videofile.ts --cli` |
 | 25 | **Why Animate crashes quitting:** after the full batch of test documents, 2 of 4 runs, all work done by then. Find out whether a document or the extractor causes it | a user's Animate must not crash | low, if it can be reproduced | ⬜ |
 
 Video embedded in the timeline stays out unless Animate turns out to hand over its frames: only FLV

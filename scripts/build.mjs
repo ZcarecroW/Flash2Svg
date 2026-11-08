@@ -8,6 +8,7 @@ import { copyFileSync, cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } 
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildRuntime } from "./build-runtime.mjs";
+import { buildVideoPage } from "./build-video-page.mjs";
 import { writeIcons } from "./lib/icons.mjs";
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -25,6 +26,7 @@ mkdirSync(join(ext, "CSXS"), { recursive: true });
 mkdirSync(join(dist, "cli"), { recursive: true });
 
 const runtimeSize = await buildRuntime();
+await buildVideoPage();
 
 const panelBuild = {
 	entryPoints: [join(repo, "src/panel/main.ts")],

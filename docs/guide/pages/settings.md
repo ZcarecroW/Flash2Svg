@@ -9,7 +9,7 @@ description: Every Flash2SVG setting in one table — where it is in the panel, 
 |---|---|---|---|
 | **Output** | | | |
 | Format | `--format` | SMIL | – |
-| Video bit rate | panel only | 0 (automatic) | MP4, WebM |
+| Video bit rate | `--video-bitrate` | 0 (automatic) | MP4, WebM |
 | File | `-o` | next to the FLA | all |
 | Source | – (the scene data says) | Current timeline | all |
 | Frames | `--frames a-b` | All | all |

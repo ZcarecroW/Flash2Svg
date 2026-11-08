@@ -16,6 +16,8 @@ import { createFontCodecs, encodeFonts, needsFonts } from "../core/fonts.ts";
 import { nodeFontFiles } from "./fonts-node.ts";
 import { exportRaster } from "../core/raster.ts";
 import { nodeRasterizer } from "./raster-node.ts";
+import { exportVideo } from "../core/video.ts";
+import { browserCodecs } from "./browser-codecs.ts";
 import { SCENE_MODEL_VERSION, type SceneModel } from "../core/model.ts";
 import { nodeWasmLoader } from "./wasm.ts";
 
@@ -25,7 +27,9 @@ const HELP = `flash2svg <scene.json> [options]
                           <document>.svg, .json or .lottie next to the scene folder)
   --format <f>            smil (default) | css | player | static | lottie (JSON) | dotlottie (.lottie) |
                           auto (the player for sounds / mouse handlers, else CSS or SMIL) |
-                          gif | webp | apng (animated raster fallbacks, e.g. for e-mail)
+                          gif | webp | apng (animated raster fallbacks, e.g. for e-mail) |
+                          mp4 | webm (video, with the sounds; encoded by an installed Chrome or
+                          Edge, or the browser FLASH2SVG_BROWSER names)
   --frames <a-b>          frame range, 1-based inclusive (e.g. 1-24)
   --loop <m>              auto (follow stop() scripts) | always | never
   --begin <m>             auto | click | hover | manual | visible (when half on screen) |
@@ -46,6 +50,7 @@ const HELP = `flash2svg <scene.json> [options]
   --image-resolution <x>  bitmaps shown smaller are made smaller, down to x times the largest size
                           they are shown at (default 2; 0 = always every pixel)
   --image-full <name>     keep every pixel of this bitmap (library name); repeatable
+  --video-bitrate <kbps>  MP4 and WebM (default: enough for clean edges at the size)
   --sound-format <f>      compressed sounds: mp3 (default) | opus
   --sound-bitrate <kbps>  on MP3's scale, Opus uses half (default: each sound's setting from Animate)
   --sound-mode <name=m>   per sound (library name): lossy | lossless (WAV); repeatable
@@ -104,7 +109,7 @@ async function main(argv: string[]) {
 				out = val();
 				break;
 			case "--format":
-				s.format = oneOf("smil", "css", "player", "static", "lottie", "dotlottie", "auto", "gif", "webp", "apng");
+				s.format = oneOf("smil", "css", "player", "static", "lottie", "dotlottie", "auto", "gif", "webp", "apng", "mp4", "webm");
 				break;
 			case "--frames": {
 				const m = /^(\d+)(?:-(\d+))?$/.exec(val());
@@ -162,6 +167,9 @@ async function main(argv: string[]) {
 				break;
 			case "--lottie-sounds":
 				s.lottieSounds = true;
+				break;
+			case "--video-bitrate":
+				s.videoBitrate = num(100, 100000, true);
 				break;
 			case "--sound-format":
 				s.soundFormat = oneOf("mp3", "opus");
@@ -230,8 +238,9 @@ async function main(argv: string[]) {
 		s,
 		createCodecs(loader),
 	);
-	// only the player plays sounds ("auto" picks it for documents with sounds)
-	if ((s.format === "player" || s.format === "auto") && Object.keys(model.sounds).length) {
+	// only the player and video play sounds ("auto" picks the player for documents with sounds)
+	const video = s.format === "mp4" || s.format === "webm";
+	if ((s.format === "player" || s.format === "auto" || video) && Object.keys(model.sounds).length) {
 		const r = await encodeSounds(model, files, s, createAudioCodecs(loader));
 		({ model, files } = r);
 		warnings = [...warnings, ...r.warnings];
@@ -245,6 +254,7 @@ async function main(argv: string[]) {
 		s.format !== "gif" &&
 		s.format !== "webp" &&
 		s.format !== "apng" &&
+		!video &&
 		needsFonts(model)
 	) {
 		const { compress } = await import("woff2-encoder");
@@ -253,57 +263,72 @@ async function main(argv: string[]) {
 		warnings = [...warnings, ...r.warnings];
 	}
 	const raster = s.format === "gif" || s.format === "webp" || s.format === "apng";
-	const kb = (n: number) => (n / 1024).toFixed(1);
-	// one file per root (several library symbols: <name>_<symbol>), as the panel writes them
-	const roots = model.roots.length;
-	const used = new Set<string>();
-	for (let r = 0; r < roots; r++) {
-		const rasterWarnings = new Set<string>();
-		const result = raster
-			? await exportRaster(
-					model,
-					files,
-					s,
-					nodeRasterizer(loader, (m) => rasterWarnings.add(m)),
-					createCodecs(loader),
-					r,
-				)
-			: compileScene(model, files, s, r, { gzip: (d) => gzipSync(d, { level: 9 }) });
-		if (r === 0) result.warnings.unshift(...warnings);
-		result.warnings.push(...rasterWarnings);
-		const defaultExt = result.files[0]?.ext ?? ".svg";
-		const docName = basename(model.doc.name, extname(model.doc.name)) + defaultExt;
-		// -o a folder (an existing one, or ending in a slash): the default name inside it
-		const folder = !!out && (/[\\/]$/.test(out) || (existsSync(out) && statSync(out).isDirectory()));
-		const target = resolve(!out ? join(base, "..", docName) : folder ? join(out, docName) : out);
-		mkdirSync(dirname(target), { recursive: true });
-		// gzip inside: the extension says so, whatever name was given
-		const ext = defaultExt === ".svgz" ? ".svgz" : extname(target) || defaultExt;
-		let stem = target.slice(0, target.length - extname(target).length);
-		if (roots > 1) stem += "_" + (model.timelines[model.roots[r]!]?.name ?? String(r + 1)).replace(/[\\/:*?"<>|]+/g, "_");
-		const own = stem;
-		for (let n = 2; used.has(stem.toLowerCase()); n++) stem = own + "_" + n;
-		used.add(stem.toLowerCase());
-		for (const f of result.files) writeFileSync(stem + f.suffix + ext, f.bytes ?? f.svg);
-		for (const a of result.assets) {
-			const dst = join(dirname(target), a.path);
-			mkdirSync(dirname(dst), { recursive: true });
-			// re-encoded images exist only in memory
-			try {
-				writeFileSync(dst, files.readBinary(a.source));
-			} catch {
-				process.stderr.write(`warning: missing ${a.source}\n`);
+	// (one browser for every root's video)
+	const codecs = video ? await browserCodecs() : null;
+	try {
+		const kb = (n: number) => (n / 1024).toFixed(1);
+		// one file per root (several library symbols: <name>_<symbol>), as the panel writes them
+		const roots = model.roots.length;
+		const used = new Set<string>();
+		for (let r = 0; r < roots; r++) {
+			const rasterWarnings = new Set<string>();
+			const result = codecs
+				? await exportVideo(
+						model,
+						files,
+						s,
+						nodeRasterizer(loader, (m) => rasterWarnings.add(m)),
+						r,
+						codecs,
+					)
+				: raster
+					? await exportRaster(
+							model,
+							files,
+							s,
+							nodeRasterizer(loader, (m) => rasterWarnings.add(m)),
+							createCodecs(loader),
+							r,
+						)
+					: compileScene(model, files, s, r, { gzip: (d) => gzipSync(d, { level: 9 }) });
+			if (r === 0) result.warnings.unshift(...warnings);
+			result.warnings.push(...rasterWarnings);
+			const defaultExt = result.files[0]?.ext ?? ".svg";
+			const docName = basename(model.doc.name, extname(model.doc.name)) + defaultExt;
+			// -o a folder (an existing one, or ending in a slash): the default name inside it
+			const folder = !!out && (/[\\/]$/.test(out) || (existsSync(out) && statSync(out).isDirectory()));
+			const target = resolve(!out ? join(base, "..", docName) : folder ? join(out, docName) : out);
+			mkdirSync(dirname(target), { recursive: true });
+			// gzip inside: the extension says so, whatever name was given
+			const ext = defaultExt === ".svgz" ? ".svgz" : extname(target) || defaultExt;
+			let stem = target.slice(0, target.length - extname(target).length);
+			if (roots > 1) stem += "_" + (model.timelines[model.roots[r]!]?.name ?? String(r + 1)).replace(/[\\/:*?"<>|]+/g, "_");
+			const own = stem;
+			for (let n = 2; used.has(stem.toLowerCase()); n++) stem = own + "_" + n;
+			used.add(stem.toLowerCase());
+			for (const f of result.files) writeFileSync(stem + f.suffix + ext, f.bytes ?? f.svg);
+			for (const a of result.assets) {
+				const dst = join(dirname(target), a.path);
+				mkdirSync(dirname(dst), { recursive: true });
+				// re-encoded images exist only in memory
+				try {
+					writeFileSync(dst, files.readBinary(a.source));
+				} catch {
+					process.stderr.write(`warning: missing ${a.source}\n`);
+				}
 			}
+			for (const w of result.warnings) process.stderr.write(`warning: ${w}\n`);
+			const written =
+				result.files.length > 1
+					? `${stem + result.files[0]!.suffix + ext} … ${result.files[result.files.length - 1]!.suffix + ext}`
+					: stem + (result.files[0]?.suffix ?? "") + ext;
+			process.stdout.write(`${result.files.length} file(s), ${kb(result.stats.bytes)} KB, ${result.stats.durationSeconds.toFixed(2)}s -> ${written}\n`);
+			// what the size is made of
+			const parts = Object.entries(result.stats.parts).filter(([, n]) => n > 0);
+			process.stdout.write(`  ${parts.map(([k, n]) => `${k} ${kb(n)} KB`).join(", ")}\n`);
 		}
-		for (const w of result.warnings) process.stderr.write(`warning: ${w}\n`);
-		const written =
-			result.files.length > 1
-				? `${stem + result.files[0]!.suffix + ext} … ${result.files[result.files.length - 1]!.suffix + ext}`
-				: stem + (result.files[0]?.suffix ?? "") + ext;
-		process.stdout.write(`${result.files.length} file(s), ${kb(result.stats.bytes)} KB, ${result.stats.durationSeconds.toFixed(2)}s -> ${written}\n`);
-		// what the size is made of
-		const parts = Object.entries(result.stats.parts).filter(([, n]) => n > 0);
-		process.stdout.write(`  ${parts.map(([k, n]) => `${k} ${kb(n)} KB`).join(", ")}\n`);
+	} finally {
+		codecs?.close();
 	}
 	void DEFAULT_SETTINGS;
 }

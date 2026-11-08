@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { findBrowser } from "../../src/cli/browser-codecs.ts";
 
 // the command line compiler from source (Node runs the TypeScript directly)
 const cli = new URL("../../src/cli/flash2svg.ts", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
@@ -149,5 +150,34 @@ describe("command line", () => {
 		const newer = join(dir, "newer.json");
 		writeFileSync(newer, JSON.stringify({ ...JSON.parse(readFileSync(scene, "utf8")), version: 99 }));
 		expect(run(newer).err).toMatch(/error: .*newer/i);
+	});
+});
+
+describe("the browser for MP4 and WebM", () => {
+	it("takes FLASH2SVG_BROWSER when it exists, else nothing", () => {
+		expect(findBrowser({ FLASH2SVG_BROWSER: process.execPath }, "win32")).toBe(process.execPath);
+		expect(findBrowser({ FLASH2SVG_BROWSER: join(tmpdir(), "no-such-browser.exe") }, "win32")).toBeNull();
+	});
+
+	it("looks where Chrome and Edge install themselves", () => {
+		const root = mkdtempSync(join(tmpdir(), "f2s-browser-test-"));
+		try {
+			expect(findBrowser({ PROGRAMFILES: root }, "win32")).toBeNull();
+			const edge = join(root, "Microsoft", "Edge", "Application");
+			mkdirSync(edge, { recursive: true });
+			writeFileSync(join(edge, "msedge.exe"), "");
+			expect(findBrowser({ PROGRAMFILES: root }, "win32")).toBe(join(edge, "msedge.exe"));
+			// (Chrome first where both are)
+			const chrome = join(root, "Google", "Chrome", "Application");
+			mkdirSync(chrome, { recursive: true });
+			writeFileSync(join(chrome, "chrome.exe"), "");
+			expect(findBrowser({ PROGRAMFILES: root }, "win32")).toBe(join(chrome, "chrome.exe"));
+			const bin = join(root, "bin");
+			mkdirSync(bin);
+			writeFileSync(join(bin, "chromium"), "");
+			expect(findBrowser({ PATH: bin }, "linux")).toBe(join(bin, "chromium"));
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 });

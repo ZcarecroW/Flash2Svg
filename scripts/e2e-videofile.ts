@@ -1,6 +1,8 @@
 // E2E: MP4, WebM and APNG exports. The export runs in a browser (WebCodecs), as in the panel; the
 // files are played in the browsers: frames compared with the still renderer, length, sound, seeking.
-// Usage: node scripts/e2e-videofile.ts [name,name,...] [--browser=msedge|firefox]
+// Usage: node scripts/e2e-videofile.ts [name,name,...] [--browser=msedge|firefox] [--cli]
+//   --cli: the export as the command line makes it (frames drawn in Node, encoded by an installed
+//   Chrome or Edge it drives, src/cli/browser-codecs.ts)
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { dirname, extname, join, normalize, relative, sep } from "node:path";
@@ -13,11 +15,15 @@ import { exportRaster } from "../src/core/raster.ts";
 import { nodeRasterizer } from "../src/cli/raster-node.ts";
 import { nodeWasmLoader } from "../src/cli/wasm.ts";
 import type { SceneModel } from "../src/core/model.ts";
+import { exportVideo } from "../src/core/video.ts";
+import { browserCodecs } from "../src/cli/browser-codecs.ts";
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const names = (args.find((a) => !a.startsWith("--")) ?? "f02-eases,f16-sound").split(",");
 const engine = args.find((a) => a.startsWith("--browser="))?.slice(10) ?? "msedge";
+const cli = args.includes("--cli") ? await browserCodecs() : null;
+if (cli) console.log(`(exporting as the command line does, encoded by ${cli.browser})`);
 const out = join(repo, "tests", "out");
 const work = join(out, "videofile");
 mkdirSync(work, { recursive: true });
@@ -156,7 +162,13 @@ for (const name of names) {
 		const paths = readdirSync(dir, { recursive: true, withFileTypes: true })
 			.filter((e) => e.isFile())
 			.map((e) => relative(dir, join(e.parentPath, e.name)).split(sep).join("/"));
-		const r = await page.evaluate(([n, f, l]) => (window as unknown as { run(a: string, b: string, c: string[]): Promise<{ ms: number; bytes: number[]; warnings: string[]; frames: number; seconds: number }> }).run(n as string, f as string, l as string[]), [name, format, paths]);
+		let r: { ms: number; bytes: ArrayLike<number>; warnings: string[]; frames: number; seconds: number };
+		if (cli) {
+			const t0 = performance.now();
+			const res = await exportVideo(model, files, { format, includeBackground: true }, nodeRasterizer(nodeWasmLoader()), 0, cli);
+			r = { ms: performance.now() - t0, bytes: res.files[0]!.bytes!, warnings: res.warnings, frames: res.stats.frames, seconds: res.stats.durationSeconds };
+		} else
+			r = await page.evaluate(([n, f, l]) => (window as unknown as { run(a: string, b: string, c: string[]): Promise<{ ms: number; bytes: number[]; warnings: string[]; frames: number; seconds: number }> }).run(n as string, f as string, l as string[]), [name, format, paths]);
 		const bytes = Uint8Array.from(r.bytes);
 		const file = join(work, `${name}.${format}`);
 		writeFileSync(file, bytes);
@@ -246,6 +258,7 @@ for (const name of names) {
 	}
 }
 await browser.close();
+cli?.close();
 server.close();
 console.log(failures ? `\n${failures} failed` : "\nVideo files are good");
 process.exit(failures ? 1 : 0);

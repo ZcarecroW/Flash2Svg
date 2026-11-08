@@ -56,7 +56,7 @@ Animated pictures for places where SVG doesn't animate: e-mail clients, chat app
 
 ## MP4 and WebM
 
-Video files, from the panel (they use the video encoders of Animate's browser, so the command line has none). **MP4** is H.264 where that encoder is there, else AV1 or VP9; **WebM** is VP9. Both carry the document's sounds, mixed to one track, and show the frames as the other raster formats do, at the document's frame rate. See-through parts come out on the stage colour: video has no alpha. *Video bit rate* (0 = enough for clean edges at this size) trades size for detail.
+Video files, from the panel (the video encoders of Animate's browser) or the command line (those of an installed Chrome or Edge, run hidden). **MP4** is H.264 where that encoder is there, else AV1 or VP9; **WebM** is VP9. Both carry the document's sounds, mixed to one track, and show the frames as the other raster formats do, at the document's frame rate. See-through parts come out on the stage colour: video has no alpha. *Video bit rate* (0 = enough for clean edges at this size) trades size for detail.
 
 ## Lottie and .lottie
 
