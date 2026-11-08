@@ -735,9 +735,10 @@ class Writer {
 		}
 		// A moving `transform` in an animation of its own next to moving translate/rotate/scale:
 		// Chromium (156) then runs only the `transform` animation on the compositor and draws the
-		// element without the others (the banner's pulsing button sat at 0,0). Measured: one
-		// animation holding them all, or the `transform` on an element inside, draw right everywhere.
-		if (groups.length > 1 && X.length && slots[slots.length - 1]!.moving)
+		// element without the others (the banner's pulsing button sat at 0,0). The same with still
+		// ones held in its keyframes (an animated 9-slice panel, f100). Measured: one animation in
+		// which they all move, or the `transform` on an element inside, draw right everywhere.
+		if (X.length && slots[slots.length - 1]!.moving && slots.length > 1 && !(groups.length === 1 && groups[0]!.length === slots.length))
 			return this.cssTransformElement(this.cssTransformElement(inner, undefined, undefined, undefined, X, md), T, R, S, [], md);
 		const valuesAt = (s: Slot, tr: GTrack[]) => tr.map((x) => trackValueAt(x, 0)).slice(0, s.tracks.length);
 		// constants for the first keyframes: still slots, and the identity standing in for the attribute
