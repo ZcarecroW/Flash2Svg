@@ -2,6 +2,8 @@
  * Part of the Flash API for scripts that use it: pixels, sounds, loading, video, tweens, bytes. It
  * comes with a document only if its scripts name any of this (src/core/emit/scripts.ts).
  */
+import { Painter } from "../paint.ts";
+import { decodePng } from "../png.ts";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export default function media(L: any): Record<string, unknown> {
@@ -173,6 +175,7 @@ class FByteArray extends Array<number> {
 }
 
 
+
 /** Pixels: the numbers are the truth, a canvas turns them into a picture when one is shown. */
 class FBitmapData {
 	readonly width: number;
@@ -184,6 +187,8 @@ class FBitmapData {
 	_href: string | null = null;
 	_shown = new Set<Bitmap>();
 	_gone = false;
+	/** A library bitmap's pixels as a base64 PNG, read at once when a script asks for them. */
+	_png: string | null = null;
 	constructor(w: number, h: number, transparent = true, fill = 0xffffffff) {
 		w = Math.trunc(w);
 		h = Math.trunc(h);
@@ -193,14 +198,23 @@ class FBitmapData {
 		this.transparent = transparent;
 		this._px = new Uint32Array(w * h).fill(transparent ? fill >>> 0 : (fill | 0xff000000) >>> 0);
 	}
-	static _picture(href: string, w: number, h: number, transparent: boolean, proto: object) {
+	static _picture(href: string, w: number, h: number, transparent: boolean, proto: object, png?: string) {
 		const b = Object.create(proto) as FBitmapData;
-		Object.assign(b, { width: w, height: h, transparent, _px: null, _href: href, _shown: new Set(), _gone: false });
+		Object.assign(b, { width: w, height: h, transparent, _px: null, _href: href, _shown: new Set(), _gone: false, _png: png ?? null });
 		return b;
 	}
 	private live(): Uint32Array {
 		if (this._gone) throw fail(ArgumentError, 2015, "Invalid BitmapData.");
 		if (!this._px) {
+			// (its PNG read here and now, as Flash Player has the pixels at once)
+			const data = this._png ?? (this._href && /^data:image\/png;base64,/.test(this._href) ? this._href.slice(22) : null);
+			if (data) {
+				const r = decodePng(Uint8Array.from(atob(data), (c) => c.charCodeAt(0)));
+				if (r && r.w === this.width && r.h === this.height) {
+					if (!this.transparent) for (let i = 0; i < r.px.length; i++) r.px[i] = (r.px[i]! | 0xff000000) >>> 0;
+					return (this._px = r.px);
+				}
+			}
 			const px = new Uint32Array(this.width * this.height);
 			this._px = px;
 			const img = new Image();
@@ -233,21 +247,7 @@ class FBitmapData {
 	/** Where the picture is: a file or a data URL of the pixels. */
 	_url(): string {
 		if (this._href) return this._href;
-		const px = this.live();
-		const c = htmlEl("canvas") as HTMLCanvasElement;
-		c.width = this.width;
-		c.height = this.height;
-		const x = c.getContext("2d")!;
-		const img = x.createImageData(this.width, this.height);
-		for (let i = 0; i < px.length; i++) {
-			const p = px[i]!;
-			img.data[i * 4] = (p >> 16) & 255;
-			img.data[i * 4 + 1] = (p >> 8) & 255;
-			img.data[i * 4 + 2] = p & 255;
-			img.data[i * 4 + 3] = p >>> 24;
-		}
-		x.putImageData(img, 0, 0);
-		return (this._href = c.toDataURL());
+		return (this._href = this._canvas().toDataURL());
 	}
 	/** Shows the pixels as they are now. */
 	_show() {
@@ -294,10 +294,77 @@ class FBitmapData {
 			}
 		this.changed();
 	}
-	/** Only of pixels: a browser can't read back what it draws of a display object at once. */
-	draw(src: FBitmapData | Bitmap) {
-		const b = src instanceof Bitmap ? src.bitmapData : src;
-		if (b instanceof FBitmapData) this.copyPixels(b, b.rect, new FPoint());
+	/** The pixels on a canvas (ARGB to RGBA). */
+	_canvas(): HTMLCanvasElement {
+		const px = this.live();
+		const c = htmlEl("canvas") as HTMLCanvasElement;
+		c.width = this.width;
+		c.height = this.height;
+		const x = c.getContext("2d")!;
+		const img = x.createImageData(this.width, this.height);
+		const d = img.data;
+		for (let i = 0; i < px.length; i++) {
+			const p = px[i]!;
+			d[i * 4] = (p >> 16) & 255;
+			d[i * 4 + 1] = (p >> 8) & 255;
+			d[i * 4 + 2] = p & 255;
+			d[i * 4 + 3] = p >>> 24;
+		}
+		x.putImageData(img, 0, 0);
+		return c;
+	}
+	/**
+	 * Another BitmapData or a display object drawn onto these pixels, as Flash Player does: through
+	 * `matrix`, its colours changed by `ct`, blended, clipped. A display object is drawn in its own
+	 * space (its own transform, colour and blend left out), painted by paint.ts.
+	 */
+	draw(src: any, matrix: any = null, ct: FColorTransform | null = null, blend: string | null = null, clip: FRectangle | null = null, smoothing = false) {
+		if (src === null || src === undefined) throw fail(TypeError, 2007, "Parameter source must be non-null.");
+		const px = this.live();
+		const w = this.width,
+			h = this.height;
+		const layer = htmlEl("canvas") as HTMLCanvasElement;
+		layer.width = w;
+		layer.height = h;
+		const y = layer.getContext("2d", { willReadFrequently: true })!;
+		if (matrix) y.setTransform(matrix.a, matrix.b, matrix.c, matrix.d, matrix.tx, matrix.ty);
+		const pixels = src instanceof Bitmap ? src.bitmapData : src instanceof FBitmapData ? src : null;
+		if (pixels) {
+			y.imageSmoothingEnabled = !!smoothing;
+			y.drawImage(pixels._canvas(), 0, 0);
+		} else if (src._node) new Painter(current.player.svg, (e) => current.paintInfo(e)).paintInside(y, src._node);
+		y.setTransform(1, 0, 0, 1, 0, 0);
+		const img = y.getImageData(0, 0, w, h);
+		const d = img.data;
+		if (ct) {
+			const clamp = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
+			for (let i = 0; i < d.length; i += 4) {
+				if (!d[i + 3]) continue;
+				d[i] = clamp(d[i]! * ct.redMultiplier + ct.redOffset);
+				d[i + 1] = clamp(d[i + 1]! * ct.greenMultiplier + ct.greenOffset);
+				d[i + 2] = clamp(d[i + 2]! * ct.blueMultiplier + ct.blueOffset);
+				d[i + 3] = clamp(d[i + 3]! * ct.alphaMultiplier + ct.alphaOffset);
+			}
+			y.putImageData(img, 0, 0);
+		}
+		// onto what is there, blended and clipped
+		const c = this._canvas();
+		const x = c.getContext("2d", { willReadFrequently: true })!;
+		if (clip) {
+			x.beginPath();
+			x.rect(clip.x, clip.y, clip.width, clip.height);
+			x.clip();
+		}
+		const MODES: Record<string, GlobalCompositeOperation> = { multiply: "multiply", screen: "screen", lighten: "lighten", darken: "darken", difference: "difference", overlay: "overlay", hardlight: "hard-light", add: "lighter", subtract: "difference", invert: "exclusion", alpha: "destination-in", erase: "destination-out" };
+		x.globalCompositeOperation = MODES[blend ?? ""] ?? "source-over";
+		x.drawImage(layer, 0, 0);
+		const out = x.getImageData(0, 0, w, h).data;
+		const keep = !this.transparent;
+		for (let i = 0; i < px.length; i++) px[i] = (((keep ? 255 : out[i * 4 + 3]!) << 24) | (out[i * 4]! << 16) | (out[i * 4 + 1]! << 8) | out[i * 4 + 2]!) >>> 0;
+		this.changed();
+	}
+	drawWithQuality(src: any, matrix: any = null, ct: FColorTransform | null = null, blend: string | null = null, clip: FRectangle | null = null, smoothing = false) {
+		this.draw(src, matrix, ct, blend, clip, smoothing);
 	}
 	scroll(dx: number, dy: number) {
 		const copy = this.clone();

@@ -61,6 +61,9 @@ export const WASM_SOURCES: Record<Codec, string> = {
 };
 
 /** Reads a WebAssembly file by its name in WASM_FILES. */
+/** How the files of an encoded export reach a bitmap's lossless original: MASTER + its path. */
+export const MASTER = "master:";
+
 export type WasmLoader = (file: string) => Uint8Array | ArrayBuffer | Promise<Uint8Array | ArrayBuffer>;
 
 /** RGBA pixels (ImageData). */
@@ -251,7 +254,7 @@ export async function encodeImages(
 		}
 		if (r.webpForJpeg) warnings.push(`Bitmap ${b.name} is transparent: JPEG can't keep that, it is written as WebP`);
 		made.set(r.rel, r.bytes);
-		bitmaps[id] = { ...b, file: r.rel, jpeg: undefined, pixels: size ?? undefined };
+		bitmaps[id] = { ...b, file: r.rel, jpeg: undefined, pixels: size ?? undefined, master: b.master ?? b.file };
 		report.push(entry(r.format, r.bytes.byteLength, size?.[0] ?? b.width, size?.[1] ?? b.height));
 	}
 
@@ -259,7 +262,7 @@ export async function encodeImages(
 		model: { ...model, bitmaps },
 		files: {
 			readText: (rel) => files.readText(rel),
-			readBinary: (rel) => made.get(rel) ?? files.readBinary(rel),
+			readBinary: (rel) => (rel.startsWith(MASTER) ? files.readBinary(rel.slice(MASTER.length)) : (made.get(rel) ?? files.readBinary(rel))),
 		},
 		report,
 		warnings,

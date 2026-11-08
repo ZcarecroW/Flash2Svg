@@ -2517,14 +2517,14 @@ export class Scripts {
 			// (in a Canvas document a library bitmap is a display object)
 			c = class extends (this.api.Bitmap as any) {
 				constructor() {
-					super(Pixels._picture(pic![0], pic![1], pic![2], !!pic![3], Pixels.prototype));
+					super(Pixels._picture(pic![0], pic![1], pic![2], !!pic![3], Pixels.prototype, pic![4]));
 				}
 			};
 		} else if (pic) {
 			const K: any = class extends Pixels {
 				constructor() {
 					super(1, 1);
-					return Pixels._picture(pic![0], pic![1], pic![2], !!pic![3], K.prototype);
+					return Pixels._picture(pic![0], pic![1], pic![2], !!pic![3], K.prototype, pic![4]);
 				}
 			};
 			c = K;
@@ -2818,6 +2818,24 @@ export class Scripts {
 		o._parent = this.objOfClip(i.owner);
 		this.objs.set(i, o);
 		return o;
+	}
+
+	/**
+	 * For BitmapData.draw(): a timeline instance's matrix and alpha as scripts see them now (its
+	 * attributes are written when the frame is drawn). Its transform sits on its inner node when it
+	 * has filters.
+	 */
+	paintInfo(e: Element): { m?: Mat | null; a?: number } | null {
+		const own = this.nodes.get(e);
+		if (own) {
+			const o: any = this.objOfInst(own);
+			return { a: o.alpha, ...(own.tnode && own.tnode !== e ? { m: null } : { m: o._mat() }) };
+		}
+		for (let p = e.parentNode, k = 0; p && k < 3; p = p.parentNode, k++) {
+			const i = this.nodes.get(p);
+			if (i) return i.tnode === e ? { m: (this.objOfInst(i) as any)._mat() } : null;
+		}
+		return null;
 	}
 
 	/** A control got the keyboard. */

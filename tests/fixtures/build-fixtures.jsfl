@@ -3852,6 +3852,33 @@
 		t.layers[t.currentLayer].frames[0].actionScript = FLfile.read(root + "/as3/f97-jqueryui.js");
 	});
 
+	// ---------------------------------------------------------------- f98: BitmapData.draw() of display objects
+	build("f98-draw", function () {
+		newDoc("timeline", 400, 300, 24);
+		symbol("dot", "movie clip", function () { rect(0, 0, 20, 20, "#00FF00"); });
+		symbol("art", "movie clip", function () {
+			rect(0, 0, 40, 40, "#FF0000");
+			oval(50, 0, 90, 40, "#0000FF");
+			var d = place("dot", 110, 70, 0);
+			d.name = "inner";
+			d.x = 100;
+			d.y = 60;
+		});
+		doc.importFile(root + "/assets/checker.png", true);
+		lib.selectItem("checker.png");
+		lib.setItemProperty("linkageExportForAS", true);
+		lib.setItemProperty("linkageClassName", "Pic");
+		lib.setItemProperty("linkageBaseClass", "flash.display.BitmapData");
+		lib.items[lib.findItemIndex("checker.png")].compressionType = "lossless";
+		layer("art");
+		var a = place("art", 200, 150, 0);
+		a.name = "art";
+		a.rotation = 30;
+		layer("actions");
+		var t = tl();
+		t.layers[t.currentLayer].frames[0].actionScript = FLfile.read(root + "/as3/f98-draw.as");
+	});
+
 	FLfile.write(outDir + "/build-log.txt", log.join("\n"));
 	fl.closeAll(false);
 	fl.quit(false);

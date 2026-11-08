@@ -9,6 +9,7 @@ import type { TextElement } from "../model.ts";
 import { COLOR_PROPS, TRANSFORM_PROPS, type InstanceItem, type Item, type Program } from "../program.ts";
 import { valueAt, type Track } from "../tracks.ts";
 import { cdata, serialize, el, walk, type XmlNode } from "../xml.ts";
+import { MASTER } from "../images.ts";
 import type { PChannel, PFrameSound, PInst, PItem, PListener, PMorph, PProgram, PSeq, PTextExtras, PTimeline, PTrack } from "../../player/format.ts";
 import type { HandlerAction, InteractionEvent } from "../snippets.ts";
 import { channelNumbers, channelText, channelVaries, type MorphChannel } from "../morph.ts";
@@ -362,9 +363,22 @@ export function renderPlayer(
 		const bitmaps = Object.entries(scripts.bitmaps);
 		if (bitmaps.length) {
 			P.bd = {};
+			// (pixels read by scripts: they are there at once, as in Flash Player)
+			const reads = /\.(getPixel32|getPixel|getPixels|getVector|copyPixels|copyChannel|draw|threshold|compare|histogram|getColorBoundsRect|hitTest|merge|paletteMap|floodFill|clone)\b/.test(scripts.js);
 			for (const [name, id] of bitmaps) {
 				const b = doc.bitmap(id);
-				if (b) P.bd[name] = [b.href, b.width, b.height, /\.jpe?g$|image\/jpeg/i.test(b.href.slice(0, 40)) ? 0 : 1];
+				if (!b) continue;
+				P.bd[name] = [b.href, b.width, b.height, /\.jpe?g$|image\/jpeg/i.test(b.href.slice(0, 40)) ? 0 : 1];
+				// (Flash Player has the pixels at once: a PNG of them, read by the player itself)
+				const m = ctx.model.bitmaps[id]!;
+				const exact = !b.scaled && /^data:image\/png;base64,/.test(b.href) && m.file.endsWith(".png");
+				const png = m.master ? MASTER + m.master : m.file;
+				if (reads && !exact && png.endsWith(".png"))
+					try {
+						P.bd[name]!.push(toBase64(ctx.files.readBinary(png)));
+					} catch {
+						// (the picture alone, read when it is decoded)
+					}
 			}
 		}
 		P.dn = (d.name ?? "main").replace(/\.\w+$/, "").replace(/\W/g, "_");

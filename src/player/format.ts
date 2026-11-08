@@ -42,8 +42,11 @@ export interface PProgram {
 	cb?: Record<string, string>;
 	/** scripts: the document class (its qualified name) */
 	dc?: string;
-	/** Library bitmaps scripts make: class name -> file or data, width, height, has transparency. */
-	bd?: Record<string, [string, number, number, number]>;
+	/**
+	 * Library bitmaps scripts make: class name -> file or data, width, height, has transparency, and
+	 * (when the picture isn't a PNG of its pixels already) the pixels as a base64 PNG, read at once.
+	 */
+	bd?: Record<string, [string, number, number, number, string?]>;
 	/** Scenes of the root timeline, and the document's name (for class names). */
 	sc?: PScene[];
 	dn?: string;

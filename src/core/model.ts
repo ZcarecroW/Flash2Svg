@@ -367,6 +367,8 @@ export interface BitmapData {
 	 * shown smaller): the file's size. The bitmap is still drawn width x height big.
 	 */
 	pixels?: [number, number];
+	/** Set by encodeImages when `file` was written anew: the lossless PNG it came from (read as MASTER + path). */
+	master?: string;
 }
 
 export interface SoundData {

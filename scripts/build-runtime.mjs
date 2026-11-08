@@ -140,6 +140,7 @@ const INTERNAL = [
 	"parentMouse",
 	"targetOf",
 	"objectAt",
+	"paintInfo",
 ];
 
 /**
