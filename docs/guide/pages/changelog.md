@@ -7,6 +7,18 @@ description: The main changes in each Flash2SVG version since the version 4 rewr
 
 The full list is in the [changelog](https://github.com/ZcarecroW/Flash2Svg/blob/main/CHANGELOG.md); downloads are on the [releases page](https://github.com/ZcarecroW/Flash2Svg/releases).
 
+## 5.2
+
+**Colour grading with LUTs.** Give a whole export one look: every colour goes through LUTs from colour grading tools — `.cube` (as Resolve, Premiere, After Effects and Photoshop write them), `.3dl` and Hald CLUT images — each with a strength, in an order you choose. Shapes, gradients, text, filters, colour effects, the stage colour and every pixel of the bitmaps change; GIF, WebP, APNG and video grade each finished picture. [Colour grading](appearance.md#colour-grading). **A wider panel:** make it wider and the sections stand side by side in two or three columns instead of one long list. [The panel](panel.md). **Smaller shape tweens** whose colours don't blend in a straight line (the morph test −23 % as Lottie, −3 % as SMIL). In this guide, the dart of the [motion guide demo](animation.md#motion-guides) now points along its path.
+
+## 5.1
+
+**Classes, XML and every UI component.** The document class and classes in `.as` files run in the JS player, with XML and E4X, the last UI components (TileList, ScrollPane, UIScrollBar and Canvas documents' jQuery UI ones) and `BitmapData.draw()`. [Interactivity](interactivity.md). **Motion as curves:** motion tweens, bones, the camera and Motion Editor curves are smooth curves through Animate's frames instead of a key per frame — up to 63 % smaller. **9-slice** symbols scaled over time, **vector warps** and **brushes** export; MP4 and WebM from the [command line](command-line.md).
+
+## 5.0
+
+**Frame scripts run.** AS3 and HTML5 Canvas frame scripts run in the JS player, checked line by line against Flash Player and Animate's own Canvas output. **Forms:** UI components and input text are real HTML controls. **Video files:** MP4 and WebM from the panel, APNG anywhere. Also sounds in SMIL and CSS, 3D in perspective, the camera's colour effects, armatures, Asset Warp, layer depth and button hit areas. [Formats](formats.md)
+
 ## 4.3
 
 **Motion along guides.** A classic tween on a motion guide now moves along the guide's curve itself in SMIL, CSS and Lottie, instead of from one frame's position to the next: smooth at any screen refresh rate, turned along the curve with *Orient to path*, at Animate's own pace, and about half the size (the path demo on [Animation](animation.md#motion-guides): SMIL −56 %, CSS −59 %). **JS player:** with *Play once* and a one-frame main timeline, movie clips no longer move one frame on before they hold.
