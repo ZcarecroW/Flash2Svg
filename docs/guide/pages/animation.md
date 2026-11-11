@@ -29,6 +29,9 @@ Animate's frames are written instead where that doesn't fit: an instance with a 
 
 ::: demo path smil,css,player,lottie The ball follows a motion guide drawn as a free curve; the dart behind it has *Orient to path* on and turns with the curve.
 
+> [!TIP]
+> *Orient to path* keeps the rotation each keyframe has and spreads the difference to the curve over the tween. A symbol left unturned on its keyframes therefore points away from the curve at both ends, and in between it only gradually comes round — in Animate as in the export. Turn the symbol along the curve on the first and the last keyframe (the *Free Transform* tool, or *Rotate* in the Transform panel), and it points along the curve all the way.
+
 ## Shape tweens
 
 In SMIL and the JS player a shape tween is **one drawing whose paths, colours and gradients blend** from the start shape to the end shape, just as Animate's in-betweens do. Flash2SVG matches up the frames Animate writes (contours that start at another point, curves written as lines, holes in another order, edges that shrink to nothing), fits the start and end shape to all of them and checks every frame. Frames that don't fit stay drawings of their own. Gradients that turn during the tween turn in SMIL too.

@@ -83,12 +83,16 @@ describe("motion guides", () => {
 		expect(fitGuided(c, beside, 0.1, { rot: t.rot, ease: linear(t.dur), tol: 0.15 })).toBeNull();
 		const fit = fitGuided(c, t.pos, 0.1, { rot: t.rot, ease: linear(t.dur), tol: 0.15 })!;
 		expect(fit).not.toBeNull();
+		// within the rotation's tolerance (0.15°: Animate turns the dart by its own approximation of
+		// the curve), plus the curve's turn over the pace's error (0.003 px in the tightest bend)
 		for (let f = 0; f <= t.dur; f++) {
 			const s = valueAt(fit.at, f) * c.length;
 			const want = angleAtLength(c, s) + valueAt(fit.rot!, f);
 			const d = ((((t.rot[f]! - want) % 360) + 540) % 360) - 180;
-			expect(Math.abs(d)).toBeLessThan(0.15);
+			expect(Math.abs(d)).toBeLessThan(0.16);
 		}
+		// the dart's keyframes lie along the curve: nothing turns besides it
+		expect(Math.abs(fit.rot![1]!.v - fit.rot![0]!.v)).toBeLessThan(0.05);
 		// Animate's rule: the rest of the rotation tweens linearly (two keys)
 		expect(fit.rot!.length).toBe(2);
 		// rotations that don't follow it are taken from the frames

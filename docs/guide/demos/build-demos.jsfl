@@ -501,8 +501,24 @@
 			e.x = P[P.length - 1][0] - tp.x;
 			e.y = P[P.length - 1][1] - tp.y;
 		}
+		// Orient to path keeps the keyframes' own rotations and spreads the difference to the curve
+		// over the tween (rotation = own + tangent change - progress x the tangent's change): a dart
+		// left at 0 degrees pointed 70 degrees off the curve at the start and 90 at the end. Both
+		// keyframes are turned along the curve, about the transformation point on it. (A new matrix
+		// leaves the transformation point where it was on the stage: it is put back in the symbol.)
+		function aim(e, x, y, from, to) {
+			var tp = e.getTransformationPoint(), r = Math.atan2(to[1] - from[1], to[0] - from[0]), c = Math.cos(r), s = Math.sin(r);
+			e.matrix = { a: c, b: s, c: -s, d: c, tx: x - (c * tp.x - s * tp.y), ty: y - (s * tp.x + c * tp.y) };
+			e.setTransformationPoint({ x: tp.x, y: tp.y });
+		}
+		var last = P[P.length - 1];
 		layer("arrow");
-		tween("arrow", P[0][0], P[0][1], 10, 99, atEnd, function (f) { f.tweenEasing = 0; f.motionTweenOrientToPath = true; f.motionTweenSnap = true; });
+		tween("arrow", P[0][0], P[0][1], 10, 99, function (e) { aim(e, last[0], last[1], C[C.length - 2], last); }, function (f) {
+			aim(f.elements[0], P[0][0], P[0][1], P[0], C[1]);
+			f.tweenEasing = 0;
+			f.motionTweenOrientToPath = true;
+			f.motionTweenSnap = true;
+		});
 		layer("ball");
 		tween("ball", P[0][0], P[0][1], 0, 89, atEnd, function (f) { f.tweenEasing = 0; f.motionTweenSnap = true; });
 		// the guide (not exported: the track layer shows the same curve); a new layer moves the
