@@ -41,6 +41,52 @@ export function isConstant(track: Track, eps = 1e-9): boolean {
  * Removes keys that linear interpolation can reproduce within `tol` (Ramer-Douglas-Peucker
  * over runs of linear keys). Hold and eased keys are kept.
  */
+/**
+ * Which keys of a run of values (each a vector) to keep so that straight lines in time between the
+ * kept ones stay within `tol` of every value (Ramer–Douglas–Peucker on the largest component):
+ * only inside runs whose stretches are linear (`linear[i]`: from key i to i + 1); every other key
+ * stays.
+ */
+export function keepWithin(times: number[], values: number[][], linear: boolean[], tol: number): boolean[] {
+	const n = times.length;
+	const keep = new Array<boolean>(n).fill(true);
+	const off = (a: number, b: number, k: number) => {
+		const u = (times[k]! - times[a]!) / (times[b]! - times[a]! || 1);
+		let w = 0;
+		values[k]!.forEach((v, c) => (w = Math.max(w, Math.abs(values[a]![c]! + (values[b]![c]! - values[a]![c]!) * u - v))));
+		return w;
+	};
+	const rdpv = (a: number, b: number) => {
+		if (b - a < 2) return;
+		let worst = -1,
+			at = -1;
+		for (let k = a + 1; k < b; k++) {
+			const w = off(a, b, k);
+			if (w > worst) {
+				worst = w;
+				at = k;
+			}
+		}
+		if (worst <= tol) for (let k = a + 1; k < b; k++) keep[k] = false;
+		else {
+			rdpv(a, at);
+			rdpv(at, b);
+		}
+	};
+	let i = 0;
+	while (i < n - 1) {
+		if (!linear[i]) {
+			i++;
+			continue;
+		}
+		let j = i;
+		while (j < n - 1 && linear[j]) j++;
+		rdpv(i, j);
+		i = j;
+	}
+	return keep;
+}
+
 export function simplify(track: Track, tol: number): Track {
 	if (track.length <= 2) return track;
 	const n = track.length;

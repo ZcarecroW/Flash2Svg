@@ -5,7 +5,7 @@
  */
 import type { Context } from "../context.ts";
 import { fmt, fmtMatrix, nearestAngle } from "../geom.ts";
-import { simplify } from "../tracks.ts";
+import { keepWithin, simplify } from "../tracks.ts";
 import type { Mat } from "../model.ts";
 import { channelNumbers, channelText, channelVaries, matrixScale, type MorphChannel } from "../morph.ts";
 import { cssMatrix, fromCorner } from "../persp.ts";
@@ -343,7 +343,9 @@ class Writer {
 		const digits = this.ctx.precision.space(this.space);
 		for (const ch of p.channels) {
 			const node = nodes[ch.node]!;
-			const track = ch.f ? n.frame : n.ratio;
+			// values per frame (colours a LUT bends, Linear RGB stops): keyed only where a straight line
+			// between keys would be more than a level off (they are whole levels themselves; the frame track is linear in time)
+			const track = ch.f && ch.kind === "color" ? thinFrames(n.frame, (v) => channelNumbers(ch, v, v), 1) : ch.f ? n.frame : n.ratio;
 			const text = (v: number) => channelText(ch, channelNumbers(ch, v, v), digits);
 			node.attrs[ch.attr] = text(trackValueAt(track, at));
 			if (!channelVaries(ch) || isConstantTrack(track)) continue;
@@ -1235,6 +1237,17 @@ class Writer {
  * tween) is written once, with its own repeating timing: path data is long, and the horizon may
  * hold many loops. One step per frame (no smoothing) is written as discrete values, each once.
  */
+/** The keys of a frame track a channel needs: straight lines between them stay within `tol` (keepWithin). */
+function thinFrames(track: GTrack, values: (v: number) => number[], tol: number): GTrack {
+	const keep = keepWithin(
+		track.map((k) => k.t),
+		track.map((k) => values(k.v)),
+		track.map((k) => k.ease === "linear"),
+		tol,
+	);
+	return track.filter((_, i) => keep[i]);
+}
+
 class MorphAnim {
 	private readonly w: Writer;
 	private readonly P: number;

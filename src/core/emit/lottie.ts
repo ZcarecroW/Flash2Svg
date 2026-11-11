@@ -27,7 +27,7 @@ import type { SoundSchedule } from "../../player/soundtrack.ts";
 import { channelNumbers, channelText, templateNodes, type MorphChannel } from "../morph.ts";
 import { spatialKeys } from "../motionpath.ts";
 import { fromProps, toProps, type ColorProp, type TransformProp } from "../program.ts";
-import { valueAt, type Ease, type Track } from "../tracks.ts";
+import { keepWithin, valueAt, type Ease, type Track } from "../tracks.ts";
 import { copyArtwork, type Artwork } from "../artwork.ts";
 import { isNode, serialize, walk, type XmlNode } from "../xml.ts";
 import { bake, sliceTrack, type BakedInstance, type BakedMorph, type BakedNode, type BakedTimeline, type GTrack, type Interval } from "./bake.ts";
@@ -1700,8 +1700,11 @@ class LottieWriter {
 			const ct = paint ? paintAt(paint, a) : null;
 			const ratio = cut(n.ratio, a, b);
 			const frame = n.frame.length ? cut(n.frame, a, b) : [];
-			const track = frame.length ? frame : ratio;
-			const times = [...new Set([a, ...track.map((k) => k.t).filter((t) => t >= a && t <= b)])].sort((x, y) => x - y);
+			const keysOf = (track: GTrack, more: number[] = []) =>
+				[...new Set([a, ...more, ...track.map((k) => k.t).filter((t) => t >= a && t <= b)])].sort((x, y) => x - y);
+			// what follows the ratio is keyed at the ratio's keys; values per frame (channels with
+			// `f`: colours a LUT bends, Linear RGB stops) at every frame, only those
+			const times = keysOf(ratio);
 			const at = (t: number) =>
 				drawingAt(this, p.art, p.channels, valueAt(ratio as Track, t), frame.length ? valueAt(frame as Track, t) : 0, mode.opaque, ct, mode.scale);
 			const frames = times.map(at);
@@ -1709,27 +1712,51 @@ class LottieWriter {
 				this.warn("A shape tween with bitmap fills or clipping is drawn frame by frame");
 				continue;
 			}
-			const eases = times.map((t, i) => (i + 1 < times.length ? easeBetween(track, t, times[i + 1]!) : "hold"));
-			// values off the straight line between keys: key them on every tick
+			const eases = times.map((t, i) => (i + 1 < times.length ? easeBetween(ratio, t, times[i + 1]!) : "hold"));
+			const shapesOf = (d: (typeof frames)[number]) => d.layers[0]!.json.shapes;
+			/** Where t lies between the ratio's keys i and i + 1, as a share of the ratio's change. */
+			const share = (i: number, t: number) => {
+				if (eases[i] === "hold") return 0;
+				const v0 = valueAt(ratio as Track, times[i]!),
+					v1 = valueAt(ratio as Track, times[i + 1]!);
+				return Math.abs(v1 - v0) > 1e-12 ? (valueAt(ratio as Track, t) - v0) / (v1 - v0) : 0.5;
+			};
+			// values off the straight line between keys: key them on every tick (or frame)
 			const dense = new Set<string>();
-			for (let i = 0; i + 1 < times.length; i++) {
-				if (eases[i] === "hold" || times[i + 1]! - times[i]! < 1.5) continue;
-				const tm = (times[i]! + times[i + 1]!) / 2;
-				const v0 = valueAt(track as Track, times[i]!),
-					v1 = valueAt(track as Track, times[i + 1]!);
-				const u = Math.abs(v1 - v0) > 1e-12 ? (valueAt(track as Track, tm) - v0) / (v1 - v0) : 0.5;
-				nonLinearAt(frames[i]!.layers[0]!.json.shapes, frames[i + 1]!.layers[0]!.json.shapes, at(tm).layers[0]!.json.shapes, u, "", dense);
+			let fine: number[];
+			let fineTrack: GTrack;
+			const extra = new Map<number, ReturnType<typeof at>>();
+			if (frame.length) {
+				fine = keysOf(frame, times);
+				fineTrack = frame;
+				let i = 0;
+				for (const t of fine) {
+					while (i + 2 < times.length && times[i + 1]! <= t) i++;
+					if (times.includes(t)) continue;
+					const d = at(t);
+					extra.set(t, d);
+					// (one key of the ratio: whatever changes is per frame)
+					if (i + 1 >= times.length) nonLinearAt(shapesOf(frames[i]!), shapesOf(frames[i]!), shapesOf(d), 0, "", dense);
+					else nonLinearAt(shapesOf(frames[i]!), shapesOf(frames[i + 1]!), shapesOf(d), share(i, t), "", dense);
+				}
+			} else {
+				fine = [];
+				for (let t = Math.ceil(a); t < b; t++) fine.push(t);
+				fine = [...new Set([...times, ...fine])].sort((x, y) => x - y);
+				fineTrack = ratio;
+				for (let i = 0; i + 1 < times.length; i++) {
+					if (eases[i] === "hold" || times[i + 1]! - times[i]! < 1.5) continue;
+					const tm = (times[i]! + times[i + 1]!) / 2;
+					nonLinearAt(shapesOf(frames[i]!), shapesOf(frames[i + 1]!), shapesOf(at(tm)), share(i, tm), "", dense);
+				}
 			}
 			let keyTimes = times,
 				keyFrames = frames,
 				keyEases: Ease[] = eases;
 			if (dense.size) {
-				const ticks: number[] = [];
-				for (let t = Math.ceil(a); t < b; t++) ticks.push(t);
-				const all = [...new Set([...times, ...ticks])].sort((x, y) => x - y);
-				keyTimes = all;
-				keyFrames = all.map((t) => (times.includes(t) ? frames[times.indexOf(t)]! : at(t)));
-				keyEases = all.map((t, i) => (i + 1 < all.length ? easeBetween(track, t, all[i + 1]!) : "hold"));
+				keyTimes = fine;
+				keyFrames = fine.map((t) => (times.includes(t) ? frames[times.indexOf(t)]! : (extra.get(t) ?? at(t))));
+				keyEases = fine.map((t, i) => (i + 1 < fine.length ? easeBetween(fineTrack, t, fine[i + 1]!) : "hold"));
 			}
 			const shapes = mergeKeyframes(
 				keyFrames.map((f) => f.layers[0]!.json.shapes as Json[]),
@@ -2459,8 +2486,20 @@ function mergeKeyframes(frames: Json[][], times: number[], eases: Ease[], dense:
 			const first = JSON.stringify(o.k);
 			if (vals.every((v) => JSON.stringify((v as Json).k) === first)) return o;
 			const useAll = dense.has(path);
-			const idx = useAll ? times.map((_, i) => i) : coarseIdx;
-			const es = useAll ? eases : coarseEases;
+			let idx = useAll ? times.map((_, i) => i) : coarseIdx;
+			let es = useAll ? eases : coarseEases;
+			// colours keyed on every frame (a LUT bends them, Linear RGB stops): only the keys a straight
+			// line in time needs within a level (fill and stroke colours, gradient ramps; 0..1)
+			if (useAll && /\/(c|g\/k)$/.test(path)) {
+				const keep = keepWithin(
+					times,
+					vals.map((v) => flat((v as Json).k)),
+					eases.map((e) => e === "linear"),
+					1 / 255,
+				);
+				idx = idx.filter((_, i) => keep[i]);
+				es = es.filter((_, i) => keep[i]);
+			}
 			const k: Json[] = idx.map((fi, j) => {
 				const val = (vals[fi] as Json).k;
 				const kf: Json = { t: round(times[fi]!, 4), s: Array.isArray(val) && typeof val[0] === "number" ? val : [val] };
