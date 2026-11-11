@@ -111,7 +111,8 @@ describe("command line", () => {
 		expect(existsSync(join(dir, "new folder", "f12-labels.json"))).toBe(true);
 	});
 
-	it("rejects wrong options with a message, not a stack trace", () => {
+	// (15 runs of the command line one after another: about 5 s on a slow Windows runner)
+	it("rejects wrong options with a message, not a stack trace", { timeout: 30_000 }, () => {
 		const cases: [string[], RegExp][] = [
 			[[scene, "--bogus"], /Unknown option --bogus/],
 			[[scene, "--format"], /Missing value for --format/],
