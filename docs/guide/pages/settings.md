@@ -28,6 +28,8 @@ description: Every Flash2SVG setting in one table — where it is in the panel, 
 | Embed fonts | `--no-embed-fonts` turns it off | on | SVG |
 | Include hidden layers | `--no-hidden-layers` turns it off | on | all |
 | Include guide layers | `--guides` | off | all |
+| **Colour grading** | | | |
+| LUTs, in order, with strength | `--lut file[=percent]`, repeatable | none | all |
 | **Images** | | | |
 | Lossy format | `--image-lossy jpeg\|webp\|avif` | JPEG | all with bitmaps |
 | Lossless format | `--image-lossless png\|webp` | PNG | all with bitmaps |

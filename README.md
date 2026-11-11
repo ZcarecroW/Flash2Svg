@@ -98,6 +98,22 @@ frame for places where animation doesn't run, embedding vs. linking images, deci
 like Flash's scale modes — *show all* (letterboxed in the stage colour when the background is
 exported), *no border* (cropped) or *stretch* (exact fit).
 
+The panel spreads out when you make it wider: two columns of sections from about 620 pixels (the
+result next to the settings, the top bar on one line), three from about 980.
+
+### Colour grading
+
+*Colour grading* (`--lut file[=percent]`, repeatable) puts LUTs between Animate's colours and the
+export: `.cube` (1D, 3D or both, as Resolve writes them), `.3dl` and Hald CLUT images, each with a
+strength, applied in order. Every colour changes: fills and strokes, gradients (with stops added
+where the LUT bends the colour between two), text, filter colours, the stage colour, colour
+effects (fitted so a tint shows the graded tint colour; tweens stay tweens) and every pixel of the
+bitmaps (re-encoded). GIF, WebP, APNG and video grade each finished picture, exactly. In SVG and
+Lottie, colours that mix on screen (see-through shapes, blurs, blends) mix the graded colours.
+Colours made by scripts at run time, linked videos and UI components keep theirs. A strong look
+adds 0–3 % to drawings with gradients and 4–22 % (SMIL) to shape tweens whose colours change;
+grading takes 4–8 ns a pixel.
+
 ### Start and scroll
 
 - *When visible* starts the animation once half of it is on screen (or it fills half the screen).
@@ -488,8 +504,9 @@ Animate's own frames too (`node scripts/e2e-compare.ts guide:<name>`, after
 
 `npm run e2e:ui` checks the panel's interface without Animate (after `npm run build`): the built
 panel in Edge with a stand-in for Animate's host — every "i" tip (hover, keyboard, pinned, its
-guide link), icons, layout at narrow widths, text contrast on Animate's four interface
-brightnesses, presets and stored settings from other versions.
+guide link), icons, layout from 220 to 1100 pixels (one to three columns), text contrast on
+Animate's four interface brightnesses, presets and stored settings from other versions, and the
+colour grading list (LUTs added, missing, moved, weighed, the before/after strip).
 
 `npm run e2e:panel` tests the panel inside Animate: it builds a self-test version, signs it with
 Adobe's `ZXPSignCmd` (put it into `tools/zxpsign/`; no CEP debug mode needed), installs it, lets

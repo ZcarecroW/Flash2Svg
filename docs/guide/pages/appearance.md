@@ -41,6 +41,24 @@ Movie clips turned or moved with Animate's 3D tools keep their perspective, with
 > [!NOTE]
 > Alpha on a symbol applies to **each shape inside**, as in Flash: where shapes overlap — the inner half of a stroke over its fill — they show through each other. Flash2SVG does the same. Inside such a symbol, alpha on nested symbols applies to them as a whole (SVG can't multiply inherited alpha per shape).
 
+## Colour grading
+
+A **LUT** (lookup table) gives the whole export one look: every colour goes through it on the way out. Colour grading tools write them — DaVinci Resolve, Premiere and After Effects, Photoshop (*File › Export › Color Lookup Tables*), film emulation packs. Flash2SVG reads `.cube` files (1D, 3D, or both, as Resolve writes them), `.3dl` files and **Hald CLUT** images (`.png`).
+
+In the panel, *Colour grading* lists the LUTs: **Add LUT…** picks files, the slider sets each one's **strength** (100 %: all of it, 50 %: halfway between the colour and the LUT's), the checkbox turns one off, the arrows change the order — they apply from top to bottom. A strip shows sample colours before and after. On the command line: `--lut look.cube`, or `--lut look.cube=60` for 60 %; repeat it for several.
+
+What changes:
+
+- **Drawings:** every fill and stroke. **Gradients** get the colour the LUT gives at every point, not only at their stops: where the LUT bends the colours between two stops, stops are added (within one level of 255) — *Linear RGB* gradients included.
+- **Bitmaps**, pixel by pixel, at the size they are written. Animate's own JPEG of a *Photo* bitmap has the old colours, so it is compressed anew.
+- **Text** colours, the border of text fields, the **stage colour**, the colours of **filters** (shadow, glow, bevel; gradient glows and bevels along their whole ramp).
+- **Colour effects** — *tint*, *brightness*, *advanced* — are worked out for the graded colours: a full tint shows the LUT's colour for the tint, a half one comes as close as one effect can; tweens of them stay tweens. *Alpha* is not a colour and stays as it is. The camera's tint too.
+- **GIF, WebP, APNG, MP4 and WebM** grade each finished picture instead, so they are exact: also where see-through shapes, blends and filters mix colours.
+
+In SVG and Lottie, colours that mix on the screen — see-through shapes over each other, blurs, blend modes, *Adjust Color* — mix the graded colours, which is close to grading the mixture but not the same. Measured on the guide's demos against grading Animate's finished pictures: 0.1–0.7 levels of 255 off on average (the edges of shapes), 2 with filters, 3.3 with blend modes. Not graded: colours scripts make while the JS player runs (drawing with `graphics`, `BitmapData`, `textColor`), linked videos, and UI components (they are the browser's own controls). A LUT for camera footage in log colours expects other input and looks wrong on Animate's colours, as it would in an editor.
+
+What it costs, with a strong look: solid colours nothing, gradients 0–3 % (their added stops), shape tweens whose colours change 4–22 % in SMIL and up to a third in Lottie — their in-between colours are no longer a straight line, so they get keys of their own (only where a straight line would be more than a level off). Grading takes 4–8 ns a pixel (a 1920×1080 picture in 8–16 ms); a GIF of a moving photo takes about 12 % longer.
+
 ## Fills and strokes
 
 - **Solid** fills, **linear** and **radial gradients** (focal point, *repeat* and *reflect*, *Linear RGB* interpolation — also on strokes and in shape tweens), **bitmap fills** repeated or clipped (Animate stretches the edge pixels of a clipped fill; so does the export).

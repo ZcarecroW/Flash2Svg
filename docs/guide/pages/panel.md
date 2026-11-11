@@ -7,6 +7,10 @@ description: A tour of every section and setting of the Flash2SVG panel in Anima
 
 The panel works on the document in front of you. Its sections fold away; it remembers which are open and every setting, per user — and, if you like, inside the FLA.
 
+Make the panel wider and it spreads out instead of growing longer: from about 620 pixels the sections stand in two columns (the result next to the settings) and the top bar is one line, from about 980 pixels in three, with the result and the advanced settings in a column of their own. In a section that is wide enough, the settings stand two to a row.
+
+![The panel at about 1000 pixels: Output and Animation, then Graphics & text, Colour grading with a LUT and its before/after strip, Images and Sounds, then the result of an export with its preview.](images/panel-wide.webp "A wide panel: three columns.")
+
 Every setting has a small **i** at the right: point at it (or reach it with the Tab key) for a short explanation, click it to keep the explanation open; its link leads to the matching part of this guide.
 
 ![A clicked "i" next to Start: its explanation stays open, with a link into this guide.](images/panel-tip.webp "An explanation, pinned by a click.")
@@ -50,6 +54,10 @@ Every setting has a small **i** at the right: point at it (or reach it with the 
 | **Embed fonts** | The fonts of dynamic text go into the file as small WOFF2 subsets of the letters used. See [Text and fonts](text.md). |
 | **Include hidden layers** | Hidden layers are exported (as Flash publishes them by default). Untick to leave them out. |
 | **Include guide layers** | Guide layers are never shown in Flash; tick to export them anyway. |
+
+## Colour grading
+
+LUTs that every colour of the export goes through, top to bottom: **Add LUT…** (`.cube`, `.3dl`, Hald CLUT `.png`), a **strength** slider, a checkbox to leave one out for now, arrows to change the order, and a strip of sample colours before and after. A LUT whose file has moved is named in red. What it changes, and how: [Colour grading](appearance.md#colour-grading).
 
 ## Images
 

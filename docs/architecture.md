@@ -146,6 +146,25 @@ arrow functions). It is resumable: the panel calls `Flash2Svg.start(options)` an
   writers emit every animation once plus a looping *tail* (SMIL: begins at the end of a clock
   animation; CSS: a second, delayed infinite animation). Played once, everything holds the last
   tick shown.
+- **Colour grading** (`core/grade.ts`, `ExportSettings.grade`, made by the host from LUT files):
+  `.cube` (1D, 3D, a 1D shaper before a 3D table; domains), `.3dl` (mesh line, blue fastest,
+  10–16-bit) and Hald CLUTs, chained with strengths, 3D tables read tetrahedrally; `toJSON` is an
+  FNV hash of tables and strengths, so the id prefix hashes it cheaply. Where colours change:
+  `importArtwork` (`gradeArtwork`, after the colour signatures of Linear RGB gradients and fixed
+  strokes were matched; pen-stroke signatures are graded in `createContext`), gradients rebuilt
+  from the colour between their stops (sRGB or linear light) with stops added by halving while the
+  graded colour is more than 1/255 off the straight line (the drawings of one shape tween — its
+  frames and keyframes, joined by union-find — use the union of their frames' halving points,
+  by each gradient's place in its drawing: `gradientPlan`, `stopPlan`, so the morph keeps one
+  structure); `gradeModel` before compiling (cached per grade and model, for format "auto"): stage
+  colour, text runs and field borders (`TextElement.borderColors`), filter colours (gradient
+  filters resampled at the 17 places the SVG writer reads them), the camera's tint, colour effects
+  fitted by least squares over a 5³ grid of colours on the ones the effect doesn't clamp (one
+  multiplier for all channels where the effect has one; tween samples between two keyframes'
+  effects get the fitted effects' in-between at the same place, so tracks keep their keys);
+  bitmaps in `encodeImages` (graded on a copy at the size written; no reuse of Animate's JPEG;
+  no `master`); GIF, WebP, APNG and video grade the rasterised frames in `tickSource` instead
+  (`gradesPictures`), exact. `Grade.pixels`: a 2¹⁴-entry direct-mapped cache behind a same-as-the-last-pixel check, one 3D table at full strength with its 256 levels placed once: 4–8 ns a pixel.
 - **Bitmaps in the output** (`emit/document.ts`): each bitmap is one `<image>` in `<defs>`;
   bitmap elements, the player's poster and bitmap fills (the atlas' own `<image>` becomes a
   `<use>`) refer to it, so an embedded bitmap is in the file once.
@@ -257,7 +276,10 @@ Lottie spec 1.0 has (no expressions) plus layer effects for filters, so lottie-w
   frame boundary just before the frame); runs of nodes that repeat sooner than the timeline
   around them go into such a slice.
 - **Shape tweens:** the morph drawing is converted at every key of its ratio track and the values
-  that change are merged into keyframes (Lottie blends keyframes linearly, like the morph);
+  that change are merged into keyframes (channels with values per frame — colours a LUT bends,
+  Linear RGB stops — are found by comparing every frame with the blend and keyed a frame, alone;
+  colours only where a straight line between keys is more than a level off, `keepWithin`, as in
+  SMIL) (Lottie blends keyframes linearly, like the morph);
   values that aren't linear in the ratio (an elliptical gradient's inverse transform) are found
   by a check at each stretch's middle and keyed every tick.
 - **Hairlines** keep their width in pixels at the scale their symbol starts with (Lottie strokes

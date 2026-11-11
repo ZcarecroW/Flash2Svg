@@ -89,7 +89,7 @@ try {
 	await cdp("Runtime.enable");
 	await cdp("Page.enable");
 	const WIDTH = 340;
-	const size = async (height) => cdp("Emulation.setDeviceMetricsOverride", { width: WIDTH, height, deviceScaleFactor: 2, mobile: false });
+	const size = async (height, width = WIDTH) => cdp("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 2, mobile: false });
 	await size(900);
 	// helpers in the panel: click a control by its text, open or close a section, wait for a condition
 	await js(`
@@ -119,9 +119,11 @@ try {
 		return true;
 	`);
 	const shot = async (name, opts = {}) => {
+		// (a wider panel lays its sections out in columns: measured at that width)
+		if (opts.width) await size(900, opts.width);
 		await sleep(opts.wait ?? 400);
 		const h = await js(`return Math.ceil(document.querySelector("main").getBoundingClientRect().height) + 8;`);
-		await size(Math.max(200, Math.min(opts.maxHeight ?? 2400, h)));
+		await size(Math.max(200, Math.min(opts.maxHeight ?? 2400, h)), opts.width ?? WIDTH);
 		await sleep(300);
 		const r = await cdp("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
 		writeFileSync(join(raw, `${name}.png`), Buffer.from(r.data, "base64"));
@@ -201,6 +203,33 @@ try {
 	await shot("panel-tip", { wait: 600 });
 	await js(`document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); return true;`);
 
+	// 7. a wide panel: three columns, colour grading with a LUT (the file dialog answered here), the result
+	{
+		const lut = join(raw, "teal-orange.cube");
+		const lines = ['TITLE "teal and orange"', "LUT_3D_SIZE 17"];
+		const s = (x) => x * x * (3 - 2 * x);
+		for (let b = 0; b < 17; b++)
+			for (let g = 0; g < 17; g++)
+				for (let r = 0; r < 17; r++) {
+					const [R, G, B] = [r / 16, g / 16, b / 16];
+					const l = 0.3 * R + 0.59 * G + 0.11 * B;
+					// warm highlights, cool shadows, a little contrast
+					lines.push(
+						[s(R) * 0.85 + 0.15 * l + 0.04 * l, s(G) * 0.9 + 0.08 * l, Math.min(1, s(B) * 0.75 + 0.25 * (1 - l) * 0.35 + 0.1 * l)]
+							.map((v) => Math.min(1, v).toFixed(5))
+							.join(" "),
+					);
+				}
+		writeFileSync(lut, lines.join("\n"));
+		await docOpen("hero");
+		await js(
+			`window.cep.fs.showOpenDialogEx = () => ({ err: 0, data: [${JSON.stringify(lut)}] }); await __shot.section("Output", true); await __shot.click("button[role=radio]", "SMIL"); await __shot.section("Animation", true); await __shot.section("Colour grading", true); await __shot.click("button", "Add LUT"); await __shot.until(() => document.querySelector(".swatches"), 10000); return true;`,
+		);
+		await exportNow();
+		await shot("panel-wide", { width: 1040, wait: 1500, maxHeight: 1000 });
+		await js(`await __shot.click("button[aria-label^=Remove]"); await __shot.section("Colour grading", false); return true;`);
+	}
+
 	// ---------------------------------------------------------------- Animate's window with the panel
 	await cdp("Emulation.clearDeviceMetricsOverride");
 	await docOpen("hero");
@@ -255,7 +284,18 @@ const { default: encode, init } = await import("@jsquash/webp/encode.js");
 const { default: decode, init: initDec } = await import("@jsquash/png/decode.js");
 await init(await WebAssembly.compile(readFileSync(join(repo, "node_modules/@jsquash/webp/codec/enc/webp_enc.wasm"))));
 await initDec(await WebAssembly.compile(readFileSync(join(repo, "node_modules/@jsquash/png/codec/pkg/squoosh_png_bg.wasm"))));
-for (const f of ["panel", "panel-result", "panel-lottie", "panel-advanced", "panel-images", "panel-sounds", "panel-scroll", "panel-tip", "animate"]) {
+for (const f of [
+	"panel",
+	"panel-result",
+	"panel-lottie",
+	"panel-advanced",
+	"panel-images",
+	"panel-sounds",
+	"panel-scroll",
+	"panel-tip",
+	"panel-wide",
+	"animate",
+]) {
 	const src = join(raw, `${f}.png`);
 	if (!existsSync(src)) continue;
 	const img = await decode(readFileSync(src));

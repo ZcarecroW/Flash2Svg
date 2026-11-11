@@ -62,6 +62,7 @@ Wrong options get a message, not a stack trace, and the exit code is 1 — handy
 | `--image-mode <name=m>` | per bitmap (library name): `lossy` or `lossless`; repeatable |
 | `--image-resolution <x>` | write bitmaps shown smaller down to x times their largest size on stage (default 2; 0 = every pixel) |
 | `--image-full <name>` | keep every pixel of this bitmap; repeatable |
+| `--lut <file>[=<percent>]` | colour grading: every colour, bitmaps included, through the LUT (`.cube`, `.3dl`, or a Hald CLUT `.png`) at that strength (default 100); repeatable, applied in order. See [Colour grading](appearance.md#colour-grading) |
 | `--sound-format <f>` | compressed sounds (JS player): `mp3` (default), `opus` |
 | `--sound-bitrate <kbps>` | on MP3's scale (Opus uses half); default: each sound's own |
 | `--sound-mode <name=m>` | per sound: `lossy` or `lossless` (WAV); repeatable |
