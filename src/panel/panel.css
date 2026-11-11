@@ -271,11 +271,70 @@ section h2 button {
 	width: 10px;
 	color: var(--muted);
 }
+/* a section's settings: two to a row where the section is wide enough; anything that isn't a
+   single setting (hints, lists, tables, the preview) takes the whole row */
 .body {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(min(230px, 100%), 1fr));
+	gap: 6px 14px;
+	padding: 2px 8px 8px;
+}
+.body > :not(.line),
+.body > .line.wide,
+.body > .line.list-head {
+	grid-column: 1 / -1;
+}
+/* wide panels: sections side by side (App.svelte picks the columns by the panel's width) */
+.columns {
+	display: grid;
+	gap: 6px;
+	align-items: start;
+}
+.columns.cols-2 {
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.columns.cols-3 {
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.15fr);
+}
+.col {
 	display: flex;
 	flex-direction: column;
 	gap: 6px;
-	padding: 2px 8px 8px;
+	min-width: 0;
+}
+.placeholder {
+	margin: 0;
+	padding: 18px 12px;
+	border: 1px dashed var(--line);
+	border-radius: var(--radius);
+	color: var(--muted);
+	font-size: 11px;
+	text-align: center;
+}
+@media (min-width: 620px) {
+	main {
+		padding: 8px 10px 16px;
+	}
+	/* the document, presets and Export on one line */
+	header {
+		flex-direction: row;
+		flex-wrap: wrap;
+		align-items: center;
+		column-gap: 12px;
+	}
+	header .doc {
+		flex: 1 1 220px;
+		min-width: 0;
+		font-size: 12px;
+	}
+	header .bar {
+		flex: 0 1 420px;
+	}
+	header > .progress,
+	header > .error,
+	header > .notice {
+		flex: 1 0 100%;
+	}
 }
 .row {
 	display: flex;
@@ -337,7 +396,7 @@ section h2 button {
 }
 .formats {
 	display: grid;
-	grid-template-columns: repeat(3, 1fr);
+	grid-template-columns: repeat(auto-fill, minmax(min(78px, 30%), 1fr));
 	gap: 4px;
 }
 .formats button {
@@ -512,4 +571,47 @@ section h2 button {
 }
 .bitmaps select {
 	width: 100%;
+}
+/* colour grading: one LUT a row, its strength, order and removal */
+.lut {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+.lut .name {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+.lut .name span {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.lut.off .name span {
+	color: var(--muted);
+}
+.lut input[type="range"] {
+	flex: 0 1 110px;
+	min-width: 50px;
+}
+.lut .pct {
+	width: 36px;
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+}
+.swatches {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	gap: 3px 8px;
+	align-items: center;
+}
+.strip {
+	display: flex;
+	height: 12px;
+	border: 1px solid var(--line);
+	border-radius: 3px;
+	overflow: hidden;
+}
+.strip i {
+	flex: 1;
 }

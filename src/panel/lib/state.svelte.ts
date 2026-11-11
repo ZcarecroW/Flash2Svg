@@ -1,7 +1,18 @@
 import { DEFAULT_SETTINGS, type ExportSettings } from "../../core/compile.ts";
 
+/** A LUT for colour grading (core/grade.ts): the file and how much of it (0-100 %). */
+export interface LutChoice {
+	path: string;
+	strength: number;
+	/** Off: kept in the list, left out of the export. */
+	on: boolean;
+}
+
 export interface PanelSettings {
-	export: ExportSettings;
+	/** (the grade is made from `luts` at export: never stored) */
+	export: Omit<ExportSettings, "grade">;
+	/** Colour grading: LUTs applied in this order. */
+	luts: LutChoice[];
 	source: "timeline" | "library" | "scenes";
 	frames: "all" | "current" | "range";
 	rangeStart: number;
@@ -81,6 +92,7 @@ export function cleanSettings(raw: unknown): Partial<ExportSettings> {
 function defaults(): PanelSettings {
 	return {
 		export: { ...DEFAULT_SETTINGS },
+		luts: [],
 		source: "timeline",
 		frames: "all",
 		rangeStart: 1,
@@ -89,8 +101,23 @@ function defaults(): PanelSettings {
 		rememberInDocument: false,
 		openAfterExport: false,
 		keepScene: false,
-		open: { output: true, animation: true, graphics: false, images: false, sounds: false, advanced: false, preview: true },
+		open: { output: true, animation: true, graphics: false, colour: false, images: false, sounds: false, advanced: false, preview: true },
 	};
+}
+
+/** The LUT list in `v` that is valid (at most 8, strengths 0-100). */
+export function cleanLuts(v: unknown): LutChoice[] {
+	if (!Array.isArray(v)) return [];
+	const out: LutChoice[] = [];
+	for (const x of v) {
+		if (!x || typeof x !== "object") continue;
+		const l = x as Record<string, unknown>;
+		if (typeof l.path !== "string" || !l.path.trim()) continue;
+		const n = typeof l.strength === "number" && Number.isFinite(l.strength) ? Math.max(0, Math.min(100, l.strength)) : 100;
+		out.push({ path: l.path, strength: n, on: l.on !== false });
+		if (out.length === 8) break;
+	}
+	return out;
 }
 
 /** The panel's own fields of `s` that are valid. */
@@ -100,6 +127,7 @@ function cleanPanel(s: Record<string, unknown>): Partial<PanelSettings> {
 		if (typeof s[k] === "string" && (PANEL_CHOICES[k] as readonly string[]).includes(s[k] as string)) out[k] = s[k];
 	for (const k of ["rangeStart", "rangeEnd"] as const) if (s[k] === null || (typeof s[k] === "number" && Number.isFinite(s[k]))) out[k] = s[k];
 	if (typeof s.output === "string") out.output = s.output;
+	if (Array.isArray(s.luts)) out.luts = cleanLuts(s.luts);
 	for (const k of ["rememberInDocument", "openAfterExport", "keepScene"] as const) if (typeof s[k] === "boolean") out[k] = s[k];
 	return out as Partial<PanelSettings>;
 }
@@ -141,7 +169,8 @@ export function applyPartial(json: string) {
 		if (!s || typeof s !== "object") return;
 		Object.assign(panel.export, cleanSettings(s.export));
 		const p = cleanPanel(s);
-		for (const k of ["source", "frames", "rangeStart", "rangeEnd", "output"] as const) if (own(p, k)) (panel as unknown as Record<string, unknown>)[k] = p[k];
+		for (const k of ["source", "frames", "rangeStart", "rangeEnd", "output", "luts"] as const)
+			if (own(p, k)) (panel as unknown as Record<string, unknown>)[k] = p[k];
 	} catch {
 		/* ignore */
 	}

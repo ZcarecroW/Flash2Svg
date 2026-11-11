@@ -11,6 +11,7 @@ import type { SceneModel } from "../../core/model.ts";
 import { encodeFonts, fontFiles, fontFolders, needsFonts, type FontCodecs, type FontFs } from "../../core/fonts.ts";
 import { exportRaster, type Rasterize } from "../../core/raster.ts";
 import { exportVideo } from "../../core/video.ts";
+import { Grade, loadLut, type Lut, type LutUse } from "../../core/grade.ts";
 import { evalJson, evalScript, extensionPath, fromFileUri, node, toFileUri } from "./cep.ts";
 
 export interface DocInfo {
@@ -49,6 +50,8 @@ export interface ExportRequest {
 	output: string;
 	/** Keep the scene data next to the output as <name>.scene/ (scene.json and its files), for the command line. */
 	keepScene?: boolean;
+	/** Colour grading: LUT files (absolute paths) in order, strengths 0-100. */
+	luts?: { path: string; strength: number }[];
 }
 
 export interface ExportResult {
@@ -140,6 +143,34 @@ const panelAudio = lazyBundle<AudioCodecs>("audio.js", "Flash2SvgAudio", "audio 
 const panelFonts = lazyBundle<FontCodecs>("fonts.js", "Flash2SvgFonts", "font codecs");
 // (the bundles' entry points: src/panel/codecs-entry.ts, audio-entry.ts)
 export type { createAudioCodecs, createCodecs };
+
+/** Parsed LUTs by path, size and time (reading a 65³ .cube takes ~0.1 s). */
+const lutCache = new Map<string, { key: string; lut: Lut }>();
+
+/** A LUT file read and parsed (again only when it changed). */
+export async function readLut(path: string): Promise<Lut> {
+	const nd = nodeOrThrow();
+	let st: { size: number; mtimeMs: number };
+	try {
+		st = nd.fs.statSync(path);
+	} catch {
+		throw new Error(`The LUT ${path} isn't there any more: add it again under Colour grading, or remove it.`);
+	}
+	const key = `${st.size}|${st.mtimeMs}`;
+	const hit = lutCache.get(path);
+	if (hit?.key === key) return hit.lut;
+	const lut = await loadLut(nd.path.basename(path), nd.fs.readFileSync(path), async (png) => (await panelCodecs()).decodePng(png));
+	lutCache.set(path, { key, lut });
+	return lut;
+}
+
+/** The grade of these LUTs (null: none, or all at 0 %). */
+export async function gradeOf(luts: { path: string; strength: number }[] | undefined): Promise<Grade | null> {
+	const uses: LutUse[] = [];
+	for (const l of luts ?? []) if (l.strength > 0) uses.push({ lut: await readLut(l.path), strength: l.strength / 100 });
+	const g = new Grade(uses);
+	return g.empty ? null : g;
+}
 
 export async function libraryBitmaps(): Promise<BitmapInfo[]> {
 	await ensureJsfl();
@@ -247,6 +278,9 @@ async function exportInto(
 	t0: number,
 ): Promise<ExportResult> {
 	const node = nodeOrThrow();
+	// the LUTs first: a missing file stops the export before Animate works on it
+	const grade = await gradeOf(req.luts);
+	if (grade) req = { ...req, settings: { ...req.settings, grade } };
 	const items = req.source === "library" ? (info.selectedSymbols ?? []) : [];
 	if (req.source === "library" && !items.length) throw new Error("Select one or more symbols in the Library first.");
 	const opts = { outDir: toFileUri(node.path.join(work, "scene")), items, allScenes: req.source === "scenes" };
@@ -273,14 +307,6 @@ async function exportInto(
 		readText: (rel: string) => nd.fs.readFileSync(nd.path.join(sceneDir, rel), "utf8"),
 		readBinary: (rel: string): Uint8Array => nd.fs.readFileSync(nd.path.join(sceneDir, rel)),
 	};
-	let images: ImageReport[] = [];
-	const imageWarnings: string[] = [];
-	if (Object.keys(model.bitmaps).length) {
-		onProgress(0.81, "Encoding images");
-		const enc = await encodeImages(model, files, req.settings, cancellable(await panelCodecs(), check));
-		({ model, files, report: images } = enc);
-		imageWarnings.push(...enc.warnings);
-	}
 	const settings: Partial<ExportSettings> = { ...req.settings };
 	if (req.frames === "current") {
 		settings.startFrame = info.currentFrame ?? 0;
@@ -294,6 +320,16 @@ async function exportInto(
 			b = clamp(req.rangeEnd, last);
 		settings.startFrame = Math.min(a, b) - 1;
 		settings.endFrame = Math.max(a, b);
+	}
+
+	// (after the format is settled: "Current frame" of a GIF is a still SVG, whose bitmaps are graded)
+	let images: ImageReport[] = [];
+	const imageWarnings: string[] = [];
+	if (Object.keys(model.bitmaps).length) {
+		onProgress(0.81, "Encoding images");
+		const enc = await encodeImages(model, files, settings, cancellable(await panelCodecs(), check));
+		({ model, files, report: images } = enc);
+		imageWarnings.push(...enc.warnings);
 	}
 
 	// only the player plays sounds

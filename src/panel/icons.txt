@@ -36,3 +36,6 @@ archive/nucleo/outline/16
 image-2/nucleo/outline/16
 ctrl-down/nucleo/outline/12
 ctrl-right/nucleo/outline/12
+palette/nucleo/outline/16
+e-add/nucleo/outline/16
+ctrl-up/nucleo/outline/12

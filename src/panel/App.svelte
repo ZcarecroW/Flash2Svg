@@ -8,6 +8,7 @@
 		libraryBitmaps,
 		librarySounds,
 		loadDocSettings,
+		gradeOf,
 		runExport,
 		saveDocSettings,
 		type BitmapInfo,
@@ -37,6 +38,7 @@
 	import { runSelfTestIfRequested } from "./lib/selftest.ts";
 	import { skinColors } from "./lib/skin.ts";
 	import { choice } from "../core/model.ts";
+	import { rgbHex } from "../core/grade.ts";
 
 	let info = $state<DocInfo>({ open: false });
 	let busy = $state(false);
@@ -50,6 +52,83 @@
 	let bitmaps = $state<BitmapInfo[] | null>(null);
 	let sounds = $state<SoundInfo[] | null>(null);
 	let newPreset = $state("");
+
+	// the panel's width decides the columns: settings side by side instead of one long list
+	let width = $state(typeof window === "undefined" ? 300 : window.innerWidth);
+	type SectionId = "output" | "animation" | "graphics" | "colour" | "images" | "sounds" | "advanced" | "result";
+	const columns = $derived<SectionId[][]>(
+		width >= 980
+			? [
+					["output", "animation"],
+					["graphics", "colour", "images", "sounds"],
+					["result", "advanced"],
+				]
+			: width >= 620
+				? [
+						["output", "animation", "graphics", "advanced"],
+						["result", "colour", "images", "sounds"],
+					]
+				: [["output", "animation", "graphics", "colour", "images", "sounds", "advanced", "result"]],
+	);
+
+	// ------------------------------------------------------------------ colour grading (LUTs)
+	const baseName = (p: string) => p.replace(/^.*[\\/]/, "");
+	let lutError = $state("");
+	/** Sample colours (greys, hues, skin) and what the LUTs make of them. */
+	let lutSwatches = $state<{ before: string[]; after: string[] } | null>(null);
+	const SAMPLES: [number, number, number][] = [
+		...[0, 0.2, 0.4, 0.6, 0.8, 1].map((v): [number, number, number] => [v, v, v]),
+		[0.9, 0.2, 0.2],
+		[0.95, 0.55, 0.15],
+		[0.95, 0.85, 0.2],
+		[0.3, 0.75, 0.3],
+		[0.2, 0.75, 0.8],
+		[0.2, 0.35, 0.85],
+		[0.55, 0.3, 0.8],
+		[0.85, 0.3, 0.65],
+		[0.93, 0.76, 0.65],
+		[0.55, 0.38, 0.28],
+	];
+
+	function moveLut(i: number, by: number) {
+		const j = i + by;
+		if (j < 0 || j >= panel.luts.length) return;
+		const [l] = panel.luts.splice(i, 1);
+		panel.luts.splice(j, 0, l!);
+	}
+
+	function addLut() {
+		const last = panel.luts[panel.luts.length - 1]?.path;
+		const r = window.cep?.fs.showOpenDialogEx(true, false, "Add LUT", last && node ? node.path.dirname(last) : "", ["cube", "3dl", "png"]);
+		if (!r || r.err !== 0 || !r.data?.length) return;
+		for (const path of r.data) if (panel.luts.length < 8) panel.luts.push({ path, strength: 100, on: true });
+	}
+
+	// the strip follows the list (files are read again only when they change)
+	$effect(() => {
+		const list = panel.luts.filter((l) => l.on && l.strength > 0).map((l) => ({ path: l.path, strength: l.strength }));
+		if (!panel.open.colour || !inCep || !list.length) {
+			lutSwatches = null;
+			lutError = "";
+			return;
+		}
+		let stale = false;
+		(async () => {
+			try {
+				const g = await gradeOf(list);
+				if (stale) return;
+				lutError = "";
+				lutSwatches = g ? { before: SAMPLES.map((c) => rgbHex(c)), after: SAMPLES.map((c) => rgbHex(g.rgb(c[0], c[1], c[2]))) } : null;
+			} catch (e) {
+				if (stale) return;
+				lutSwatches = null;
+				lutError = (e as Error).message;
+			}
+		})();
+		return () => {
+			stale = true;
+		};
+	});
 
 	const formats: { id: string; name: string; icon: IconName; hint: string }[] = [
 		{
@@ -233,6 +312,7 @@
 					rangeEnd: req.rangeEnd,
 					output: req.output,
 					keepScene: req.keepScene,
+					luts: req.luts.filter((l) => l.on).map((l) => ({ path: l.path, strength: l.strength })),
 				},
 				info,
 				(p, m) => {
@@ -336,8 +416,9 @@
 		{#if notice}<div class="notice" role="status"><Icon name="c-info" /><span>{notice}</span></div>{/if}
 	</header>
 
+	{#snippet outputS()}
 	<Section title="Output" icon="file-upload" bind:open={panel.open.output}>
-		<div class="line"><span class="sub">Format</span><Info topic="format" /></div>
+		<div class="line wide"><span class="sub">Format</span><Info topic="format" /></div>
 		<div class="formats" role="radiogroup" aria-label="Format" tabindex="-1" onkeydown={formatKey}>
 			{#each formats as f (f.id)}
 				<button
@@ -362,7 +443,7 @@
 				<Info topic="videoBitrate" />
 			</div>
 		{/if}
-		<div class="line">
+		<div class="line wide">
 			<label class="row">
 				<span>File</span>
 				<span class="file">
@@ -407,7 +488,9 @@
 			{#if rangeNote}<p class="hint">{rangeNote}</p>{/if}
 		{/if}
 	</Section>
+	{/snippet}
 
+	{#snippet animationS()}
 	{#if panel.export.format !== "static"}
 		<Section title="Animation" icon="play-media" bind:open={panel.open.animation}>
 			<div class="line">
@@ -493,7 +576,9 @@
 			{/if}
 		</Section>
 	{/if}
+	{/snippet}
 
+	{#snippet graphicsS()}
 	<Section title="Graphics &amp; text" icon="shapes" bind:open={panel.open.graphics}>
 		<div class="line">
 			<label class="check"><input type="checkbox" bind:checked={panel.export.includeBackground} /> Include stage colour</label>
@@ -522,7 +607,9 @@
 			<Info topic="guides" />
 		</div>
 	</Section>
+	{/snippet}
 
+	{#snippet imagesS()}
 	<Section title="Images" icon="image" bind:open={panel.open.images}>
 		<div class="line">
 			<label class="row">
@@ -620,7 +707,9 @@
 			</table>
 		{/if}
 	</Section>
+	{/snippet}
 
+	{#snippet soundsS()}
 	<Section title="Sounds" icon="sound" bind:open={panel.open.sounds}>
 		<p class="hint">Sounds play wherever a script can run: the <i>JS player</i>, and <i>SMIL</i> and <i>CSS</i> inline, as a file or in an <code>&lt;object&gt;</code>; not in <code>&lt;img&gt;</code>.</p>
 		<div class="line">
@@ -685,7 +774,9 @@
 			</table>
 		{/if}
 	</Section>
+	{/snippet}
 
+	{#snippet advancedS()}
 	<Section title="Advanced" icon="gear" bind:open={panel.open.advanced}>
 		{#if !lottie}
 			<div class="line">
@@ -728,7 +819,7 @@
 			<label class="check"><input type="checkbox" bind:checked={panel.keepScene} /> Keep the scene data (for the command line)</label>
 			<Info topic="keepScene" />
 		</div>
-		<div class="line preset-add">
+		<div class="line wide preset-add">
 			<input
 				type="text"
 				placeholder="Save current settings as…"
@@ -753,7 +844,9 @@
 		{/each}
 		<button type="button" class="link" onclick={resetSettings}><Icon name="undo" />Reset all settings</button>
 	</Section>
+	{/snippet}
 
+	{#snippet resultS()}
 	{#if result}
 		<Section title="Result" icon="c-check" bind:open={panel.open.preview}>
 			<div class="stats">
@@ -767,7 +860,7 @@
 					>{/if}
 				<button type="button" class="secondary" onclick={() => revealInExplorer(result!.files[0]!)}><Icon name="folder" />Show file</button>
 			</div>
-			<div class="line"><span class="sub">Size by content</span><Info topic="budget" /></div>
+			<div class="line wide"><span class="sub">Size by content</span><Info topic="budget" /></div>
 			<Budget {result} />
 			{#if result.format === "lottie" || result.format === "dotlottie"}<LottiePreview file={result.files[0]!} format={result.format} />{:else}<Preview
 					file={result.files[0]!}
@@ -820,5 +913,70 @@
 			{/if}
 		</Section>
 	{/if}
+	{/snippet}
+
+	{#snippet colourS()}
+		<Section title="Colour grading" icon="palette" bind:open={panel.open.colour}>
+			<div class="line wide">
+				<span class="sub">Every colour of the export (drawings, text, effects, bitmaps) goes through these LUTs, top to bottom.</span><Info topic="luts" />
+			</div>
+			{#each panel.luts as l, i (i)}
+				<div class="lut wide" class:off={!l.on}>
+					<label class="check name" title={l.path}><input type="checkbox" bind:checked={l.on} aria-label="Use {baseName(l.path)}" /><span>{baseName(l.path)}</span></label>
+					<input type="range" min="0" max="100" step="1" bind:value={l.strength} disabled={!l.on} aria-label="Strength of {baseName(l.path)}" />
+					<span class="unit pct">{Math.round(l.strength)} %</span>
+					<button type="button" class="only" title="Earlier" aria-label="Move {baseName(l.path)} up" disabled={i === 0} onclick={() => moveLut(i, -1)}
+						><Icon name="ctrl-up" size={12} /></button
+					>
+					<button
+						type="button"
+						class="only"
+						title="Later"
+						aria-label="Move {baseName(l.path)} down"
+						disabled={i === panel.luts.length - 1}
+						onclick={() => moveLut(i, 1)}><Icon name="ctrl-down" size={12} /></button
+					>
+					<button type="button" class="only" title="Remove" aria-label="Remove {baseName(l.path)}" onclick={() => panel.luts.splice(i, 1)}
+						><Icon name="trash" /></button
+					>
+				</div>
+			{/each}
+			{#if lutError}<p class="error wide" role="alert"><Icon name="c-warning" /><span>{lutError}</span></p>{/if}
+			{#if lutSwatches}
+				<div class="swatches wide" role="img" aria-label="Sample colours before and after grading">
+					<span class="sub">Before</span>
+					<div class="strip">{#each lutSwatches.before as c, k (k)}<i style="background:{c}"></i>{/each}</div>
+					<span class="sub">After</span>
+					<div class="strip">{#each lutSwatches.after as c, k (k)}<i style="background:{c}"></i>{/each}</div>
+				</div>
+			{/if}
+			<div class="line wide">
+				<button type="button" class="secondary" onclick={addLut} disabled={!inCep || panel.luts.length >= 8}><Icon name="e-add" />Add LUT…</button>
+				<span class="sub">.cube, .3dl, Hald CLUT .png</span>
+			</div>
+		</Section>
+	{/snippet}
+
+	<div class="columns cols-{columns.length}">
+		{#each columns as col, c (c)}
+			<div class="col">
+				{#each col as id (id)}
+					{#if id === "output"}{@render outputS()}
+					{:else if id === "animation"}{@render animationS()}
+					{:else if id === "graphics"}{@render graphicsS()}
+					{:else if id === "colour"}{@render colourS()}
+					{:else if id === "images"}{@render imagesS()}
+					{:else if id === "sounds"}{@render soundsS()}
+					{:else if id === "advanced"}{@render advancedS()}
+					{:else if id === "result"}
+						{#if result}{@render resultS()}{:else if columns.length === 3}
+							<p class="placeholder">After an export: its size by content, a preview, and what to know about it.</p>
+						{/if}
+					{/if}
+				{/each}
+			</div>
+		{/each}
+	</div>
 </main>
 <Tooltip />
+<svelte:window bind:innerWidth={width} />

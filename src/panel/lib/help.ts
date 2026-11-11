@@ -188,6 +188,11 @@ export const HELP = {
 		text: "Saves the current settings under a name: it appears in the Presets menu at the top. Choices for single bitmaps and sounds stay with the document.",
 		guide: "settings.html#presets",
 	},
+	luts: {
+		label: "Colour grading",
+		text: "LUTs (.cube, .3dl or Hald CLUT images, as colour grading tools write them) change every colour of the export: shapes, gradients, text, filters, colour effects, the stage colour and every pixel of the bitmaps. GIF, WebP, APNG and video grade each finished picture. The slider mixes a LUT with the colours it changes.",
+		guide: "appearance.html#colour-grading",
+	},
 	budget: {
 		label: "Size overview",
 		text: "What the bytes of the export are spent on, and its biggest drawings: the place to start when a file is too large.",

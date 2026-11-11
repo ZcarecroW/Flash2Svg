@@ -33,7 +33,10 @@
 		| "archive"
 		| "image-2"
 		| "ctrl-down"
-		| "ctrl-right";
+		| "ctrl-right"
+		| "palette"
+		| "e-add"
+		| "ctrl-up";
 </script>
 
 <script lang="ts">

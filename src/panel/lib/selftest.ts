@@ -23,6 +23,8 @@ interface SelfTestJob {
 	jsfl?: string;
 	/** Keep the scene data next to the output (<name>.scene/). */
 	keepScene?: boolean;
+	/** Colour grading: LUT files and strengths, as the Colour grading section passes them. */
+	luts?: { path: string; strength: number }[];
 	/** Lottie exports: show the result in the panel's preview (in this player) and report what it drew. */
 	preview?: { player?: "lottie-web" | "dotlottie"; click?: boolean };
 }
@@ -140,6 +142,7 @@ export async function runSelfTestIfRequested(): Promise<boolean> {
 					rangeEnd: job.rangeEnd ?? info.frameCount ?? 1,
 					output: job.output,
 					keepScene: job.keepScene,
+					luts: job.luts,
 				},
 				info,
 				(p, m) => {

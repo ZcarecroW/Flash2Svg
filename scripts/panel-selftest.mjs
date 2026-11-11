@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
+import { PNG } from "pngjs";
 import { findAnimate, isAnimateRunning } from "./lib/animate.mjs";
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -23,6 +24,17 @@ copyFileSync(fla("f02-eases"), copied);
 // a folder of the user's where the kept scene data would go: never replaced
 mkdirSync(join(out, "foreign", "mine.scene"), { recursive: true });
 writeFileSync(join(out, "foreign", "mine.scene", "notes.txt"), "the user's");
+// colour grading: LUTs that turn every colour into #336699, as a .cube and as a Hald CLUT image
+const LUT_RGB = [51, 102, 153];
+const cubeLut = join(out, "luts", "flat.cube");
+const haldLut = join(out, "luts", "flat hald.png");
+mkdirSync(dirname(cubeLut), { recursive: true });
+writeFileSync(cubeLut, ["LUT_3D_SIZE 2", ...Array(8).fill("0.2 0.4 0.6")].join("\n"));
+{
+	const png = new PNG({ width: 8, height: 8 });
+	for (let i = 0; i < 64; i++) png.data.set([...LUT_RGB, 255], i * 4);
+	writeFileSync(haldLut, PNG.sync.write(png));
+}
 /** Frames of a GIF: image descriptors after a graphic control extension. */
 const gifFrames = (f) => readFileSync(f).toString("latin1").split("!ù").length - 1;
 const jobs = [
@@ -261,6 +273,30 @@ const jobs = [
 	{ fla: fla("f28-onestop"), output: join(out, "onestop.webp"), settings: { format: "webp" }, expect: { files: 1, minWebpFrames: 20 } },
 	// kept scene data never replaces a folder of the user's
 	{ fla: fla("f02-eases"), output: join(out, "foreign", "mine.svg"), settings: { format: "smil" }, keepScene: true, expect: { error: /holds something else/ } },
+	// colour grading in the panel: drawings through a .cube, bitmaps through a Hald CLUT image
+	{
+		fla: fla("f02-eases"),
+		output: join(out, "graded.svg"),
+		settings: { format: "smil", includeBackground: true },
+		luts: [{ path: cubeLut, strength: 100 }],
+		expect: { files: 1, colours: ["#336699"] },
+	},
+	{
+		fla: fla("f42-images"),
+		output: join(out, "graded-images.svg"),
+		settings: { format: "smil", imageLossless: "png", imageModes: { "photo.jpg": "lossless" } },
+		luts: [{ path: haldLut, strength: 100 }],
+		expect: { files: 1, gradedPixels: LUT_RGB },
+	},
+	// "Current frame" of a GIF is a still SVG: its bitmaps are graded too (the format is settled first)
+	{
+		fla: fla("f42-images"),
+		output: join(out, "graded-frame.gif"),
+		settings: { format: "gif", imageLossless: "png", imageModes: { "photo.jpg": "lossless" } },
+		frames: "current",
+		luts: [{ path: haldLut, strength: 100 }],
+		expect: { files: 1, format: "static", gradedPixels: LUT_RGB },
+	},
 	// a second scene: only the current one is exported, with a warning
 	{
 		fla: fla("f12-labels"),
@@ -401,6 +437,24 @@ res.results.forEach((r, i) => {
 	for (const [name, wh] of Object.entries(exp.pixels ?? {})) {
 		const got = r.images?.find((i) => i[0] === name);
 		if (!got || got[1] !== wh[0] || got[2] !== wh[1]) problems.push(`${name} written ${got ? got[1] + "x" + got[2] : "not at all"}, expected ${wh.join("x")}`);
+	}
+	if (exp.colours && r.files[0]) {
+		// every colour of the drawing is the LUT's
+		const found = [...new Set([...text(r.files[0]).matchAll(/(?:fill|stroke|stop-color|flood-color)="(#[0-9a-fA-F]{6})/g)].map((m) => m[1].toUpperCase()))];
+		if (!found.length) problems.push("no colours in the output");
+		const other = found.filter((c) => !exp.colours.includes(c));
+		if (other.length) problems.push(`colours not graded: ${other.join(", ")}`);
+	}
+	if (exp.gradedPixels && r.files[0]) {
+		// every visible pixel of every embedded PNG is the LUT's colour
+		const pngs = [...text(r.files[0]).matchAll(/data:image\/png;base64,([A-Za-z0-9+/=]+)/g)];
+		if (!pngs.length) problems.push("no PNG bitmaps in the output");
+		for (const [, b64] of pngs) {
+			const img = PNG.sync.read(Buffer.from(b64, "base64"));
+			let bad = 0;
+			for (let i = 0; i < img.data.length; i += 4) if (img.data[i + 3] && exp.gradedPixels.some((v, k) => img.data[i + k] !== v)) bad++;
+			if (bad) problems.push(`${bad} bitmap pixels not graded`);
+		}
 	}
 	if (exp.contains && r.files[0]) {
 		const svg = text(r.files[0]);

@@ -36,8 +36,8 @@
 					<Menu>Flash2SVG (SVG Animation)</Menu>
 					<Geometry>
 						<Size>
-							<Height>620</Height>
-							<Width>300</Width>
+							<Height>540</Height>
+							<Width>660</Width>
 						</Size>
 						<MinSize>
 							<Height>260</Height>
@@ -45,7 +45,7 @@
 						</MinSize>
 						<MaxSize>
 							<Height>4000</Height>
-							<Width>1200</Width>
+							<Width>2400</Width>
 						</MaxSize>
 					</Geometry>
 					<Icons>
