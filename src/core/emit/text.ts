@@ -206,8 +206,8 @@ export function textField(
 			y: fmt(0.5 - GUTTER, 2),
 			width: fmt(size.w - 1, 2),
 			height: fmt(size.h - 1, 2),
-			fill: "#FFFFFF",
-			stroke: "#000000",
+			fill: t.borderColors?.[0] ?? "#FFFFFF",
+			stroke: t.borderColors?.[1] ?? "#000000",
 		});
 		out = el("g", {}, [box, out]);
 	}

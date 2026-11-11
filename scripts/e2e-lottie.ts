@@ -2,7 +2,7 @@
 // against the official schema (lottie-specs + ajv), then played in three players - lottie-web
 // (SVG renderer) and dotLottie (ThorVG) in Edge/Chrome, Skottie (CanvasKit) in Node - and each
 // sampled frame compared with the static renderer's frame rendered in the same browser.
-// Usage: node scripts/e2e-lottie.ts [name,...] [--players=lottie-web,dotlottie,skottie] [--every=4] [--threshold=0.004] [--steps]
+// Usage: node scripts/e2e-lottie.ts [name,...] [--players=lottie-web,dotlottie,skottie] [--every=4] [--threshold=0.004] [--steps] [--lut=file.cube]
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
@@ -11,9 +11,17 @@ import pixelmatch from "pixelmatch";
 import { chromium, type Page } from "playwright-core";
 import { PNG } from "pngjs";
 import { compileScene } from "../src/core/compile.ts";
+import { Grade, parseLut } from "../src/core/grade.ts";
 import type { SceneModel } from "../src/core/model.ts";
 import { withFonts } from "./lib/fonts.ts";
 import { openHarness, skottie, startServer, WebPlayers, type LottiePlayer } from "./lib/lottie-players.ts";
+
+// --lut=<file>: everything graded by that LUT (.cube or .3dl): the animation against graded still frames
+const lutFile = process.argv
+	.slice(2)
+	.find((a) => a.startsWith("--lut="))
+	?.slice(6);
+const lutGrade = lutFile ? { grade: new Grade([{ lut: parseLut(readFileSync(lutFile, "utf8"), lutFile), strength: 1 }]) } : {};
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
 const out = join(repo, "tests", "out");
@@ -112,17 +120,17 @@ for (const name of names) {
 	mkdirSync(dir, { recursive: true });
 	const { width: w, height: h } = model.doc;
 	const t0 = performance.now();
-	const res = compileScene(model, files, { format: "lottie", includeBackground: true, smooth: !steps });
+	const res = compileScene(model, files, { format: "lottie", includeBackground: true, smooth: !steps, ...lutGrade });
 	const ms = performance.now() - t0;
 	const json = res.files[0]!.svg;
 	writeFileSync(join(dir, `anim${steps ? "-steps" : ""}.json`), json);
-	const dot = compileScene(model, files, { format: "dotlottie", includeBackground: true, smooth: !steps }).files[0]!.bytes!;
+	const dot = compileScene(model, files, { format: "dotlottie", includeBackground: true, smooth: !steps, ...lutGrade }).files[0]!.bytes!;
 	writeFileSync(join(dir, `anim${steps ? "-steps" : ""}.lottie`), dot);
 	const problems = validator.validate(JSON.parse(json), true) as { type: string; message: string; path: string }[];
 	const errors = problems.filter((p) => p.type === "error");
 	const unknown = [...new Set(problems.filter((p) => p.type === "warning").map((p) => p.message))];
 	// (Lottie draws dynamic text from Animate's outlines)
-	const statics = compileScene(model, files, { format: "static", includeBackground: true, textAsOutlines: true });
+	const statics = compileScene(model, files, { format: "static", includeBackground: true, textAsOutlines: true, ...lutGrade });
 	const frames = Math.min(statics.files.length, res.stats.frames || statics.files.length);
 	const sample: number[] = [];
 	for (let f = 0; f < frames; f += every) sample.push(f);

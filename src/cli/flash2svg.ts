@@ -12,6 +12,7 @@ import { encodeSounds } from "../core/audio.ts";
 import { createAudioCodecs } from "../core/audio-codecs.ts";
 import { createCodecs } from "../core/codecs.ts";
 import { encodeImages } from "../core/images.ts";
+import { Grade, loadLut, type LutUse } from "../core/grade.ts";
 import { createFontCodecs, encodeFonts, needsFonts } from "../core/fonts.ts";
 import { nodeFontFiles } from "./fonts-node.ts";
 import { exportRaster } from "../core/raster.ts";
@@ -50,6 +51,9 @@ const HELP = `flash2svg <scene.json> [options]
   --image-resolution <x>  bitmaps shown smaller are made smaller, down to x times the largest size
                           they are shown at (default 2; 0 = always every pixel)
   --image-full <name>     keep every pixel of this bitmap (library name); repeatable
+  --lut <file>[=<percent>] colour grading: every colour, bitmaps included, through the LUT
+                          (.cube, .3dl, or a Hald CLUT .png), at that strength (default 100);
+                          repeatable, applied in order
   --video-bitrate <kbps>  MP4 and WebM (default: enough for clean edges at the size)
   --sound-format <f>      compressed sounds: mp3 (default) | opus
   --sound-bitrate <kbps>  on MP3's scale, Opus uses half (default: each sound's setting from Animate)
@@ -83,6 +87,7 @@ async function main(argv: string[]) {
 	const s: Partial<ExportSettings> = {};
 	let input = "";
 	let out = "";
+	const luts: { file: string; strength: number }[] = [];
 	while (args.length) {
 		const a = args.shift()!;
 		const val = () => {
@@ -168,6 +173,16 @@ async function main(argv: string[]) {
 			case "--lottie-sounds":
 				s.lottieSounds = true;
 				break;
+			case "--lut": {
+				const v = val();
+				// "look.cube=60": 60 % of it (unless a file is called so)
+				const m = /^(.*)=(\d+(?:\.\d+)?)%?$/.exec(v);
+				const whole = existsSync(resolve(v));
+				const strength = m && !whole ? Number(m[2]) : 100;
+				if (strength > 100) throw new Error(`--lut expects a strength from 0 to 100 %: ${v}`);
+				luts.push({ file: m && !whole ? m[1]! : v, strength });
+				break;
+			}
 			case "--video-bitrate":
 				s.videoBitrate = num(100, 100000, true);
 				break;
@@ -229,6 +244,16 @@ async function main(argv: string[]) {
 	const base = dirname(sceneFile);
 	const read = parseModel(readFileSync(sceneFile, "utf8"), input);
 	const loader = nodeWasmLoader();
+	// (one set of image codecs: Hald CLUT images and the bitmaps; WebAssembly starts when first used)
+	const imageCodecs = createCodecs(loader);
+	if (luts.length) {
+		const uses: LutUse[] = [];
+		for (const l of luts) {
+			if (!existsSync(l.file)) throw new Error(`--lut: ${l.file} not found`);
+			uses.push({ lut: await loadLut(basename(l.file), readFileSync(l.file), (png) => imageCodecs.decodePng(png)), strength: l.strength / 100 });
+		}
+		s.grade = new Grade(uses);
+	}
 	let { model, files, warnings } = await encodeImages(
 		read,
 		{
@@ -236,7 +261,7 @@ async function main(argv: string[]) {
 			readBinary: (rel) => readFileSync(join(base, rel)),
 		},
 		s,
-		createCodecs(loader),
+		imageCodecs,
 	);
 	// only the player and video play sounds ("auto" picks the player for documents with sounds)
 	const video = s.format === "mp4" || s.format === "webm";
@@ -287,7 +312,7 @@ async function main(argv: string[]) {
 							files,
 							s,
 							nodeRasterizer(loader, (m) => rasterWarnings.add(m)),
-							createCodecs(loader),
+							imageCodecs,
 							r,
 						)
 					: compileScene(model, files, s, r, { gzip: (d) => gzipSync(d, { level: 9 }) });

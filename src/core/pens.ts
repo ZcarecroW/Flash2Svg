@@ -14,7 +14,7 @@
  * A Lottie layer stretches its strokes whatever is inside (`move`): there the scale goes into the
  * drawings, and the instance keeps only its position. Not elsewhere: scripts read an instance's scale.
  */
-import type { Artwork } from "./artwork.ts";
+import { sourceStroke, type Artwork } from "./artwork.ts";
 import { apply, concat, fmt, fmtMatrix, IDENTITY, parseTransform } from "./geom.ts";
 import type { Mat } from "./model.ts";
 import { mapPath, scaleArtwork, scaleTracks } from "./nineslice.ts";
@@ -47,7 +47,8 @@ function penScale(m: Mat, mode: string | undefined): number {
 	return Math.sqrt((m[0] * m[0] + m[1] * m[1] + m[2] * m[2] + m[3] * m[3]) / 2);
 }
 
-const signature = (n: XmlNode) => `${(n.attrs.stroke ?? "").slice(0, 7).toLowerCase()}|${parseFloat(n.attrs["stroke-width"] ?? "1")}`;
+// (Animate's colour: a graded drawing's strokes have other colours, see sourceStroke)
+const signature = (n: XmlNode) => `${(sourceStroke.get(n) ?? n.attrs.stroke ?? "").slice(0, 7).toLowerCase()}|${parseFloat(n.attrs["stroke-width"] ?? "1")}`;
 
 /**
  * A stroke this can redraw: a path with a plain colour. One that keeps its width anyway does so by

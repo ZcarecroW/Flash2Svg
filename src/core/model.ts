@@ -253,6 +253,8 @@ export interface TextElement extends ElementBase {
 	acc?: AccInfo;
 	/** "Show border around text" (dynamic and input text): a white field with a black outline. */
 	border?: boolean;
+	/** The border's fill and outline when they aren't white and black (set by gradeModel, grade.ts). */
+	borderColors?: [string, string];
 	/** Filters on the field (drop shadow, glow...). */
 	filters?: FilterData[];
 }

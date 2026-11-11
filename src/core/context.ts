@@ -1,5 +1,6 @@
-import { importArtwork, artworkPaints, artworkSignature, type Artwork } from "./artwork.ts";
+import { importArtwork, artworkPaints, artworkSignature, gradientPlan, type Artwork } from "./artwork.ts";
 import { fmt } from "./geom.ts";
+import type { Grade } from "./grade.ts";
 import { el } from "./xml.ts";
 import type { BitmapFill, SceneModel } from "./model.ts";
 import { applyNineSlice } from "./nineslice.ts";
@@ -56,7 +57,11 @@ function placePerspective(model: SceneModel, programs: Record<string, Program>, 
 			}
 }
 
-export function createContext(model: SceneModel, files: FileSource, opts: CompileOptions & { digits?: number }): Context {
+/**
+ * `grade`: colour grading of the drawings (grade.ts; the model is graded before, by gradeModel).
+ */
+export function createContext(model: SceneModel, files: FileSource, opts: CompileOptions & { digits?: number; grade?: Grade }): Context {
+	const grade = opts.grade && !opts.grade.empty ? opts.grade : undefined;
 	// guide layers' drawings as curves (motion guides followed along the path, motionpath.ts)
 	const guides = new Map<string, GuideCurve | null>();
 	const guide = (id: string): GuideCurve | null => {
@@ -118,6 +123,21 @@ export function createContext(model: SceneModel, files: FileSource, opts: Compil
 		for (const f of fills) if (!list.some((g) => g.name === f.name)) list.push(f);
 		bitmapFills.set(atlas, list);
 	};
+	// graded shape tweens: the drawings of one tween (its frames and both keyframes) share their
+	// gradients' extra stops (union-find over atlas ids; a keyframe can end one tween and start the next)
+	const tweenOf = new Map<string, string>();
+	const rootOf = (id: string): string => {
+		let r = id;
+		while (tweenOf.has(r) && tweenOf.get(r) !== r) r = tweenOf.get(r)!;
+		tweenOf.set(id, r);
+		return r;
+	};
+	const join = (ids: string[]) => {
+		if (!grade || ids.length < 2) return;
+		for (const id of ids) if (!tweenOf.has(id)) tweenOf.set(id, id);
+		const r = rootOf(ids[0]!);
+		for (const id of ids.slice(1)) tweenOf.set(rootOf(id), r);
+	};
 	for (const tl of Object.values(model.timelines))
 		for (const l of tl.layers)
 			l.keyframes.forEach((kf, k) => {
@@ -131,6 +151,8 @@ export function createContext(model: SceneModel, files: FileSource, opts: Compil
 				// shape tween frames: in-between gradients have in-between colours, so match them all ("*")
 				const frames = kf.tween?.type === "shape" ? kf.tween.shapeFrames : undefined;
 				if (!frames) return;
+				const shapesOf = (els: typeof kf.elements | undefined) => (els ?? []).flatMap((e) => (e.kind === "shape" ? [e.atlas] : []));
+				join([...shapesOf(kf.elements), ...frames, ...shapesOf(l.keyframes[k + 1]?.elements)]);
 				const bmps = [...kf.elements, ...(l.keyframes[k + 1]?.elements ?? [])].flatMap((e) => (e.kind === "shape" ? (e.bitmapFills ?? []) : []));
 				if (bmps.length) for (const id of frames) addBitmaps(id, bmps);
 				const fx = [...kf.elements, ...(l.keyframes[k + 1]?.elements ?? [])].flatMap((e) => (e.kind === "shape" ? (e.fixedStrokes ?? []) : []));
@@ -141,6 +163,37 @@ export function createContext(model: SceneModel, files: FileSource, opts: Compil
 				if (!a.length && !b.length) return;
 				for (const id of frames) addLinear(id, a.length && (b.length || !l.keyframes[k + 1]) ? [...a, ...b, "*"] : [...a, ...b]);
 			});
+	const plans = new Map<string, Map<number, number[][]>>();
+	/** The merged stop plan of the shape tween drawing `id` belongs to (gradientPlan), or undefined. */
+	const planOf = (id: string): Map<number, number[][]> | undefined => {
+		if (!grade || !tweenOf.has(id)) return undefined;
+		const root = rootOf(id);
+		let plan = plans.get(root);
+		if (!plan) {
+			plan = new Map();
+			for (const member of tweenOf.keys()) {
+				if (rootOf(member) !== root) continue;
+				const item = model.atlas[member];
+				if (!item) continue;
+				let text: string;
+				try {
+					text = files.readText(item.file);
+				} catch {
+					continue;
+				}
+				for (const [g, knots] of gradientPlan(text, grade, linear.get(member))) {
+					const had = plan.get(g) ?? [];
+					const n = Math.max(had.length, knots.length);
+					plan.set(
+						g,
+						Array.from({ length: n }, (_, i) => [...new Set([...(had[i] ?? []), ...(knots[i] ?? [])])].sort((x, y) => x - y)),
+					);
+				}
+			}
+			plans.set(root, plan);
+		}
+		return plan;
+	};
 	const morphs = new WeakMap<ArtSeqItem, Morph | null>();
 	const ctx: Context = {
 		model,
@@ -165,9 +218,14 @@ export function createContext(model: SceneModel, files: FileSource, opts: Compil
 					const key = `${text.length}|${off?.x ?? 0},${off?.y ?? 0}`;
 					const same = byKey.get(key);
 					const d = precision.art(id);
-					const opts = { digits: d, linearRGB: linear.get(id), bitmapFills: bitmapFills.get(id), fixedStrokes: fixed.get(id) };
+					const opts = { digits: d, linearRGB: linear.get(id), bitmapFills: bitmapFills.get(id), fixedStrokes: fixed.get(id), grade, stopPlan: planOf(id) };
 					// what else shapes the import (the same text with non-scaling strokes is another drawing)
-					const how = JSON.stringify([[...(opts.linearRGB ?? [])].sort(), (opts.bitmapFills ?? []).map((b) => b.name), [...(opts.fixedStrokes ?? [])].sort()]);
+					const how = JSON.stringify([
+						[...(opts.linearRGB ?? [])].sort(),
+						(opts.bitmapFills ?? []).map((b) => b.name),
+						[...(opts.fixedStrokes ?? [])].sort(),
+						opts.stopPlan ? [...opts.stopPlan] : 0,
+					]);
 					// the same drawing, imported the same way with at least these decimals
 					const twin = same?.find((b) => {
 						const s = sources.get(b)!;

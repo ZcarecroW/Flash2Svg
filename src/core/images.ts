@@ -6,6 +6,7 @@
  */
 import { bitmapScales, type BitmapScale } from "./bitmap-scale.ts";
 import type { FileSource } from "./context.ts";
+import { gradesPictures, type Grade } from "./grade.ts";
 import { choice, type BitmapData, type SceneModel } from "./model.ts";
 
 export type LossyFormat = "jpeg" | "webp" | "avif";
@@ -104,6 +105,20 @@ export interface ImageReport {
 	sourceHeight: number;
 }
 
+/**
+ * Script calls that read a bitmap's pixels: the JS player then carries a PNG of them, as Flash
+ * Player has them at once (emit/player.ts).
+ */
+export const PIXEL_READS =
+	/\.(getPixel32|getPixel|getPixels|getVector|copyPixels|copyChannel|draw|threshold|compare|histogram|getColorBoundsRect|hitTest|merge|paletteMap|floodFill|clone)\b/;
+
+/** True when a frame script or class file of the document may read bitmap pixels. */
+function scriptsReadPixels(model: SceneModel): boolean {
+	for (const tl of Object.values(model.timelines))
+		for (const l of tl.layers) for (const k of l.keyframes) if (k.script && PIXEL_READS.test(k.script)) return true;
+	return !!model.classes?.files.some((f) => PIXEL_READS.test(f.code));
+}
+
 /** Lossless masters below this size are also tried without loss (see encodeImages). */
 const SMALL = 32 * 1024;
 
@@ -135,11 +150,13 @@ function targetSize(b: BitmapData, scale: BitmapScale | undefined, resolution: n
  * Re-encodes the model's bitmaps. Returns a copy of the model whose bitmaps point at the new
  * files, and a file source that serves them (everything else comes from `files`). Bitmaps the
  * export never draws (only on guide layers, or hidden ones left out) are left as they are.
+ * With `grade` (colour grading, grade.ts) every bitmap is graded pixel by pixel, at the size it is
+ * written (formats that draw pictures grade those instead, see gradesPictures).
  */
 export async function encodeImages(
 	model: SceneModel,
 	files: FileSource,
-	partial: Partial<ImageSettings & { includeHiddenLayers: boolean; includeGuides: boolean }>,
+	partial: Partial<ImageSettings & { includeHiddenLayers: boolean; includeGuides: boolean; grade: Grade; format: string }>,
 	codecs: Codecs,
 ): Promise<{ model: SceneModel; files: FileSource; report: ImageReport[]; warnings: string[] }> {
 	const s: ImageSettings = { ...DEFAULT_IMAGE_SETTINGS, ...partial, imageModes: { ...partial.imageModes }, imageFullSize: { ...partial.imageFullSize } };
@@ -150,6 +167,9 @@ export async function encodeImages(
 	const report: ImageReport[] = [];
 	const warnings: string[] = [];
 	const scales = bitmapScales(model, files, partial);
+	const grade = partial.grade && !partial.grade.empty && !gradesPictures(partial.format) ? partial.grade : null;
+	// graded bitmaps that scripts read get a graded lossless master (else the player's would be the old colours)
+	const pixelReads = !!grade && scriptsReadPixels(model);
 
 	for (const [id, b] of Object.entries(model.bitmaps)) {
 		const mode = modeOf(b, s);
@@ -177,7 +197,10 @@ export async function encodeImages(
 			sourceHeight: b.height,
 		});
 		// older models hold the bitmap as Animate compresses it, not a lossless master
-		if (!b.file.endsWith(".png") || (b.compression === undefined && mode === "lossy")) {
+		// (graded, a PNG of an older model is pixels to grade like any master)
+		if (!b.file.endsWith(".png") || (b.compression === undefined && mode === "lossy" && !grade)) {
+			if (grade)
+				warnings.push(`Bitmap ${b.name} keeps its colours: this scene data holds it as Animate compresses it, not as pixels (export it again from Animate)`);
 			bitmaps[id] = b;
 			report.push(entry("original", source.byteLength, b.width, b.height));
 			continue;
@@ -189,9 +212,19 @@ export async function encodeImages(
 		/** The bitmap encoded at `size` (null = every pixel). */
 		const encode = async (size: [number, number] | null): Promise<{ rel: string; bytes: Uint8Array; format: ImageReport["format"]; webpForJpeg?: boolean }> => {
 			let resized: Promise<Pixels> | null = null;
-			const pixels = () => (size ? (resized ??= master().then((img) => codecs.resize(img, size[0], size[1]))) : master());
+			const plain = () => (size ? (resized ??= master().then((img) => codecs.resize(img, size[0], size[1]))) : master());
+			// graded on a copy, at the size written (the master serves the other size too)
+			let graded: Promise<Pixels> | null = null;
+			const pixels = grade
+				? () =>
+						(graded ??= plain().then((img) => {
+							const copy = { data: new Uint8ClampedArray(img.data), width: img.width, height: img.height };
+							grade.pixels(copy.data);
+							return copy;
+						}))
+				: plain;
 			const lossless = async (): Promise<[Uint8Array, LosslessFormat]> => {
-				if (s.imageLossless === "png") return [size ? await codecs.encodePng(await pixels()) : await codecs.optimisePng(source), "png"];
+				if (s.imageLossless === "png") return [size || grade ? await codecs.encodePng(await pixels()) : await codecs.optimisePng(source), "png"];
 				// exact: keep the colour under transparent pixels too
 				return [await codecs.webp(await pixels(), { lossless: 1, exact: 1, quality: 75, method: 4 }), "webp"];
 			};
@@ -212,7 +245,7 @@ export async function encodeImages(
 			let kind: ImageReport["format"] = format;
 			// Animate's own JPEG when its quality is wanted and the size stays (imported JPEGs: the
 			// original file, no second compression)
-			if (format === "jpeg" && !quality && b.jpeg && !size) {
+			if (format === "jpeg" && !quality && b.jpeg && !size && !grade) {
 				try {
 					bytes = new Uint8Array(files.readBinary(b.jpeg));
 					kind = "original";
@@ -254,7 +287,20 @@ export async function encodeImages(
 		}
 		if (r.webpForJpeg) warnings.push(`Bitmap ${b.name} is transparent: JPEG can't keep that, it is written as WebP`);
 		made.set(r.rel, r.bytes);
-		bitmaps[id] = { ...b, file: r.rel, jpeg: undefined, pixels: size ?? undefined, master: b.master ?? b.file };
+		// graded, the lossless master has the old colours: for scripts that read pixels a graded one
+		// at full size (the file written is what scripts would read otherwise)
+		let masterFile: string | undefined = b.master ?? b.file;
+		if (grade) {
+			masterFile = undefined;
+			if (pixelReads) {
+				const img = await master();
+				const copy = { data: new Uint8ClampedArray(img.data), width: img.width, height: img.height };
+				grade.pixels(copy.data);
+				masterFile = `${base}.graded.png`;
+				made.set(masterFile, await codecs.encodePng(copy));
+			}
+		}
+		bitmaps[id] = { ...b, file: r.rel, jpeg: undefined, pixels: size ?? undefined, master: masterFile };
 		report.push(entry(r.format, r.bytes.byteLength, size?.[0] ?? b.width, size?.[1] ?? b.height));
 	}
 
@@ -262,7 +308,10 @@ export async function encodeImages(
 		model: { ...model, bitmaps },
 		files: {
 			readText: (rel) => files.readText(rel),
-			readBinary: (rel) => (rel.startsWith(MASTER) ? files.readBinary(rel.slice(MASTER.length)) : (made.get(rel) ?? files.readBinary(rel))),
+			readBinary: (rel) => {
+				const r = rel.startsWith(MASTER) ? rel.slice(MASTER.length) : rel;
+				return made.get(r) ?? files.readBinary(r);
+			},
 		},
 		report,
 		warnings,

@@ -16,6 +16,7 @@ import { modelRuns, timelineRuns } from "./emit/scripts.ts";
 import { playhead } from "./emit/timing.ts";
 import type { SoundSettings } from "./audio.ts";
 import type { ImageSettings } from "./images.ts";
+import { gradeModel, type Grade } from "./grade.ts";
 import type { SceneModel } from "./model.ts";
 
 /**
@@ -76,6 +77,12 @@ export interface ExportSettings extends ImageSettings, SoundSettings {
 	morph: boolean;
 	/** MP4 and WebM: kilobits a second (0: enough for a clean picture at this size). */
 	videoBitrate?: number;
+	/**
+	 * Colour grading: LUTs every colour goes through (grade.ts; the host loads the files). Drawings,
+	 * text, filters, colour effects and the stage colour are graded here, bitmaps by encodeImages,
+	 * GIF / WebP / APNG / video pictures as they are drawn. Not a stored setting: JSON gives its id.
+	 */
+	grade?: Grade;
 	/** Lottie JSON: sounds as audio layers (lottie-web plays them, with Howler on the page). */
 	lottieSounds?: boolean;
 	/** Decimals on screen (shown larger or smaller, a part gets more or fewer, see precision.ts). */
@@ -221,8 +228,11 @@ export function compileScene(
 	hooks: CompileHooks = {},
 ): CompileOutput {
 	if (partial.format === "auto") return chooseFormat(model, files, partial, rootIndex, hooks);
-	model = joinScenes(model);
 	const s: ExportSettings = { ...DEFAULT_SETTINGS, ...partial };
+	const grade = s.grade && !s.grade.empty ? s.grade : undefined;
+	// (before the scenes are joined: the graded model is kept for the same model, see gradeModel)
+	if (grade) model = gradeModel(model, grade);
+	model = joinScenes(model);
 	// number fields can arrive empty (null) or out of range from the panel
 	s.digits = Number.isFinite(s.digits) ? Math.max(0, Math.min(6, Math.round(s.digits))) : DEFAULT_SETTINGS.digits;
 	s.delay = Number.isFinite(s.delay) && s.delay > 0 ? s.delay : 0;
@@ -233,6 +243,7 @@ export function compileScene(
 		digits: s.digits,
 		pensInDrawings: s.format === "lottie" || s.format === "dotlottie",
 		curveCost: s.format === "lottie" || s.format === "dotlottie" ? 1 : undefined,
+		grade,
 	});
 	ctx.scale = s.scale ?? "fixed";
 	ctx.background = s.includeBackground;

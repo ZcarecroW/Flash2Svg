@@ -9,7 +9,7 @@ import type { TextElement } from "../model.ts";
 import { COLOR_PROPS, TRANSFORM_PROPS, type InstanceItem, type Item, type Program } from "../program.ts";
 import { valueAt, type Track } from "../tracks.ts";
 import { cdata, serialize, el, walk, type XmlNode } from "../xml.ts";
-import { MASTER } from "../images.ts";
+import { MASTER, PIXEL_READS } from "../images.ts";
 import type { PChannel, PFrameSound, PInst, PItem, PListener, PMorph, PProgram, PSeq, PTextExtras, PTimeline, PTrack } from "../../player/format.ts";
 import type { HandlerAction, InteractionEvent } from "../snippets.ts";
 import { channelNumbers, channelText, channelVaries, type MorphChannel } from "../morph.ts";
@@ -364,7 +364,7 @@ export function renderPlayer(
 		if (bitmaps.length) {
 			P.bd = {};
 			// (pixels read by scripts: they are there at once, as in Flash Player)
-			const reads = /\.(getPixel32|getPixel|getPixels|getVector|copyPixels|copyChannel|draw|threshold|compare|histogram|getColorBoundsRect|hitTest|merge|paletteMap|floodFill|clone)\b/.test(scripts.js);
+			const reads = PIXEL_READS.test(scripts.js);
 			for (const [name, id] of bitmaps) {
 				const b = doc.bitmap(id);
 				if (!b) continue;

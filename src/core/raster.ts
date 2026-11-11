@@ -63,14 +63,16 @@ export function tickSource(model: SceneModel, files: FileSource, s: ExportSettin
 		count = most;
 	}
 	const { width, height, frameRate } = model.doc;
+	// colour grading: the finished picture, pixel by pixel (exact; the drawings stay as they are)
+	const grade = s.grade && !s.grade.empty ? s.grade : null;
 	const W = Math.max(1, Math.round(width)),
 		H = Math.max(1, Math.round(height));
 	return {
 		count,
 		loop: horizon.loop || horizon.tail > 0,
 		tickMs: 1000 / frameRate,
-		draw: (t, scale = 1) =>
-			rasterize(
+		draw: async (t, scale = 1) => {
+			const px = await rasterize(
 				renderStatic(ctx, rootId, {
 					frame: rootFrames[t]!,
 					ticks: t,
@@ -81,7 +83,10 @@ export function tickSource(model: SceneModel, files: FileSource, s: ExportSettin
 				}).svg,
 				Math.max(1, Math.round(W * scale)),
 				Math.max(1, Math.round(H * scale)),
-			),
+			);
+			grade?.pixels(px.data);
+			return px;
+		},
 	};
 }
 

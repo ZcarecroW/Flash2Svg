@@ -4,7 +4,7 @@
 // --steps: export without interpolation (one step per frame) and check halfway between frames.
 // After a stop() on the root timeline, ticks into the looping tail of the running movie clips are
 // checked too (reported as negative "frames").
-// Usage: node scripts/e2e-browser.ts [name,...] [--formats=smil,css] [--every=4] [--browser=msedge|chrome|firefox|webkit] [--steps] [--threshold=0.0015]
+// Usage: node scripts/e2e-browser.ts [name,...] [--formats=smil,css] [--every=4] [--browser=msedge|chrome|firefox|webkit] [--steps] [--threshold=0.0015] [--lut=file.cube]
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -12,11 +12,19 @@ import pixelmatch from "pixelmatch";
 import { chromium, firefox, webkit } from "playwright-core";
 import { PNG } from "pngjs";
 import { compileScene, type OutputFormat } from "../src/core/compile.ts";
+import { Grade, parseLut } from "../src/core/grade.ts";
 import { createContext } from "../src/core/context.ts";
 import { renderStatic } from "../src/core/emit/static.ts";
 import { playhead, playheadFrame } from "../src/core/emit/timing.ts";
 import { withFonts } from "./lib/fonts.ts";
 import type { SceneModel } from "../src/core/model.ts";
+
+// --lut=<file>: everything graded by that LUT (.cube or .3dl): the animation against graded still frames
+const lutFile = process.argv
+	.slice(2)
+	.find((a) => a.startsWith("--lut="))
+	?.slice(6);
+const lutGrade = lutFile ? { grade: new Grade([{ lut: parseLut(readFileSync(lutFile, "utf8"), lutFile), strength: 1 }]) } : {};
 
 /**
  * Videos hidden: their frames aren't part of this comparison (scripts/e2e-video.ts plays them),
@@ -121,7 +129,7 @@ for (const name of names) {
 	const dir = guide ? join(out, "guide-demos", guide, "browser") : join(out, name, "browser");
 	mkdirSync(dir, { recursive: true });
 	const { width, height, frameRate } = model.doc;
-	const statics = compileScene(model, files, { format: "static", includeBackground: true });
+	const statics = compileScene(model, files, { format: "static", includeBackground: true, ...lutGrade });
 	const frameCount = statics.files.length;
 	// A root that stops (stop() script) leaves its movie clips running: check ticks after the stop,
 	// into the looping tail, against static renders of the last frame at those ticks.
@@ -129,7 +137,7 @@ for (const name of names) {
 	const rootId = model.roots[0]!;
 	const ph = playhead(ctx.programs[rootId]!);
 	// after the stop, around the end of the first pass (SMIL/CSS switch to the tail there) and in the tail
-	const firstStats = compileScene(model, files, { format: "smil" }).stats;
+	const firstStats = compileScene(model, files, { format: "smil", ...lutGrade }).stats;
 	const firstPass = firstStats.loopFrom ?? firstStats.frames;
 	const stopTicks =
 		!steps && !ph.cycle.length ? [...new Set([ph.prefix.length, ph.prefix.length + 6, firstPass - 1, firstPass + 3, firstPass + 29, 2 * firstPass + 11])] : [];
@@ -138,7 +146,7 @@ for (const name of names) {
 	// the root frame they show
 	const far = steps ? [] : [5003, 12347].map((t) => [t, playheadFrame(ctx.programs[rootId]!, t)] as const);
 	for (const format of formats) {
-		const anim = compileScene(model, files, { format, includeBackground: true, smooth: !steps });
+		const anim = compileScene(model, files, { format, includeBackground: true, smooth: !steps, ...lutGrade });
 		const file = join(dir, `${format}${steps ? "-steps" : ""}.svg`);
 		writeFileSync(file, noVideo(anim.files[0]!.svg));
 		const horizon = Math.round(anim.stats.durationSeconds * frameRate);
@@ -190,7 +198,7 @@ for (const name of names) {
 			}
 		}
 		// the end state of a non-looping export: everything holds the last frame
-		const once = compileScene(model, files, { format, includeBackground: true, smooth: !steps, loop: "never" });
+		const once = compileScene(model, files, { format, includeBackground: true, smooth: !steps, loop: "never", ...lutGrade });
 		const onceFile = join(dir, `${format}${steps ? "-steps" : ""}-once.svg`);
 		writeFileSync(onceFile, noVideo(once.files[0]!.svg));
 		const lastFrame = Math.min(frameCount, Math.round(once.stats.durationSeconds * frameRate) || frameCount) - 1;

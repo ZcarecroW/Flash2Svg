@@ -3,6 +3,7 @@
  * compact, uniquely-identified fragments the emitters can place anywhere.
  */
 import { apply, fmt, fmtMatrix, invert, isIdentity, parseTransform } from "./geom.ts";
+import { hexRgb, linearToSrgb, rgbHex, srgbToLinear, type Grade, type GradientStop } from "./grade.ts";
 import type { BitmapFill, Mat } from "./model.ts";
 import { clone, el, isNode, parseXml, stripWhitespace, walk, type XmlNode } from "./xml.ts";
 
@@ -25,13 +26,98 @@ export interface ArtworkOptions {
 	bitmapFills?: BitmapFill[];
 	/** Strokes that keep their width when scaled (scale "none"): "#rrggbb|width". */
 	fixedStrokes?: Set<string>;
+	/** Colour grading (grade.ts): every colour of the drawing through the LUTs. */
+	grade?: Grade;
+	/**
+	 * Graded frames of a shape tween: per gradient (by its place among the drawing's gradients;
+	 * Animate numbers their ids across a whole export), where every frame gets stops added in each
+	 * stretch between its stops (see gradientPlan), so the frames keep one structure.
+	 */
+	stopPlan?: Map<number, number[][]>;
 }
 
-function srgbToLinear(c: number): number {
-	return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+/** A gradient's stops as numbers. */
+function gradientStops(g: XmlNode): GradientStop[] {
+	return g.children
+		.filter((c): c is XmlNode => isNode(c) && c.name === "stop")
+		.map((s) => {
+			const o = s.attrs.offset ?? "0";
+			return {
+				off: o.endsWith("%") ? parseFloat(o) / 100 : parseFloat(o),
+				rgb: hexRgb(s.attrs["stop-color"] ?? "#000000"),
+				a: s.attrs["stop-opacity"] !== undefined ? parseFloat(s.attrs["stop-opacity"]) : 1,
+			};
+		});
 }
-function linearToSrgb(c: number): number {
-	return c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055;
+
+/**
+ * For one frame of a shape tween: per gradient (by Animate's id), where its stretches between
+ * stops get stops added under the grade (Grade.knots). The union over a tween's frames keeps every
+ * frame within the tolerance and all of them in one structure.
+ */
+export function gradientPlan(svgText: string, grade: Grade, linearRGB?: Set<string>): Map<number, number[][]> {
+	const plan = new Map<number, number[][]>();
+	const root = stripWhitespace(parseXml(svgText));
+	for (const [x, place] of gradientOrder(defsOf(root))) {
+		const lin = !!linearRGB?.size && (linearRGB.has("*") || linearRGB.has(gradientSignature(x)));
+		plan.set(place, grade.knots(gradientStops(x), lin));
+	}
+	return plan;
+}
+
+/** The children of an exported SVG's <defs> that importArtwork keeps (SVG fonts dropped). */
+function defsOf(root: XmlNode): XmlNode[] {
+	const node = root.children.find((c): c is XmlNode => isNode(c) && c.name === "defs");
+	return node ? node.children.filter((c): c is XmlNode => isNode(c) && c.name !== "font" && c.name !== "font-face") : [];
+}
+
+/** The gradients among the definitions, numbered in document order. */
+function gradientOrder(defs: XmlNode[]): Map<XmlNode, number> {
+	const order = new Map<XmlNode, number>();
+	for (const d of defs) walk(d, (x) => void ((x.name === "linearGradient" || x.name === "radialGradient") && order.set(x, order.size)));
+	return order;
+}
+
+/**
+ * The stroke colour Animate gave a graded drawing's element (by node): signatures from the
+ * extractor (pen strokes, pens.ts) name Animate's colours, and two colours a LUT makes one would
+ * be told apart by them no more.
+ */
+export const sourceStroke = new WeakMap<XmlNode, string>();
+
+/** Attributes that hold a colour (Animate writes #RRGGBB; alpha comes in *-opacity). */
+const COLOUR_ATTRS = ["fill", "stroke", "flood-color", "lighting-color", "color"];
+
+/**
+ * Every colour of the drawing graded (grade.ts). Gradients get their stops anew: the colour
+ * between two stops is interpolated as Animate does (sRGB, or linear light for "Linear RGB",
+ * which replaces expandLinearRGB then), then graded, with stops added where the LUT bends it.
+ */
+function gradeArtwork(nodes: XmlNode[], grade: Grade, linear: (g: XmlNode) => boolean, plan?: Map<number, number[][]>, order?: Map<XmlNode, number>) {
+	for (const n of nodes)
+		walk(n, (x) => {
+			if (x.name === "linearGradient" || x.name === "radialGradient") {
+				const parsed = gradientStops(x);
+				if (!parsed.length) return;
+				const lin = linear(x);
+				const place = order?.get(x);
+				const at = plan && place !== undefined ? plan.get(place) : undefined;
+				x.children = [
+					...x.children.filter((c) => !isNode(c) || c.name !== "stop"),
+					...(at ? grade.stopsAt(parsed, lin, at) : grade.stops(parsed, lin)).map((s) =>
+						el("stop", { offset: fmt(s.off, 4), "stop-color": rgbHex(s.rgb), "stop-opacity": s.a < 1 ? fmt(s.a, 3) : undefined }),
+					),
+				];
+				return;
+			}
+			if (x.name === "stop") return;
+			for (const k of COLOUR_ATTRS) {
+				const v = x.attrs[k];
+				if (!v || v[0] !== "#") continue;
+				if (k === "stroke") sourceStroke.set(x, v);
+				x.attrs[k] = grade.hex(v);
+			}
+		});
 }
 
 function gradientSignature(g: XmlNode): string {
@@ -186,6 +272,8 @@ function markFixedStrokes(nodes: XmlNode[], sigs: Set<string>) {
 export function importArtwork(svgText: string, id: string, opts: ArtworkOptions): Artwork {
 	const root = stripWhitespace(parseXml(svgText));
 	const defsNode = root.children.find((c): c is XmlNode => isNode(c) && c.name === "defs");
+	// (where each gradient stands, for a shape tween's stop plan: before drawings are inlined)
+	const order = opts.stopPlan ? gradientOrder(defsOf(root)) : undefined;
 	const content = root.children.filter((c): c is XmlNode => isNode(c) && c.name !== "defs" && c.name !== "title" && c.name !== "desc");
 
 	// Index defs; drop SVG fonts (unsupported by browsers; text is converted to outlines upstream).
@@ -239,14 +327,17 @@ export function importArtwork(svgText: string, id: string, opts: ArtworkOptions)
 	const keptDefs = defs.filter((d) => !d.attrs.id || byId.has(d.attrs.id));
 	if (opts.bitmapFills?.length) linkBitmapFills(keptDefs, body, opts.bitmapFills);
 
-	if (opts.linearRGB?.size) {
+	// (signatures name Animate's own colours: matched before grading)
+	const linearRGB = (d: XmlNode) => !!opts.linearRGB?.size && (opts.linearRGB.has("*") || opts.linearRGB.has(gradientSignature(d)));
+	if (opts.linearRGB?.size && !opts.grade) {
 		for (const d of keptDefs) {
 			const gradient = d.name === "linearGradient" || d.name === "radialGradient";
-			if (gradient && (opts.linearRGB.has("*") || opts.linearRGB.has(gradientSignature(d)))) expandLinearRGB(d);
+			if (gradient && linearRGB(d)) expandLinearRGB(d);
 		}
 	}
 
 	if (opts.fixedStrokes?.size) markFixedStrokes([...keptDefs, body], opts.fixedStrokes);
+	if (opts.grade) gradeArtwork([...keptDefs, body], opts.grade, linearRGB, opts.stopPlan, order);
 
 	// Unique ids
 	const map = new Map<string, string>();
