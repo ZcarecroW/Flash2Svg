@@ -7,6 +7,10 @@ description: The main changes in each Flash2SVG version since the version 4 rewr
 
 The full list is in the [changelog](https://github.com/ZcarecroW/Flash2Svg/blob/main/CHANGELOG.md); downloads are on the [releases page](https://github.com/ZcarecroW/Flash2Svg/releases).
 
+## 5.2.2
+
+**A review of the whole project for bugs.** In SMIL, CSS and Lottie a wait between two tweens stays a wait, and a movie clip that ends in `stop()` on a one-frame main timeline plays (it was a still picture of its first frame) — once, as in Flash, also when the timeline around it loops. Sounds in SMIL and CSS files are compressed like the player's (the test document: 1163 → 92 KB). The JS player's *Play once* ends when the last frame jumps back to the first, *Always loop* overrides the timeline's `stop()`, and sounds no longer pile up before the start. Frame scripts take more of what AS3 code is written like; Lottie keeps shape tweens with bitmap fills; GIF frames no longer show through each other. Bitmaps and sounds whose names differ only in non-Latin characters each keep their own file. SMIL and CSS files with clips drawn frame by frame are smaller (a stress document: 151 → 95 KB as SMIL). [Limits](limits.md#known-limits) lists what stays open.
+
 ## 5.2
 
 **Colour grading with LUTs.** Give a whole export one look: every colour goes through LUTs from colour grading tools — `.cube` (as Resolve, Premiere, After Effects and Photoshop write them), `.3dl` and Hald CLUT images — each with a strength, in an order you choose. Shapes, gradients, text, filters, colour effects, the stage colour and every pixel of the bitmaps change; GIF, WebP, APNG and video grade each finished picture. [Colour grading](appearance.md#colour-grading). **A wider panel:** make it wider and the sections stand side by side in two or three columns instead of one long list. [The panel](panel.md). **Smaller shape tweens** whose colours don't blend in a straight line (the morph test −23 % as Lottie, −3 % as SMIL). In this guide, the dart of the [motion guide demo](animation.md#motion-guides) now points along its path.

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 5.2.2 (2026-11-14)
 
 A review of the whole project for bugs: every part read through, the findings reproduced, fixed and put under test (35 new unit tests; the baked tracks compared with the program at every tick of 3000 random documents and the 102 test documents: 0 differences, before 157 and 1).
 
