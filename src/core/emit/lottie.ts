@@ -1247,6 +1247,14 @@ class LottieWriter {
 		return out;
 	}
 
+	/** A drawing's layers shown as they are over [s, e): one layer as itself, several (or a matte) in a composition. */
+	private still(layers: LayerOut[], s: number, e: number): LayerOut[] {
+		if (!layers.length) return [];
+		if (layers.length === 1 && !layers[0]!.td) return [{ ...layers[0]!, json: { ...layers[0]!.json, ip: s, op: e, st: 0 } }];
+		const ref = this.precomp(null, "", () => [...layers].reverse().map((l) => ({ ...l, json: { ...l.json, ip: 0, op: this.H, st: 0 } })));
+		return [{ json: { ty: 0, refId: ref.id, w: ref.w, h: ref.h, ip: s, op: e, st: 0, ks: { a: st([ref.ox, ref.oy]) } }, box: ref.box }];
+	}
+
 	/**
 	 * A drawing under a colour transform that changes over [s, e): converted at every key of the
 	 * transform, the paints merged into keyframes with its eases (exact: the colours are linear in
@@ -1259,8 +1267,8 @@ class LottieWriter {
 		const first = frames[0]!.layers;
 		if (first.length !== 1 || first[0]!.json.ty !== 4) {
 			this.warn("A colour effect that changes over a drawing with bitmap fills or clipping is shown at its first value in Lottie");
-			const b = drawingOf(this, a, { matte: false, stable: false, paint: paintAt(p, s), scale });
-			return b.layers.length === 1 ? [{ ...b.layers[0]!, json: { ...b.layers[0]!.json, ip: s, op: e, st: 0 } }] : [];
+			// (a pattern fill is content and its matte, several layers: together in a composition)
+			return this.still(drawingOf(this, a, { matte: false, stable: false, paint: paintAt(p, s), scale }).layers, s, e);
 		}
 		const bent = new Set<string>();
 		for (let i = 0; i + 1 < g.times.length; i++) {
@@ -1710,6 +1718,16 @@ class LottieWriter {
 			const frames = times.map(at);
 			if (frames.some((f) => f.layers.length !== 1 || f.layers[0]!.json.ty !== 4)) {
 				this.warn("A shape tween with bitmap fills or clipping is drawn frame by frame");
+				// (each tick's drawing for its tick; ticks that show the same one share it)
+				let from = a,
+					was = NaN;
+				for (let t = a; t <= b; t++) {
+					const now = t < b ? valueAt(ratio as Track, t) + (frame.length ? valueAt(frame as Track, t) : 0) * 1e6 : NaN;
+					if (now === was) continue;
+					if (t > a) out.push(...this.still(at(from).layers, from, t));
+					from = t;
+					was = now;
+				}
 				continue;
 			}
 			const eases = times.map((t, i) => (i + 1 < times.length ? easeBetween(ratio, t, times[i + 1]!) : "hold"));
@@ -2638,10 +2656,11 @@ function audioLayers(track: SoundSchedule, out: Json[], assets: Json[], H: numbe
 			ks: {},
 			au: { lv: { a: 0, k: [100, 100] } },
 		};
-		out.unshift(layer);
+		// (after the others, with a number of its own: the layers' numbers stay, which mattes
+		// (tp) and the camera's children (parent) point at)
+		out.push(layer);
 		open.push(layer);
 	}
-	out.forEach((l, i) => void (l.ind = i + 1));
 }
 
 export function renderLottie(ctx: Context, rootId: string, s: ExportSettings, images: LottieImages): LottieResult {

@@ -117,8 +117,15 @@ export function toFileUri(p: string): string {
 
 export function fromFileUri(uri: string): string {
 	// decodeURIComponent: decodeURI would leave "%23" (#, see toFileUri) encoded
-	let s = decodeURIComponent(uri.replace(/^file:\/\//, ""));
+	let s = uri.replace(/^file:\/\//, "");
+	try {
+		s = decodeURIComponent(s);
+	} catch {
+		// a "%" that encodes nothing ("100%.fla"): the name as it is
+	}
 	if (/^\/[A-Za-z][|:]/.test(s)) s = s[1] + ":" + s.slice(3);
+	// file://server/share/…: a network path with the server as the host (else it would be relative)
+	else if (s !== uri && /^[^/\\]/.test(s)) s = "//" + s;
 	return node?.path ? node.path.normalize(s) : s;
 }
 

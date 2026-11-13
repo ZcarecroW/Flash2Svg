@@ -202,8 +202,12 @@ export class StaticRenderer {
 		let childTicks: number;
 		if (item.symbolType === "graphic") {
 			childFrame = graphicFrame(item, frame, child.frameCount);
-			// movie clips inside keep counting ticks while the parent holds a frame (stop())
-			childTicks = childFrame + Math.max(0, ticks - frame);
+			// movie clips inside keep counting ticks while the parent holds a frame (stop()), and
+			// the frames the graphic didn't move on with its parent: it came round its loop, or
+			// shows a single frame (a clip in a one-frame graphic stood on its first frame for ever)
+			const elapsed = frame - item.start;
+			const lost = Math.min(elapsed, Math.max(0, elapsed - (childFrame - graphicFrame(item, item.start, child.frameCount))));
+			childTicks = childFrame + lost + Math.max(0, ticks - frame);
 		} else if (item.symbolType === "button") {
 			childFrame = 0;
 			childTicks = 0;

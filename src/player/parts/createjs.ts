@@ -465,6 +465,7 @@ export default function createJS(L: any): Record<string, unknown> {
 		removeAllEventListeners(this: any, type?: string) {
 			if (type) this._on?.delete(type);
 			else this._on?.clear();
+			if (!type || type === "tick") s.heard.get("tick")?.delete(this);
 		},
 	});
 	DisplayObject.prototype.dispatchEvent = Dispatcher.prototype.dispatchEvent;
@@ -600,6 +601,8 @@ export default function createJS(L: any): Record<string, unknown> {
 			this.ops.length = 0;
 			this.drew = false;
 			this.g?.clear();
+			// (its gradients go with it: a shape drawn anew every tick would pile them up)
+			for (const e of this.made.splice(0)) e.remove();
 			return this;
 		}
 		append(c: { exec?: Fn }) {
@@ -613,12 +616,13 @@ export default function createJS(L: any): Record<string, unknown> {
 				else g.so = 1;
 			}, false);
 		}
+		private made: Element[] = [];
 		private gradient(linear: boolean, colors: string[], stops: number[], a: number[]) {
 			const id = `${s.player.svg.id}_g${s.uid++}`;
 			const e = svgEl(linear ? "linearGradient" : "radialGradient", { id, gradientUnits: "userSpaceOnUse" });
 			(linear ? ["x1", "y1", "x2", "y2"] : ["fx", "fy", "fr", "cx", "cy", "r"]).forEach((n, i) => e.setAttribute(n, String(a[i])));
 			colors.forEach((c, i) => e.appendChild(svgEl("stop", { offset: String(stops[i]), "stop-color": c })));
-			s.player.defs.appendChild(e);
+			this.made.push(s.player.defs.appendChild(e));
 			return `url(#${id})`;
 		}
 		beginFill(c: string | null) {
@@ -795,6 +799,9 @@ export default function createJS(L: any): Record<string, unknown> {
 					this.step = 0;
 					this.at = 0;
 					this.from = null;
+					// (a round that takes no time — only calls and sets — comes once a tick: it
+					// would go round for ever inside this one, and the page would stand still)
+					if (!this.list.some((x) => x.ms > 0)) return;
 					continue;
 				}
 				if (e.to && !this.from) {
@@ -959,7 +966,9 @@ export default function createJS(L: any): Record<string, unknown> {
 		);
 	};
 
-	const Ticker = Object.assign(new Dispatcher(), {
+	// (with their getters and setters: Object.assign would copy what they return at this moment)
+	const mix = <T extends object, U extends object>(to: T, from: U): T & U => Object.defineProperties(to, Object.getOwnPropertyDescriptors(from)) as T & U;
+	const Ticker = mix(new Dispatcher(), {
 		get framerate() {
 			return s.rate;
 		},
@@ -978,6 +987,11 @@ export default function createJS(L: any): Record<string, unknown> {
 		getTicks: () => s.ticks,
 		getTime: () => performance.now(),
 		getMeasuredFPS: () => s.rate,
+		// (the names before CreateJS 1.0)
+		getFPS: () => s.rate,
+		setFPS: (v: number) => void (s.stage.frameRate = v),
+		getInterval: () => 1000 / s.rate,
+		setInterval: (v: number) => void (s.stage.frameRate = 1000 / v),
 		getMeasuredTickTime: () => 0,
 		getEventTime: () => performance.now(),
 		init() {},
@@ -989,7 +1003,7 @@ export default function createJS(L: any): Record<string, unknown> {
 	s.ticker = Ticker;
 
 	const instance = (e: { paused?: boolean }, c: any) =>
-		Object.assign(e, {
+		mix(e, {
 			stop: () => c.stop(),
 			get position() {
 				return c.position;

@@ -19,17 +19,22 @@ import { evalBezier } from "./easing.ts";
 export function valueAt(track: Track, t: number): number {
 	if (!track.length) return 0;
 	if (t <= track[0]!.t) return track[0]!.v;
-	for (let i = 0; i < track.length - 1; i++) {
-		const a = track[i]!,
-			b = track[i + 1]!;
-		if (t < b.t) {
-			if (a.ease === "hold") return a.v;
-			const u = (t - a.t) / (b.t - a.t);
-			const p = a.ease === "linear" ? u : evalBezier(a.ease, u);
-			return a.v + (b.v - a.v) * p;
-		}
+	// the first key after t, by halving (asked for every key of long tracks, a scan from the
+	// start was most of a long document's Lottie export: 178 ms, now 73)
+	let lo = 1,
+		hi = track.length;
+	while (lo < hi) {
+		const mid = (lo + hi) >> 1;
+		if (track[mid]!.t > t) hi = mid;
+		else lo = mid + 1;
 	}
-	return track[track.length - 1]!.v;
+	if (lo >= track.length) return track[track.length - 1]!.v;
+	const a = track[lo - 1]!,
+		b = track[lo]!;
+	if (a.ease === "hold") return a.v;
+	const u = (t - a.t) / (b.t - a.t);
+	const p = a.ease === "linear" ? u : evalBezier(a.ease, u);
+	return a.v + (b.v - a.v) * p;
 }
 
 export function isConstant(track: Track, eps = 1e-9): boolean {
@@ -137,49 +142,6 @@ function rdp(track: Track, a: number, b: number, tol: number, keep: boolean[]) {
 	}
 }
 
-/** Shifts and clips a track to local time window [from, to) and re-bases it to start at `offset`. */
-export function window(track: Track, from: number, to: number, offset: number): Track {
-	const out: Track = [];
-	const startV = valueAt(track, from);
-	out.push({ t: offset, v: startV, ease: easeAt(track, from) });
-	for (const k of track) {
-		if (k.t > from && k.t < to) out.push({ t: k.t - from + offset, v: k.v, ease: k.ease });
-	}
-	const endV = valueAt(track, to);
-	out.push({ t: to - from + offset, v: endV, ease: "hold" });
-	// An eased segment cut in the middle can't keep its bezier: approximate the cut parts linearly
-	// by sampling, so the visible curve stays right.
-	return fixCutEases(track, out, from, offset);
-}
-
-function easeAt(track: Track, t: number): Ease {
-	for (let i = track.length - 1; i >= 0; i--) if (track[i]!.t <= t) return track[i]!.ease;
-	return "hold";
-}
-
-function fixCutEases(src: Track, out: Track, from: number, offset: number): Track {
-	const res: Track = [];
-	for (let i = 0; i < out.length; i++) {
-		const k = out[i]!;
-		const next = out[i + 1];
-		res.push(k);
-		if (!next || typeof k.ease === "string") continue;
-		// Is [k, next] an exact original segment?
-		const t0 = k.t - offset + from,
-			t1 = next.t - offset + from;
-		const exact = src.some((s, j) => Math.abs(s.t - t0) < 1e-9 && src[j + 1] && Math.abs(src[j + 1]!.t - t1) < 1e-9);
-		if (exact) continue;
-		// resample the partial segment
-		k.ease = "linear";
-		const steps = Math.max(2, Math.ceil(t1 - t0) * 2);
-		for (let s = 1; s < steps; s++) {
-			const t = t0 + ((t1 - t0) * s) / steps;
-			res.push({ t: t - from + offset, v: valueAt(src, t), ease: "linear" });
-		}
-	}
-	return res;
-}
-
 /**
  * Keys through values sampled at frames t0, t0 + 1, … that pass every one within `tol`, as few as
  * it takes: straight runs linear, curved ones cubic timing functions. Every piece is monotonic
@@ -226,8 +188,12 @@ export function fitCurve(vals: readonly number[], t0: number, tol: number, curve
 	const one = (a: End, b: End): { ease: Ease } | { split: End } => {
 		const len = b.t - a.t,
 			d = b.v - a.v;
-		let dev = 0;
-		for (let k = Math.floor(a.t) + 1; k < b.t; k++) dev = Math.max(dev, Math.abs(a.v + (d * (k - a.t)) / len - v[k]!));
+		let dev = 0,
+			devAt = -1;
+		for (let k = Math.floor(a.t) + 1; k < b.t; k++) {
+			const o = Math.abs(a.v + (d * (k - a.t)) / len - v[k]!);
+			if (o > dev) [dev, devAt] = [o, k];
+		}
 		if (dev <= tol) return { ease: "linear" };
 		// a turning point: the value furthest beyond the ends' range
 		const lo = Math.min(a.v, b.v) - tol,
@@ -239,6 +205,10 @@ export function fitCurve(vals: readonly number[], t0: number, tol: number, curve
 			if (o > far) [far, turn] = [o, k];
 		}
 		if (turn >= 0) return { split: turning(turn, a, b) };
+		// Both ends at one value, and a frame off it by just the tolerance (10, 10.05, 10: rounded
+		// one way above, the other here): no turning point found, and no rise to measure the
+		// slopes against — the ease came out as NaN, the object drew at 0. Split at that frame.
+		if (Math.abs(d) < 1e-9) return { split: turning(devAt, a, b) };
 		const m0 = Math.max(0, (a.s * len) / d),
 			m1 = Math.max(0, (b.s * len) / d);
 		// (flat at a turning point first; its frame may be a little off the true one: free then)

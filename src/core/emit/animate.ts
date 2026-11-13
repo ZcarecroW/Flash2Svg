@@ -547,19 +547,28 @@ class Writer {
 			}
 		}
 		const fixedFilters = filterSets.length ? filterSets[0]!.filters : [];
+		let cssColour: (() => void) | null = null;
 		if (color && !alphaOnly && colorAnimated && this.css) {
 			// CSS cannot animate filter primitives: switch between per-frame colour filters
-			const steps: { t: number; v: string }[] = [];
-			let last = "";
-			for (let t = 0; t < this.H; t++) {
-				const c = colorAtTick(color, t)!;
-				const ref = this.doc.filter(filterSets.length === 1 ? fixedFilters : [], c, scale, this.warn, size) ?? "none";
-				if (ref !== last) steps.push({ t, v: ref });
-				last = ref;
+			cssColour = () => {
+				const steps: { t: number; v: string }[] = [];
+				let last = "";
+				for (let t = 0; t < this.H; t++) {
+					const c = colorAtTick(color, t)!;
+					const ref = this.doc.filter(filterSets.length === 1 ? fixedFilters : [], c, scale, this.warn, size) ?? "none";
+					if (ref !== last) steps.push({ t, v: ref });
+					last = ref;
+				}
+				const wrap = el("g", { filter: steps.find((s) => s.t <= this.posterTick)?.v ?? steps[0]!.v }, [inner]);
+				this.cssDiscrete(wrap, "filter", steps, "none");
+				inner = wrap;
+			};
+			// (with filters that change: around them, below — the colour comes after the filters,
+			// as in SMIL and the still frames, so a shadow takes the tint too)
+			if (filterSets.length <= 1) {
+				cssColour();
+				cssColour = null;
 			}
-			const wrap = el("g", { filter: steps.find((s) => s.t <= this.posterTick)?.v ?? steps[0]!.v }, [inner]);
-			this.cssDiscrete(wrap, "filter", steps, "none");
-			inner = wrap;
 		} else if (color && !alphaOnly) {
 			// colour matrix filter (animated values via SMIL)
 			const fid = this.doc.uid("cx");
@@ -590,6 +599,7 @@ class Writer {
 			this.discrete(wrap, "filter", refs, "none");
 			inner = wrap;
 		}
+		cssColour?.();
 		const blend = cssBlendMode(n.item.blendMode, this.warn);
 		if (blend) style.push(`mix-blend-mode:${blend}`);
 		if (n.item.blendMode === "layer") style.push("isolation:isolate");
@@ -1009,7 +1019,8 @@ class Writer {
 		make = (a: Record<string, string>) => el("animate", { attributeName: attr, ...a }),
 	): XmlNode[] {
 		const out: XmlNode[] = [];
-		for (const [from, len, tail] of this.windows()) {
+		const P = this.stepsPeriod(steps, off);
+		for (const [from, len, tail] of P ? ([[0, P, false]] as [number, number, boolean][]) : this.windows()) {
 			const keys = this.sliceSteps(steps, from, from + len, off);
 			if (tail && keys.length < 2) continue;
 			const times: number[] = [],
@@ -1022,14 +1033,16 @@ class Writer {
 				times.push(k.t / len);
 				values.push(k.v);
 			}
-			out.push(make({ values: values.join(";"), keyTimes: times.map(floorTime).join(";"), calcMode: "discrete", ...this.timing(tail) }));
+			out.push(
+				make({ values: values.join(";"), keyTimes: times.map(floorTime).join(";"), calcMode: "discrete", ...(P ? this.periodTiming(P) : this.timing(tail)) }),
+			);
 		}
 		return out;
 	}
 
 	/** values/keyTimes/keySplines for SMIL from tracks with identical key times. */
 	smilValues(tracks: GTrack[], fmtV: (v: number[]) => string, H = this.H): Record<string, string> | null {
-		const keys = mergeTracks(tracks, H);
+		const keys = mergeTracks(tracks, H, true);
 		if (!keys) return null;
 		const times: number[] = [],
 			values: string[] = [],
@@ -1052,7 +1065,8 @@ class Writer {
 				if (holdEnd > k.t) add(holdEnd, k.v, "0 0 1 1");
 			} else if (Array.isArray(k.ease)) {
 				anyCurve = true;
-				add(k.t, k.v, k.ease.map((x) => fmt(x, 4) || "0").join(" "));
+				// (inside 0..1, whatever came: SVG takes nothing else, the whole animation would stand still)
+				add(k.t, k.v, k.ease.map((x) => fmt(Math.min(1, Math.max(0, x)), 4) || "0").join(" "));
 			} else add(k.t, k.v, "0 0 1 1");
 		}
 		// keyTimes must start at 0 and end at 1
@@ -1065,6 +1079,13 @@ class Writer {
 			times.push(1);
 			values.push(values[values.length - 1]!);
 			splines.push("0 0 1 1");
+		}
+		// a key at the very end before the last one (a hold closed there) takes no time: left out
+		// (nudged apart it would still be written as a second 1)
+		while (times.length > 2 && times[times.length - 2]! >= 1) {
+			times.splice(-2, 1);
+			values.splice(-2, 1);
+			splines.splice(-2, 1);
 		}
 		splines.pop();
 		// identical consecutive times are invalid in some engines: nudge them apart a little
@@ -1105,13 +1126,45 @@ class Writer {
 	}
 
 	private cssDiscrete(node: XmlNode, prop: string, steps: { t: number; v: string }[], off: string) {
+		const P = this.stepsPeriod(steps, off);
+		if (P) return this.cssDiscreteWin(node, prop, this.sliceSteps(steps, 0, P, off), off, P, false, P);
 		for (const [from, len, tail] of this.windows()) {
 			const s = this.sliceSteps(steps, from, from + len, off);
 			if (!tail || s.length > 1) this.cssDiscreteWin(node, prop, s, off, len, tail);
 		}
 	}
 
-	private cssDiscreteWin(node: XmlNode, prop: string, steps: { t: number; v: string }[], off: string, H: number, tail: boolean) {
+	/** The divisors of the horizon up to half of it: the periods something can repeat with. */
+	private divisors: number[] | null = null;
+
+	/**
+	 * Ticks after which switches repeat all through the looping horizon (0: they don't). A movie
+	 * clip drawn frame by frame, unrolled over a horizon many times its length (clips of 24, 25
+	 * and 26 frames come round together after 7800), is written once, repeating on its own —
+	 * like its tracks (see smil).
+	 */
+	private stepsPeriod(steps: { t: number; v: string }[], off: string): number {
+		if (!this.repeat || this.tail || steps.length < 3) return 0;
+		const H = this.H;
+		if (!this.divisors) {
+			this.divisors = [];
+			for (let P = 1; P <= H / 2; P++) if (H % P === 0) this.divisors.push(P);
+		}
+		// the changes round the loop: the state at 0 is one only if the last state differs from it
+		const all = steps[0]!.t > 0 ? [{ t: 0, v: off }, ...steps] : steps;
+		const changes = all[0]!.v === all[all.length - 1]!.v ? all.slice(1) : all;
+		if (changes.length < 2) return 0;
+		const key = (t: number) => Math.round(t * 1e6);
+		const at = new Map<number, string>();
+		for (const s of changes) at.set(key(s.t), s.v);
+		for (const P of this.divisors) {
+			if (changes.length % (H / P)) continue;
+			if (changes.every((s) => at.get(key(s.t + P < H - 1e-9 ? s.t + P : s.t + P - H)) === s.v)) return P;
+		}
+		return 0;
+	}
+
+	private cssDiscreteWin(node: XmlNode, prop: string, steps: { t: number; v: string }[], off: string, H: number, tail: boolean, period = 0) {
 		const name = this.cssName(node);
 		const frames: [string, string][] = [];
 		// switch at (or just before) the exact frame time, never after it
@@ -1121,7 +1174,7 @@ class Writer {
 		// explicit end value: without it a non-repeating animation ends ("fill: both") on the
 		// element's own attribute (e.g. visibility="hidden") instead of the last step
 		frames.push(["to", `${prop}:${steps.length ? steps[steps.length - 1]!.v : off}`]);
-		this.cssRule(node, name, groupFrames(frames), "step-end", tail);
+		this.cssRule(node, name, groupFrames(frames), "step-end", tail, period);
 	}
 
 	/** What is left of perspective, on HTML: CSS whatever the format (SMIL can't animate it). */
@@ -1436,12 +1489,19 @@ function sameTiming(a: GTrack, b: GTrack): boolean {
 }
 
 /** Combines tracks with the same timing into multi-value keys; samples linearly if timings differ. */
-function mergeTracks(tracks: GTrack[], H: number): MKey[] | null {
+function mergeTracks(tracks: GTrack[], H: number, align = false): MKey[] | null {
 	if (tracks.every(isConstantTrack)) return null;
 	const animated = tracks.filter((t) => !isConstantTrack(t));
 	const ref = animated[0]!;
 	if (animated.every((t) => sameTiming(ref, t))) {
 		return ref.map((k, i) => ({ t: k.t, v: tracks.map((tr) => (isConstantTrack(tr) ? (tr[0]?.v ?? 0) : tr[i]!.v)), ease: k.ease }));
+	}
+	// Other keys, but perhaps one ease wherever they change together (a tint eased over two
+	// keyframes, one of whose values stays: its keys say "linear" there): cut onto common keys,
+	// exactly. `align`: for SMIL, whose splines stay inside 0..1 (CSS has tried it already).
+	if (align) {
+		const keys = alignTracks(tracks);
+		if (keys?.every((k) => !Array.isArray(k.ease) || k.ease.every((x) => x >= -1e-6 && x <= 1 + 1e-6))) return keys;
 	}
 	// different timings: sample at the union of key times and every half tick (linear)
 	const times = new Set<number>();

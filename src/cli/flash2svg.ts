@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "no
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { gzipSync } from "node:zlib";
 import { compileScene, DEFAULT_SETTINGS, type ExportSettings } from "../core/compile.ts";
-import { encodeSounds } from "../core/audio.ts";
+import { carriesSounds, encodeSounds } from "../core/audio.ts";
 import { createAudioCodecs } from "../core/audio-codecs.ts";
 import { createCodecs } from "../core/codecs.ts";
 import { encodeImages } from "../core/images.ts";
@@ -236,11 +236,15 @@ async function main(argv: string[]) {
 				break;
 			default:
 				if (a.startsWith("-")) throw new Error(`Unknown option ${a}`);
+				if (input) throw new Error(`More than one scene given (${input} and ${a}): one export per call`);
 				input = a;
 		}
 	}
 	if (!input) throw new Error("No scene.json given");
-	const sceneFile = resolve(input);
+	// (the scene folder itself will do: hero.scene for hero.scene/scene.json)
+	const given = resolve(input);
+	const sceneFile = existsSync(given) && statSync(given).isDirectory() ? join(given, "scene.json") : given;
+	if (!existsSync(sceneFile)) throw new Error(`${input} not found`);
 	const base = dirname(sceneFile);
 	const read = parseModel(readFileSync(sceneFile, "utf8"), input);
 	const loader = nodeWasmLoader();
@@ -263,9 +267,9 @@ async function main(argv: string[]) {
 		s,
 		imageCodecs,
 	);
-	// only the player and video play sounds ("auto" picks the player for documents with sounds)
+	// (every format that plays sounds: the player, SMIL and CSS with their soundtrack script, Lottie's audio layers, video)
 	const video = s.format === "mp4" || s.format === "webm";
-	if ((s.format === "player" || s.format === "auto" || video) && Object.keys(model.sounds).length) {
+	if (carriesSounds(s) && Object.keys(model.sounds).length) {
 		const r = await encodeSounds(model, files, s, createAudioCodecs(loader));
 		({ model, files } = r);
 		warnings = [...warnings, ...r.warnings];
@@ -325,22 +329,29 @@ async function main(argv: string[]) {
 			const target = resolve(!out ? join(base, "..", docName) : folder ? join(out, docName) : out);
 			mkdirSync(dirname(target), { recursive: true });
 			// gzip inside: the extension says so, whatever name was given
-			const ext = defaultExt === ".svgz" ? ".svgz" : extname(target) || defaultExt;
+			// and a name with another format's extension follows the format, as in the panel
+			// (-o x.svg --format gif would put a GIF into x.svg); other extensions are the caller's
+			const own = extname(target);
+			const ext = defaultExt === ".svgz" || !own || (OUTPUT_EXT.test(own) && own.toLowerCase() !== defaultExt) ? defaultExt : own;
 			let stem = target.slice(0, target.length - extname(target).length);
 			if (roots > 1) stem += "_" + (model.timelines[model.roots[r]!]?.name ?? String(r + 1)).replace(/[\\/:*?"<>|]+/g, "_");
-			const own = stem;
-			for (let n = 2; used.has(stem.toLowerCase()); n++) stem = own + "_" + n;
+			const first = stem;
+			for (let n = 2; used.has(stem.toLowerCase()); n++) stem = first + "_" + n;
 			used.add(stem.toLowerCase());
 			for (const f of result.files) writeFileSync(stem + f.suffix + ext, f.bytes ?? f.svg);
 			for (const a of result.assets) {
 				const dst = join(dirname(target), a.path);
 				mkdirSync(dirname(dst), { recursive: true });
 				// re-encoded images exist only in memory
+				let bytes: Uint8Array;
 				try {
-					writeFileSync(dst, files.readBinary(a.source));
+					bytes = files.readBinary(a.source);
 				} catch {
 					process.stderr.write(`warning: missing ${a.source}\n`);
+					continue;
 				}
+				// (a file that can't be written — a full disk — ends the export with its error)
+				writeFileSync(dst, bytes);
 			}
 			for (const w of result.warnings) process.stderr.write(`warning: ${w}\n`);
 			const written =
@@ -353,10 +364,13 @@ async function main(argv: string[]) {
 			process.stdout.write(`  ${parts.map(([k, n]) => `${k} ${kb(n)} KB`).join(", ")}\n`);
 		}
 	} finally {
-		codecs?.close();
+		await codecs?.close();
 	}
 	void DEFAULT_SETTINGS;
 }
+
+/** The extensions the formats write (a name ending in another one's gets the format's own). */
+const OUTPUT_EXT = /^\.(svgz?|json|lottie|gif|webp|png|mp4|webm)$/i;
 
 /** The extractor's scene.json, or a message saying what it is instead. */
 function parseModel(text: string, name: string): SceneModel {

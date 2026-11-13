@@ -422,7 +422,8 @@ export class Emitter {
 		if (this.lookup(name) !== undefined) return safe(name);
 		if (name === "trace") return "$f.trace";
 		if (name === "arguments") return name;
-		if (this.members.has(name)) return `$t.${safe(name) === name ? name : `["${name}"]`}`;
+		// (as a property any name will do, JavaScript's own words too: `var of:int`, `function export()`)
+		if (this.members.has(name)) return `$t.${name}`;
 		const mi = this.klass?.member(name);
 		if (mi) {
 			if (mi.isStatic) return `$r.cls(${JSON.stringify(mi.owner)},null).${mi.js}`;
@@ -565,7 +566,9 @@ export class Emitter {
 					if (x.op === "&&=" || x.op === "||=") return `(${a}=${a}${x.op.slice(0, 2)}${b})`;
 					return `(${a}${x.op}${b})`;
 				}
-				return `(${a}=${this.coerce(t, `${a}${x.op.slice(0, -1)}(${b})`)})`;
+				// (uint: in its own brackets — `a|(b)>>>0` would convert b alone and leave a sign)
+				const sum = `${a}${x.op.slice(0, -1)}(${b})`;
+				return `(${a}=${this.coerce(t, t === "uint" ? `(${sum})` : sum)})`;
 			}
 			case "cond":
 				return `(${this.expr(x.c)}?${this.expr(x.a)}:${this.expr(x.b)})`;
@@ -641,6 +644,8 @@ export class Emitter {
 			const cls = type === "int" || type === "uint" || type === "Number" || type === "String" || type === "Boolean" || type === "Class" ? `"${type}"` : this.expr(x.b);
 			return `$r.${x.op}(${a},${cls})`;
 		}
+		// (a Dictionary's keys are kept as the index writes them: objects by their own key)
+		if (x.op === "in" && this.isDictionary(x.b)) return `($r.key(${a}) in ${this.expr(x.b)})`;
 		return `(${a}${x.op === "instanceof" || x.op === "in" ? ` ${x.op} ` : x.op}${this.expr(x.b)})`;
 	}
 
@@ -662,13 +667,16 @@ export class Emitter {
 			if (f.name === "Namespace" || f.name === "QName") return `new $f.${f.name}(${list})`;
 			if (f.name === "XMLList") return `new $f.XMLList(${list})`;
 			if (this.filters && f.name in XML_RETURNS) return `$x.${f.name}(${list})`;
-			if (f.name === "int") return `(${list}|0)`;
-			if (f.name === "uint") return `(${list}>>>0)`;
+			// (without a value: 0, as in AS3 — not `(|0)`, which JavaScript can't read)
+			if (f.name === "int") return `(${list || 0}|0)`;
+			if (f.name === "uint") return `(${list || 0}>>>0)`;
 			if (f.name === "String" && args.length === 1) return `$r.text(${list})`;
 			// a cast: Class(x)
 			if (args.length === 1 && /^[A-Z]/.test(f.name) && (!GLOBALS.has(f.name) || f.name === "Object")) return `(${list})`;
 		}
-		if (f.k === "member" && (f.name === "sort" || f.name === "sortOn")) return `$r.${f.name}(${this.expr(f.o)}${list ? `,${list}` : ""})`;
+		// (insertAt, removeAt: Array has them in AS3, not in JavaScript)
+		if (f.k === "member" && (f.name === "sort" || f.name === "sortOn" || f.name === "insertAt" || f.name === "removeAt"))
+			return `$r.${f.name}(${this.expr(f.o)}${list ? `,${list}` : ""})`;
 		return `${this.callee(f)}(${list})`;
 	}
 
@@ -718,6 +726,9 @@ export class Emitter {
 		return `(${params}){${pre?.() ?? ""}${head}${decl}${hoisted}${body}}`;
 	}
 
+	/** Names for the keys of for..in loops that convert them. */
+	private forKeys = 0;
+
 	protected varInit(d: VarDecl, top: boolean): string {
 		const js = d.init ? this.coerce(d.type, this.expr(d.init), d.init) : null;
 		if (top) return js === null ? `$t.${d.name}=$t.${d.name};` : `$t.${d.name}=${js};`;
@@ -744,14 +755,29 @@ export class Emitter {
 			case "do":
 				return `do ${this.branch(s.body, top)}while(${this.expr(s.c)});`;
 			case "for": {
-				const init = s.init ? (s.init.k === "var" ? s.init.decls.map((d) => this.varInit(d, top)).join("").replace(/;$/, "").replace(/;/g, ",") : this.expr((s.init as { x: Expr }).x)) : "";
+				// (declarations joined one by one: a ";" inside a string of theirs stays)
+				const init = s.init
+					? s.init.k === "var"
+						? s.init.decls
+								.map((d) => this.varInit(d, top).replace(/;$/, ""))
+								.filter(Boolean)
+								.join(",")
+						: this.expr((s.init as { x: Expr }).x)
+					: "";
 				return `for(${init};${s.c ? this.expr(s.c) : ""};${s.u ? this.expr(s.u) : ""})${this.branch(s.body, top)}`;
 			}
 			case "forin": {
 				const target = s.decl ? (top ? `$t.${s.decl.name}` : safe(s.decl.name)) : this.expr(s.left!);
 				const o = this.expr(s.o);
 				if (!s.each && this.isDictionary(s.o)) return `for(${target} of $r.keys(${o}))${this.branch(s.body, top)}`;
-				return s.each ? `for(${target} of $r.vals(${o}))${this.branch(s.body, top)}` : `for(${target} in ${o})${this.branch(s.body, top)}`;
+				if (s.each) return `for(${target} of $r.vals(${o}))${this.branch(s.body, top)}`;
+				// a key kept in a number: an array's indices are numbers in AS3 (JavaScript's are text, `i + 1` would be "01")
+				const type = s.decl ? s.decl.type : this.typeOfTarget(s.left!);
+				if (type === "int" || type === "uint" || type === "Number") {
+					const k = `$k${this.forKeys++}`;
+					return `for(const ${k} in ${o}){${target}=${this.coerce(type, k)};${this.stmt(s.body, top)}}`;
+				}
+				return `for(${target} in ${o})${this.branch(s.body, top)}`;
 			}
 			case "switch":
 				return `switch(${this.expr(s.c)}){${s.cases.map((c) => `${c.test ? `case ${this.expr(c.test)}:` : "default:"}${c.body.map(body).join("")}`).join("")}}`;
@@ -777,7 +803,8 @@ export class Emitter {
 						this.scope = { vars: new Map([[c.param, c.type]]), up: saved };
 						const any = c.type === "*" || c.type === "Object";
 						const test = any ? "" : `if($r.is($e,${this.classOf(c.type)}))`;
-						out += `${i ? "else " : ""}${test}{var ${safe(c.param)}=$e;${c.body.map(body).join("")}}`;
+						// (the block's own: a parameter or variable of that name outside keeps its value)
+						out += `${i ? "else " : ""}${test}{let ${safe(c.param)}=$e;${c.body.map(body).join("")}}`;
 						open = !any;
 					});
 					if (open) out += "else throw $e;";

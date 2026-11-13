@@ -129,7 +129,10 @@ function copyStatic() {
 	const html = readFileSync(join(repo, "src/panel/index.html"), "utf8");
 	if (!html.includes("<!-- icons -->")) throw new Error("src/panel/index.html: the <!-- icons --> placeholder is missing");
 	writeFileSync(join(ext, "panel/index.html"), html.replace("<!-- icons -->", sprite));
-	copyFileSync(join(repo, "src/jsfl/flash2svg.jsfl"), join(ext, "jsfl/flash2svg.jsfl"));
+	// the extractor says the version it shipped with (scene.json's "generator")
+	const jsfl = readFileSync(join(repo, "src/jsfl/flash2svg.jsfl"), "utf8");
+	if (!jsfl.includes('var VERSION = "dev";')) throw new Error("src/jsfl/flash2svg.jsfl: the VERSION line is missing");
+	writeFileSync(join(ext, "jsfl/flash2svg.jsfl"), jsfl.replace('var VERSION = "dev";', `var VERSION = ${JSON.stringify(pkg.version)};`));
 	let manifest = readFileSync(join(repo, "extension/CSXS/manifest.xml"), "utf8").replaceAll("{version}", version);
 	if (process.argv.includes("--selftest")) {
 		// Test builds start with Animate so the self-test (src/panel/lib/selftest.ts) can run unattended

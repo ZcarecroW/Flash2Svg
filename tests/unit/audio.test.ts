@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { nodeWasmLoader } from "../../src/cli/wasm.ts";
-import { encodeSounds, mp3Rate, oggOpus, readWav, resample, writeWav, type Pcm } from "../../src/core/audio.ts";
+import { carriesSounds, encodeSounds, mp3Rate, oggOpus, readWav, resample, writeWav, type Pcm } from "../../src/core/audio.ts";
 import { createAudioCodecs } from "../../src/core/audio-codecs.ts";
 import { compileScene } from "../../src/core/compile.ts";
 import type { FrameSound, SceneModel, SoundData } from "../../src/core/model.ts";
@@ -230,5 +230,15 @@ describe("sound encoding", () => {
 		const o = await encodeSounds(old, files, {}, codecs);
 		expect(o.model.sounds.chord!.file).toBe("sounds/chord.wav");
 		expect(o.report[0]!.format).toBe("original");
+	});
+});
+
+describe("which formats carry the sounds", () => {
+	it("has them encoded for every format that plays them", () => {
+		// (SMIL and CSS got Animate's padded WAVs: 1163 KB instead of 92 KB for the test document)
+		for (const format of ["smil", "css", "player", "auto", "mp4", "webm"]) expect(carriesSounds({ format }), format).toBe(true);
+		expect(carriesSounds({})).toBe(true);
+		expect(carriesSounds({ format: "lottie", lottieSounds: true })).toBe(true);
+		for (const format of ["static", "gif", "webp", "apng", "dotlottie", "lottie"]) expect(carriesSounds({ format }), format).toBe(false);
 	});
 });

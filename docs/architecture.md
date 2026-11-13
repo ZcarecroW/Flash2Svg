@@ -112,7 +112,8 @@ arrow functions). It is resumable: the panel calls `Flash2Svg.start(options)` an
   clips scale normally, nested graphic symbols are sliced. The instance keeps only its position.
 - **Timing** (`emit/timing.ts`): graphic symbols follow their parent (loop / play once / single
   frame / reverse modes), movie clips simulate their playhead with frame scripts. Arriving at a
-  frame runs its actions; a goto moves on at once (that frame isn't shown, as in Flash). Actions
+  frame runs its actions; a goto moves on at once (that frame isn't shown, as in Flash), one to
+  the frame it is on enters nothing again. Actions
   under a pass counter (`FrameAction.passes`) count the passes over their frame; the simulation
   ends in a prefix plus an endless cycle.
 - **Shape tweens as morphs** (`core/morph.ts`, `Context.morph`, computed once per item): Animate's
@@ -140,12 +141,20 @@ arrow functions). It is resumable: the panel calls `Flash2Svg.start(options)` an
   whole frames when not smooth.
 - **Bake** (`emit/bake.ts`, SMIL/CSS only): every timeline instance gets an array "local frame at
   each global tick"; tracks are mapped run by run onto the global clock with exact sub-Bézier cuts.
-  Identical arrays share one definition. Movie clips that span the whole root timeline extend the
-  horizon to a common multiple so they loop seamlessly. When the root stops, the horizon runs on
-  until the clips still running have played their intros, then for their common period: the
-  writers emit every animation once plus a looping *tail* (SMIL: begins at the end of a clock
-  animation; CSS: a second, delayed infinite animation). Played once, everything holds the last
-  tick shown.
+  Identical arrays share one definition. Movie clips that live through the root's loop (also
+  those inside one-frame clips and graphics) extend the horizon to a common multiple so they loop
+  seamlessly. Those of them that play something once — a clip that ends in stop(), or jumps back
+  to a later frame — are not made anew when the root comes round: the horizon first runs until
+  they have played that, then the loop follows as a *tail*. The same when the root stops: on
+  until the clips still running have played their intros, then for their common period. The
+  writers emit every animation once plus the looping tail (SMIL: begins at the end of a clock
+  animation; CSS: a second, delayed infinite animation); a tail in which nothing moves is left
+  out. Played once, everything holds the last tick shown. A run of frames that ends where the
+  playhead stays holds from that tick (no move on towards a frame that isn't shown); a piece of
+  an ease whose control points leave its own box is halved until every part is a timing function
+  (SMIL's keySplines take nothing else). Switches that repeat through a looping horizon (the
+  frames of a clip drawn frame by frame, its filters) are written once with their own period,
+  like tracks.
 - **Colour grading** (`core/grade.ts`, `ExportSettings.grade`, made by the host from LUT files):
   `.cube` (1D, 3D, a 1D shaper before a 3D table; domains), `.3dl` (mesh line, blue fastest,
   10–16-bit) and Hald CLUTs, chained with strengths, 3D tables read tetrahedrally; `toJSON` is an

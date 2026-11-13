@@ -8,6 +8,7 @@
 		libraryBitmaps,
 		librarySounds,
 		loadDocSettings,
+		rangeFrames,
 		gradeOf,
 		runExport,
 		saveDocSettings,
@@ -167,35 +168,46 @@
 		if (panel.frames !== "range") return "";
 		const a = panel.rangeStart,
 			b = panel.rangeEnd,
-			n = info.frameCount;
+			n = rangeFrames(info, panel.source);
 		if (a == null || b == null || !Number.isFinite(a) || !Number.isFinite(b)) return "Empty fields count as the first and the last frame.";
 		if (a > b) return `Exports frames ${b} to ${a}.`;
-		if (n && b > n) return `The timeline has ${n} frames: exports ${Math.min(a, n)} to ${n}.`;
+		if (n && b > n) return `${panel.source === "scenes" && n !== info.frameCount ? "The scenes have" : "The timeline has"} ${n} frames: exports ${Math.min(a, n)} to ${n}.`;
 		return "";
 	});
 
+	/** The output file that came with the settings kept in the document in front (null: it kept none). */
+	let fromDocument: string | null = null;
 	let refreshes = 0;
 	/** Reads the document in front of Animate (`force`: also while an export starts). */
 	async function refresh(force = false) {
 		if ((busy && !force) || !inCep) return;
 		const n = ++refreshes;
 		try {
-			const prev = info.path;
+			const prev = info.path,
+				prevName = info.name;
 			const next = await docInfo();
 			// a later refresh is under way (a document closed and another opened): its answer counts
 			if (n !== refreshes) return;
 			info = next;
-			if (info.open && info.path !== prev) {
+			// (documents not saved yet have no path: their names tell them apart)
+			if (info.open && (info.path !== prev || info.name !== prevName)) {
 				const saved = await loadDocSettings().catch(() => null);
 				if (saved) {
 					applyPartial(saved);
 					panel.rememberInDocument = true;
+					fromDocument = panel.output;
+				} else if (fromDocument !== null) {
+					// the document before brought its settings along: its output file isn't this
+					// document's (an export would overwrite it), nor is its wish to keep settings
+					if (panel.output === fromDocument) panel.output = "";
+					panel.rememberInDocument = false;
+					fromDocument = null;
 				}
-				if (panel.rangeEnd < 1 || panel.rangeEnd > (info.frameCount ?? 1)) panel.rangeEnd = info.frameCount ?? 1;
+				const frames = rangeFrames(info, panel.source);
+				if (panel.rangeEnd < 1 || (frames && panel.rangeEnd > frames)) panel.rangeEnd = frames ?? info.frameCount ?? 1;
+				// (read again by the effects below, when their sections are open)
 				bitmaps = null;
 				sounds = null;
-				if (panel.open.images) loadBitmaps();
-				if (panel.open.sounds) loadSounds();
 			}
 		} catch (e) {
 			error = (e as Error).message;
@@ -303,6 +315,8 @@
 			await refresh(true);
 			if (!info.open) throw new Error("Open a document first.");
 			const req = $state.snapshot(panel);
+			// (now, while this document is in front: after the export another one may be)
+			if (panel.rememberInDocument) await saveDocSettings(JSON.stringify(req));
 			result = await runExport(
 				{
 					settings: req.export,
@@ -321,12 +335,12 @@
 				},
 				() => cancelled,
 			);
-			if (panel.rememberInDocument) await saveDocSettings(JSON.stringify(req));
 			// browsers show Lottie files as text or download them, and open .svgz only from a server
 			if (panel.openAfterExport && result.files[0] && !/\.(json|lottie|svgz)$/i.test(result.files[0])) openInBrowser(result.files[0]);
 		} catch (e) {
 			const err = e as Error;
-			if (err.name === "AbortError") notice = "Export cancelled: nothing was written.";
+			const done = (err as { written?: number }).written;
+			if (err.name === "AbortError") notice = done ? `Export cancelled: ${done} file${done > 1 ? "s were" : " was"} written before.` : "Export cancelled: nothing was written.";
 			else error = err.message;
 		} finally {
 			busy = false;
@@ -481,9 +495,9 @@
 		{#if panel.frames === "range"}
 			<div class="row range">
 				<span>From</span>
-				<input type="number" min="1" max={info.frameCount ?? 99999} bind:value={panel.rangeStart} aria-label="First frame" />
+				<input type="number" min="1" max={rangeFrames(info, panel.source) ?? 99999} bind:value={panel.rangeStart} aria-label="First frame" />
 				<span>to</span>
-				<input type="number" min="1" max={info.frameCount ?? 99999} bind:value={panel.rangeEnd} aria-label="Last frame" />
+				<input type="number" min="1" max={rangeFrames(info, panel.source) ?? 99999} bind:value={panel.rangeEnd} aria-label="Last frame" />
 			</div>
 			{#if rangeNote}<p class="hint">{rangeNote}</p>{/if}
 		{/if}

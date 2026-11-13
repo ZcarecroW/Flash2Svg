@@ -138,6 +138,25 @@ describe("command line", () => {
 		}
 	});
 
+	it("takes the scene folder for its scene.json, and one scene per call", () => {
+		const folder = run(join(dir, "model"), "-o", join(dir, "by-folder.svg"));
+		expect(folder.code).toBe(0);
+		expect(existsSync(join(dir, "by-folder.svg"))).toBe(true);
+		const two = run(scene, scene);
+		expect(two.code).toBe(1);
+		expect(two.err).toMatch(/More than one scene given/);
+	});
+
+	it("gives a file named for another format the format's own extension", () => {
+		// (a GIF written into x.svg, JSON into y.gif)
+		expect(run(scene, "--format", "lottie", "-o", join(dir, "named.svg")).code).toBe(0);
+		expect(existsSync(join(dir, "named.json"))).toBe(true);
+		expect(existsSync(join(dir, "named.svg"))).toBe(false);
+		// an extension of the caller's own stays
+		expect(run(scene, "-o", join(dir, "own.xml")).code).toBe(0);
+		expect(readFileSync(join(dir, "own.xml"), "utf8")).toContain("<svg");
+	});
+
 	it("explains input that isn't a scene model", () => {
 		const missing = run(join(dir, "nope", "scene.json"));
 		expect(missing.code).toBe(1);

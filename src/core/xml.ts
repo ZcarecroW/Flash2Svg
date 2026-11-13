@@ -26,12 +26,21 @@ export function isNode(c: XmlChild | undefined): c is XmlNode {
 
 const ENTITIES: Record<string, string> = { lt: "<", gt: ">", amp: "&", quot: '"', apos: "'" };
 
+/**
+ * The place a tag or value ends at; a file that stops before (cut short by a crash or a full disk)
+ * is said to be that: the search's -1 would send the parser back to the start, for ever.
+ */
+function whole(end: number): number {
+	if (end < 0) throw new Error("The SVG ends in the middle of a tag (a file cut short?)");
+	return end;
+}
+
 function decode(s: string): string {
 	if (s.indexOf("&") < 0) return s;
 	return s.replace(/&(#x[0-9a-fA-F]+|#[0-9]+|[a-zA-Z]+);/g, (m, e: string) => {
 		if (e[0] === "#") {
 			const code = e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
-			return Number.isFinite(code) ? String.fromCodePoint(code) : m;
+			return code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : m;
 		}
 		return ENTITIES[e] ?? m;
 	});
@@ -85,7 +94,7 @@ export function parseXml(src: string): XmlNode {
 			continue;
 		}
 		if (src[lt + 1] === "/") {
-			const end = src.indexOf(">", lt);
+			const end = whole(src.indexOf(">", lt));
 			const name = src.slice(lt + 2, end).trim();
 			// pop to the matching element (tolerates sloppy input)
 			for (let s = stack.length - 1; s > 0; s--) {
@@ -115,7 +124,7 @@ export function parseXml(src: string): XmlNode {
 				while (k < n && /\s/.test(src[k]!)) k++;
 				const q = src[k];
 				if (q === '"' || q === "'") {
-					const end = src.indexOf(q, k + 1);
+					const end = whole(src.indexOf(q, k + 1));
 					node.attrs[attrName] = decode(src.slice(k + 1, end));
 					j = end + 1;
 				} else {
@@ -131,7 +140,7 @@ export function parseXml(src: string): XmlNode {
 		}
 		top().children.push(node);
 		if (src[j] === "/") {
-			i = src.indexOf(">", j) + 1;
+			i = whole(src.indexOf(">", j)) + 1;
 		} else {
 			stack.push(node);
 			i = j + 1;

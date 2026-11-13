@@ -43,15 +43,20 @@ export function createCodecs(load: WasmLoader): Codecs {
 		return p;
 	};
 	const emscripten = (name: Codec, factory: unknown) =>
-		once(name, (m) =>
-			(factory as (o: object) => Promise<Encoder>)({
-				noInitialRun: true,
-				// asynchronously: Chromium forbids synchronous instances of bigger modules on the main thread
-				instantiateWasm: (imports: WebAssembly.Imports, done: (i: WebAssembly.Instance) => void) => {
-					void WebAssembly.instantiate(m, imports).then(done);
-					return {};
-				},
-			}),
+		once(
+			name,
+			(m) =>
+				new Promise<Encoder>((ready, failed) => {
+					(factory as (o: object) => Promise<Encoder>)({
+						noInitialRun: true,
+						// asynchronously: Chromium forbids synchronous instances of bigger modules on the main thread
+						// (an instance that can't be made — no memory — fails the export; unanswered it would wait for ever)
+						instantiateWasm: (imports: WebAssembly.Imports, done: (i: WebAssembly.Instance) => void) => {
+							WebAssembly.instantiate(m, imports).then(done, failed);
+							return {};
+						},
+					}).then(ready, failed);
+				}),
 		);
 	const run = (enc: Encoder, img: { data: Uint8Array | Uint8ClampedArray; width: number; height: number }, opts: object) => {
 		const out = enc.encode(img.data, img.width, img.height, opts);

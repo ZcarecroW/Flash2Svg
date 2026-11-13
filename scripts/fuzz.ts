@@ -19,11 +19,12 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { createServer } from "node:http";
+import { Script } from "node:vm";
 import { strFromU8, unzipSync } from "fflate";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { compileScene, type CompileOutput, type ExportSettings } from "../src/core/compile.ts";
 import { encodeImages } from "../src/core/images.ts";
-import { encodeSounds } from "../src/core/audio.ts";
+import { carriesSounds, encodeSounds } from "../src/core/audio.ts";
 import { createAudioCodecs } from "../src/core/audio-codecs.ts";
 import { createCodecs } from "../src/core/codecs.ts";
 import { createFontCodecs, encodeFonts } from "../src/core/fonts.ts";
@@ -588,6 +589,27 @@ function checkTokens(src: string): string {
 	return m ? `"${m[0]}" in the output near ${JSON.stringify(src.slice(Math.max(0, m.index - 60), m.index + 30))}` : "";
 }
 
+/**
+ * The scripts of a player file (the runtime, compiled frame scripts) are JavaScript, where NaN and
+ * undefined are words: each must parse, and is left out of the token check. Data stays in
+ * (<script type="application/json">).
+ */
+function checkScripts(src: string): { rest: string; problem: string } {
+	let problem = "";
+	const rest = src.replace(/<script>([\s\S]*?)<\/script>/g, (_, raw: string) => {
+		const body = raw.trim();
+		const cdata = body.startsWith("<![CDATA[");
+		const code = cdata ? body.slice(9, -3).replaceAll("]]]]><![CDATA[>", "]]>") : body.replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
+		try {
+			new Script(code);
+		} catch (e) {
+			problem ||= `a script doesn't parse: ${(e as Error).message}`;
+		}
+		return "<script/>";
+	});
+	return { rest, problem };
+}
+
 const require = createRequire(import.meta.url);
 const { LottieValidator, get_schema_path } = require("@lottie-animation-community/lottie-specs/src/validator-node.js");
 const { Ajv2020 } = require("ajv/dist/2020");
@@ -641,11 +663,13 @@ function checkOutput(out: CompileOutput, s: Partial<ExportSettings>): string {
 		}
 		if (f.ext === ".svgz") continue;
 		const text = f.svg;
+		const scripts = checkScripts(text);
 		const p =
 			checkXml(text) ||
 			checkIds(text) ||
 			checkPaths(text) ||
-			checkTokens(text.replace(/<desc[^>]*>[\s\S]*?<\/desc>|<title[^>]*>[\s\S]*?<\/title>|aria-label="[^"]*"|data:[^"')]*/g, ""));
+			scripts.problem ||
+			checkTokens(scripts.rest.replace(/<desc[^>]*>[\s\S]*?<\/desc>|<title[^>]*>[\s\S]*?<\/title>|aria-label="[^"]*"|data:[^"')]*/g, ""));
 		if (p) return `${f.suffix || "main"}: ${p}`;
 	}
 	return "";
@@ -665,7 +689,7 @@ async function run(base: string, model: SceneModel, s: Partial<ExportSettings>, 
 	let files = { readText: (r: string) => readFileSync(join(dir, r), "utf8"), readBinary: (r: string) => readFileSync(join(dir, r)) as Uint8Array };
 	let m = model;
 	if (encode.images) ({ model: m, files } = await encodeImages(m, files, s, codecs));
-	if (encode.sounds && s.format === "player" && Object.keys(m.sounds).length) ({ model: m, files } = await encodeSounds(m, files, s, audioCodecs));
+	if (encode.sounds && carriesSounds(s) && Object.keys(m.sounds).length) ({ model: m, files } = await encodeSounds(m, files, s, audioCodecs));
 	if (encode.fonts && s.embedFonts !== false && !s.textAsOutlines) ({ model: m } = await encodeFonts(m, fontFiles, fontCodecs));
 	if (s.format === "gif" || s.format === "webp") return exportRaster(m, files, s, rasterizer, codecs);
 	return compileScene(m, files, s, 0);

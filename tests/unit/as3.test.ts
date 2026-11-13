@@ -20,6 +20,10 @@ function run(code: string, frames: number[] = [0], t: Record<string, unknown> = 
 		err: (e: unknown) => e,
 		sort: (a: unknown[], ...o: unknown[]) => (o[0] === 16 ? a.sort((x, y) => (x as number) - (y as number)) : a.sort()),
 		sortOn: (a: unknown[]) => a,
+		key: (k: unknown) => k,
+		insertAt: (a: unknown[], i: number, v: unknown) => void a.splice(i, 0, v),
+		removeAt: (a: unknown[], i: number) => a.splice(i, 1)[0],
+		vec: (_of: string, ...a: unknown[]) => (Array.isArray(a[0]) ? a[0].slice() : new Array(Number(a[0]) | 0).fill(0)),
 	};
 	const fs = new Function(`return ${c.js}`)()(t, $f, $r) as Record<number, () => void>;
 	for (const f of frames) fs[f]!();
@@ -168,6 +172,58 @@ describe("AS3 to JavaScript", () => {
 		expect(c.failed.map((f) => f.frame)).toEqual([3]);
 		expect(c.js).toContain("0:function");
 		expect(c.js).not.toContain("3:function");
+	});
+});
+
+describe("AS3 as scripts are written", () => {
+	it("takes names that are words of JavaScript", () => {
+		expect(run("var of:int = 1; trace(of); function export():int { return 7; } trace(export());").log).toEqual([1, 7]);
+	});
+
+	it("keeps a uint without a sign through |=, &= and ^=", () => {
+		expect(run("var c:uint = 0; c |= 0xFF000000; trace(c); c &= 0xF0000000; trace(c); c ^= 0x80000000; trace(c);").log).toEqual([
+			4278190080, 4026531840, 1879048192,
+		]);
+	});
+
+	it("reads a type written right before the =", () => {
+		expect(run("function f(a:*=null):* { return a; } var v:Vector.<int>=new Vector.<int>(); var a:*=5; trace(f(), a, v.length);").log).toEqual([[null, 5, 0]]);
+	});
+
+	it("divides after i++ (no regular expression starts there)", () => {
+		expect(run("var i:int = 3; var a:Number = i++ / 2; trace(a, i); trace(i-- / 2 / 1);").log).toEqual([[1.5, 4], 2]);
+	});
+
+	it("reads names in any script, wide spaces and lines that end in a carriage return", () => {
+		expect(run("var größe:int = 4; var 得点:int = 2;　trace(größe + 得点);").log).toEqual([6]);
+		expect(run("var a:int = 1; // a note\rtrace(a);\rtrace(2);").log).toEqual([1, 2]);
+	});
+
+	it("gives an array's indices as numbers to a key typed int", () => {
+		expect(run("var arr:Array = [10, 20]; for (var i:int in arr) trace(i + 1);").log).toEqual([1, 2]);
+		// (untyped and String keys stay text, as an object's are)
+		expect(run("for (var k:String in {a: 1}) trace(k + 1);").log).toEqual(["a1"]);
+	});
+
+	it("keeps a ; inside a string of a for loop's declarations", () => {
+		expect(run('for (var s:String = "a;b", n:int = 0; n < 1; n++) trace(s);').log).toEqual(["a;b"]);
+	});
+
+	it("keeps a parameter named like a catch's variable", () => {
+		expect(run('function f(e:int):int { try { throw new Error("x"); } catch (e:Error) { trace(e.message); } return e; } trace(f(5));').log).toEqual(["x", 5]);
+	});
+
+	it("gives 0 for int() and uint() without a value", () => {
+		expect(run("trace(int(), uint(), int(3.7));").log).toEqual([[0, 0, 3]]);
+	});
+
+	it("inserts into and removes from arrays by index", () => {
+		expect(run("var a:Array = [1, 3]; a.insertAt(1, 2); trace(a.join()); trace(a.removeAt(0), a.join());").log).toEqual(["1,2,3", [1, "2,3"]]);
+	});
+
+	it("says that with isn't supported, instead of failing when the frame runs", () => {
+		const c = compileScripts([{ frame: 0, code: "var o:Object = {x: 1};\nwith (o)\n{ trace(x); }" }]);
+		expect(c.failed).toEqual([{ frame: 0, line: 2, message: "with isn't supported: write the object's name before its properties" }]);
 	});
 });
 

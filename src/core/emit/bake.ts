@@ -166,32 +166,56 @@ export function rootTicks(ctx: Context, rootId: string, opts: Pick<BakeOptions, 
 	let H = frames.length;
 	// set when running movie clips have no common period within maxTicks
 	let tooLong = false;
+	// the root goes round its cycle (also as a tail, after an intro)
+	const cycles = loop;
+	// following the timeline's own scripts (no range, not "Always loop")
+	const natural = opts.startFrame === undefined && opts.endFrame === undefined && opts.loop !== "always";
+	let tail = 0;
 	if (loop) {
 		let period = frames.length - intro;
+		// ticks until those clips have played what they play once: a clip that stops (stop() on
+		// its last frame) or loops back to a later frame isn't made anew when the root comes
+		// round — it stays stopped, or in its loop
+		let lead = 0;
+		// (the frames the loop shows: an instance is there for the whole loop when on all of them
+		// — not only one on every frame of the timeline: the loop may be a part of it)
+		let first = Infinity,
+			final = -1;
+		for (let t = intro; t < frames.length; t++) {
+			first = Math.min(first, frames[t]!);
+			final = Math.max(final, frames[t]!);
+		}
 		for (const layer of prog.layers) {
 			for (const it of layer.items) {
-				if (it.kind !== "instance" || it.start > 0 || it.end < prog.frameCount) continue;
+				if (it.kind !== "instance" || it.start > first || it.end <= final) continue;
 				const child = ctx.programs[it.symbol];
 				if (!child) continue;
-				let p: number;
-				if (it.symbolType === "movie clip") {
-					const ph = playhead(child);
-					if (ph.prefix.length || !ph.cycle.length) continue;
-					p = clipPeriod(ctx, child, maxTicks, 0);
-				} else p = insidePeriod(ctx, child, maxTicks, 0);
+				const clip = it.symbolType === "movie clip";
+				// (its age when the loop begins: an instance that comes with the loop's first frame is new there)
+				let age = 0;
+				for (let t = intro - 1; t >= 0 && frames[t]! >= it.start && frames[t]! < it.end; t--) age++;
+				// ("Always loop" and a frame range repeat as a whole: everything starts again)
+				if (natural) lead = Math.max(lead, (clip ? clipIntro(ctx, child, 0) : insideIntro(ctx, child, 0)) - age);
+				const p = clip ? clipPeriod(ctx, child, maxTicks, 0) : insidePeriod(ctx, child, maxTicks, 0);
 				if (p <= 1) continue;
 				const l = lcm(period, p);
 				if (intro + l <= maxTicks) period = l;
 				else tooLong = true;
 			}
 		}
-		H = intro + period;
-	}
-	// an intro: the loop is a tail after it (first pass once, then the tail repeats)
-	let tail = 0;
-	if (loop && intro) {
-		tail = intro;
-		loop = false;
+		if (lead > 0 && intro + lead + period > maxTicks) {
+			tooLong = true;
+			lead = 0;
+		}
+		H = intro + lead + period;
+		// an intro (the root's own, or its clips'): the loop is a tail after it (first pass once,
+		// then the tail repeats)
+		if (intro || lead) {
+			loop = false;
+			// (a tail of one tick is a picture that stays: played once, the last tick holds)
+			if (period === 1) H = Math.max(1, intro + lead);
+			else tail = intro + lead;
+		}
 	}
 	// A root that stops (stop() script) leaves its movie clips running: extend the horizon until
 	// they have played their intros, then loop their common period as a tail.
@@ -202,14 +226,16 @@ export function rootTicks(ctx: Context, rootId: string, opts: Pick<BakeOptions, 
 			period = 1;
 		for (const layer of prog.layers) {
 			for (const it of layer.items) {
-				if (it.kind !== "instance" || it.symbolType !== "movie clip" || last < it.start || last >= it.end) continue;
+				if (it.kind !== "instance" || last < it.start || last >= it.end) continue;
 				const child = ctx.programs[it.symbol];
-				if (!child || child.frameCount <= 1) continue;
-				// age (ticks shown) of the clip when the root stops
+				if (!child) continue;
+				// (a graphic, or a clip of one frame, has nothing of its own to play: the clips inside it run on)
+				const clip = it.symbolType === "movie clip" && child.frameCount > 1;
+				// age (ticks shown) of the instance when the root stops
 				let age = 0;
 				for (let t = P - 1; t >= 0 && frames[t]! >= it.start && frames[t]! < it.end; t--) age++;
-				start = Math.max(start, P + playhead(child).prefix.length - age);
-				const l = lcm(period, clipPeriod(ctx, child, maxTicks, 0));
+				start = Math.max(start, P + (clip ? clipIntro(ctx, child, 0) : insideIntro(ctx, child, 0)) - age);
+				const l = lcm(period, clip ? clipPeriod(ctx, child, maxTicks, 0) : insidePeriod(ctx, child, maxTicks, 0));
 				if (l <= maxTicks) period = l;
 				else tooLong = true;
 			}
@@ -226,11 +252,9 @@ export function rootTicks(ctx: Context, rootId: string, opts: Pick<BakeOptions, 
 	}
 	const rootFrames = new Int32Array(H);
 	const cycle = frames.length - intro;
-	for (let t = 0; t < H; t++)
-		rootFrames[t] =
-			t < frames.length ? frames[t]! : intro ? frames[intro + ((t - intro) % cycle)]! : loop ? frames[t % frames.length]! : frames[frames.length - 1]!;
+	for (let t = 0; t < H; t++) rootFrames[t] = t < frames.length ? frames[t]! : cycles ? frames[intro + ((t - intro) % cycle)]! : frames[frames.length - 1]!;
 
-	return { frames: rootFrames, horizon: { ticks: H, loop, fps, tail, ...(intro ? { intro: true } : {}) } };
+	return { frames: rootFrames, horizon: { ticks: H, loop, fps, tail, ...(cycles && tail ? { intro: true } : {}) } };
 }
 
 export function bake(ctx: Context, rootId: string, opts: BakeOptions): BakeResult {
@@ -280,6 +304,34 @@ function insidePeriod(ctx: Context, prog: Program, max: number, depth: number, f
 		}
 	}
 	return p;
+}
+
+/**
+ * Ticks a movie clip plays before it holds or goes round (its playhead's prefix), and the clips
+ * inside it theirs after that: when everything in it has come to its loop or its stop.
+ */
+function clipIntro(ctx: Context, prog: Program, depth: number): number {
+	const ph = playhead(prog);
+	// (a loop of one frame is a stop on it: that frame is shown before everything holds)
+	const own = ph.prefix.length + (ph.prefix.length && ph.cycle.length === 1 ? 1 : 0);
+	if (depth > 8) return own;
+	return own + insideIntro(ctx, prog, depth, ph.cycle.length ? -1 : (ph.prefix[ph.prefix.length - 1] ?? 0));
+}
+
+/** The longest of those ticks among the clips running inside a timeline (see insidePeriod for `final`). */
+function insideIntro(ctx: Context, prog: Program, depth: number, final = -1): number {
+	let n = 0;
+	if (depth > 8) return n;
+	for (const layer of prog.layers) {
+		for (const it of layer.items) {
+			if (it.kind !== "instance") continue;
+			if (final < 0 ? it.start > 0 || it.end < prog.frameCount : final < it.start || final >= it.end) continue;
+			const child = ctx.programs[it.symbol];
+			if (!child) continue;
+			n = Math.max(n, it.symbolType === "movie clip" && child.frameCount > 1 ? clipIntro(ctx, child, depth + 1) : insideIntro(ctx, child, depth + 1));
+		}
+	}
+	return n;
 }
 
 /** The track up to `t`, then holding the value it has at `t`. */
@@ -507,6 +559,15 @@ class Baker {
 					cur.t1 = t + 1;
 					continue;
 				}
+				if (cur.advance && f === prevF) {
+					// The playhead stays (a stop()): the frame it arrived on holds from its own tick
+					// on. The run before ends there, not a tick later — it would move on towards a
+					// frame that is never shown, and jump back.
+					cur.t1 = t - 1;
+					cur = { t0: t - 1, t1: t + 1, l0: f, advance: false };
+					out.push(cur);
+					continue;
+				}
 			}
 			cur = { t0: t, t1: t + 1, l0: f, advance: false };
 			out.push(cur);
@@ -575,14 +636,22 @@ function windowKeys(track: Track, l0: number, l1: number, shift: number, out: GT
 			continue;
 		}
 		const segEnd = Math.min(b.t, l1);
-		const v0 = valueAt(track, t);
-		let ease: Ease = a.ease;
 		if (Array.isArray(a.ease) && (t > a.t || segEnd < b.t)) {
+			// A piece of the ease. Its control points can lie outside its own box (a custom ease
+			// that nearly pauses, cut after two thirds): no timing function then — halved until
+			// every part is one, each with a key of its own.
+			const curve = a.ease;
 			const span = b.t - a.t;
-			const sub = subBezier(a.ease, (t - a.t) / span, (segEnd - a.t) / span);
-			ease = sub.bezier;
-		}
-		push(out, { t: t + shift, v: v0, ease });
+			const cut = (t0: number, t1: number, depth: number) => {
+				const sub = subBezier(curve, (t0 - a.t) / span, (t1 - a.t) / span);
+				if (!sub.inBox && depth < 6) {
+					const tm = (t0 + t1) / 2;
+					cut(t0, tm, depth + 1);
+					cut(tm, t1, depth + 1);
+				} else push(out, { t: t0 + shift, v: valueAt(track, t0), ease: sub.bezier });
+			};
+			cut(t, segEnd, 0);
+		} else push(out, { t: t + shift, v: valueAt(track, t), ease: a.ease });
 		if (segEnd >= l1) {
 			// close at the window end with the exact value reached there
 			if (a.ease !== "hold") push(out, { t: l1 + shift, v: valueAt(track, l1 - 1e-9), ease: "hold" });
@@ -618,11 +687,10 @@ function compact(keys: GTrack): GTrack {
 	const out: GTrack = [];
 	for (const k of keys) {
 		const last = out[out.length - 1];
-		if (last && last.ease === "hold" && Math.abs(last.v - k.v) < 1e-9) {
-			// same value continues: merge (keep the earliest key, adopt the new ease)
-			if (k.ease !== "hold") last.ease = k.ease;
-			continue;
-		}
+		// the same value held on: one key. Not a key that starts moving from that value — its ease on
+		// the earlier key would start the move there (a wait between two tweens was lost: the
+		// second one began where the first ended)
+		if (last && last.ease === "hold" && k.ease === "hold" && Math.abs(last.v - k.v) < 1e-9) continue;
 		if (last && Math.abs(last.t - k.t) < 1e-9 && Math.abs(last.v - k.v) < 1e-9) {
 			last.ease = k.ease;
 			continue;

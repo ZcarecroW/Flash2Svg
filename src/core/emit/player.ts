@@ -242,12 +242,18 @@ export function renderPlayer(
 
 	const scripts = playerScripts(ctx, svgId, warn);
 	const rootTimeline = ctx.model.timelines[rootId];
+	// "Always loop": the root's frame actions don't count; scripts that run decide for themselves
+	const rootRuns = !!scripts?.timelines.has(ctx.programs[rootId]?.source ?? rootId);
+	const always = s.loop === "always" && !rootRuns;
+	if (s.loop === "always" && rootRuns) warn("Always loop: the timeline's scripts run in the JS player, so they decide where it stops or jumps");
+	if (s.startFrame !== undefined || s.endFrame !== undefined) warn("The JS player plays the whole timeline: a frame range takes SMIL, CSS or still frames");
 	const timeline = (prog: Program): PTimeline => {
 		const t: PTimeline = { n: prog.frameCount, ly: [] };
 		if (prog.labels.length) t.lb = Object.fromEntries(prog.labels.map((l) => [l.name, l.frame]));
 		// (its scripts run: they do what the lists of actions and mouse handlers would say)
 		const run = !!scripts?.timelines.has(prog.source ?? prog.id);
-		const acts = run ? [] : Object.entries(prog.actions);
+		// ("Always loop" overrides the root's stop() and gotos, as in SMIL and CSS: left out)
+		const acts = run || (always && prog.id === rootId) ? [] : Object.entries(prog.actions);
 		if (acts.length) {
 			t.ac = {};
 			for (const [f, list] of acts) {
@@ -334,10 +340,12 @@ export function renderPlayer(
 
 	// Poster: the static frame, removed by the runtime when it starts
 	const root = ctx.programs[rootId]!;
-	const ph = playhead(root);
+	const ph = always ? { prefix: [], cycle: Array.from({ length: Math.max(1, root.frameCount) }, (_, i) => i) } : playhead(root);
 	// the first pass: the prefix and one round of the cycle (frame scripts may loop to any frame)
 	const pass = [...ph.prefix, ...ph.cycle];
-	if (ph.cycle.length && (ph.prefix.length || pass.some((f, i) => f !== i))) P.on = pass.length;
+	// (also a pass that ends before the last frame: gotoAndPlay(1) there means that frame is never
+	// shown, and "play once" would wait for it for ever)
+	if (ph.cycle.length && (ph.prefix.length || pass.length !== root.frameCount || pass.some((f, i) => f !== i))) P.on = pass.length;
 	const posterFrame = s.posterFrame === "last" ? (pass[pass.length - 1] ?? 0) : 0;
 	// (also the still frame for "reduce motion")
 	if (posterFrame) P.pf = posterFrame;

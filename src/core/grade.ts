@@ -113,6 +113,12 @@ export function parseCube(text: string, name: string): Lut {
 			`${values.length / 3} lines of values, expected ${(n1 + n3) / 3}${size1 && size3 ? ` (${size1} for the 1D part, ${size3}³ for the 3D part)` : ""}`,
 		);
 	for (let k = 0; k < 3; k++) if (!(max[k]! > min[k]!)) fail(name, "DOMAIN_MAX must be above DOMAIN_MIN");
+	// (the same for the ranges Resolve writes: one without its numbers made every colour "#NANNANNAN")
+	for (const [key, r] of [
+		["LUT_1D_INPUT_RANGE", range1],
+		["LUT_3D_INPUT_RANGE", range3],
+	] as const)
+		if (r && !(r[1] > r[0])) fail(name, `${key} needs two numbers, the second above the first`);
 	const range = (r: [number, number] | null): { min: RGB; max: RGB } => (r ? { min: [r[0], r[0], r[0]], max: [r[1], r[1], r[1]] } : { min, max });
 	const lut: Lut = { name };
 	if (size1) lut.d1 = { size: size1, ...range(range1), data: Float32Array.from(values.slice(0, n1)) };

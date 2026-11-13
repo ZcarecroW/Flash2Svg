@@ -219,10 +219,21 @@ export function playerScripts(ctx: Context, playerId: string, warn: (m: string) 
 			const c = compileScripts(units.get(id)!, new Set(Object.keys(ctx.model.linkage ?? {})), cls ? cls.scope(classOfTimeline(ctx.model, ctx.programs[id]!.source ?? id) ?? "") : null);
 			for (const f of c.failed) warn(`${name}, frame ${f.frame + 1}: this script can't run (line ${f.line}: ${f.message})`);
 			js = c.js;
+			// All timelines' scripts are one <script>: what JavaScript can't read of one (a construct
+			// the translation got wrong) would stop them all. That timeline goes without its scripts.
+			const bad = unreadable(js);
+			if (bad) {
+				warn(`${name}: its scripts can't run (${bad})`);
+				js = "function(){return{}}";
+			}
 		}
 		entries.push(`${JSON.stringify(id)}:${js}`);
 	}
-	if (cls?.js) entries.push(`"$c":${cls.js}`);
+	if (cls?.js) {
+		const bad = unreadable(cls.js);
+		if (bad) warn(`The document's classes can't run (${bad})`);
+		else entries.push(`"$c":${cls.js}`);
+	}
 	const js = `(window.__f2s=window.__f2s||{})[${JSON.stringify(playerId)}]={${entries.join(",")}};`;
 	const classes: Record<string, string> = {};
 	const bitmaps: Record<string, string> = {};
@@ -270,6 +281,16 @@ export function playerScripts(ctx: Context, playerId: string, warn: (m: string) 
 	const bases: Record<string, string> = {};
 	for (const [q, b] of Object.entries(cf?.bases ?? {})) bases[q.slice(q.lastIndexOf(".") + 1)] = b;
 	return { timelines, js, classes, bitmaps, parts, ...(cls?.js && cf?.doc ? { doc: cf.doc } : {}), ...(cls?.js && Object.keys(bases).length ? { bases } : {}) };
+}
+
+/** Why JavaScript can't read `js` (an expression), or "". */
+function unreadable(js: string): string {
+	try {
+		new Function(`return ${js}`);
+		return "";
+	} catch (e) {
+		return (e as Error).message;
+	}
 }
 
 /** HTML5 Canvas: frame scripts are JavaScript with `this` the timeline, each frame on its own. */

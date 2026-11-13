@@ -19,7 +19,11 @@
  * Status JSON: {"state":"running"|"done"|"error"|"idle","phase":..,"progress":0..1,"message":..,"scene":uri}
  */
 (function (global) {
-	var VERSION = "4.3.0";
+	// loaded again (the panel was opened anew while an export ran): that export's working copy and
+	// atlas document are closed by the script that made them, this one doesn't know them
+	try { if (global.Flash2Svg && typeof global.Flash2Svg.cancel == "function") global.Flash2Svg.cancel(); } catch (e) {}
+	// (the build writes the package's version here)
+	var VERSION = "dev";
 
 	// ------------------------------------------------------------------ JSON
 
@@ -159,6 +163,20 @@
 	function safeName(s) {
 		return String(s).replace(/[^A-Za-z0-9_\-]+/g, "_").replace(/^_+|_+$/g, "") || "item";
 	}
+	/**
+	 * The id of a bitmap or sound: its library name in safe characters, and its own — names that
+	 * differ only in other characters ("背景.png" and "人物.png", "Größe" and "Grüße", "a/b" and
+	 * "a_b") would share one, and the second would show the first's picture.
+	 */
+	function itemId(prefix, name) {
+		var key = prefix + ":" + name;
+		if (job.ids[key]) return job.ids[key];
+		var base = prefix + safeName(name), id = base;
+		for (var n = 2; job.idsUsed[id]; n++) id = base + "_" + n;
+		job.idsUsed[id] = true;
+		job.ids[key] = id;
+		return id;
+	}
 	function setPublishSvgOptions(doc) {
 		try {
 			var p = doc.exportPublishProfileString();
@@ -197,8 +215,16 @@
 	}
 
 	function start(options) {
-		if (job && job.state == "running") cleanup();
 		var opts = typeof options == "string" ? parse(options) : (options || {});
+		if (job && job.state == "running") {
+			// an export that was left unfinished: its documents are closed, which makes its source
+			// the active one — the document the user has in front now is the one to export
+			var front = fl.getDocumentDOM();
+			var own = !front || front == job.atlasDoc || front == job.doc;
+			cleanup();
+			job.state = "idle";
+			try { if (!own) fl.setActiveWindow(front); } catch (e) {}
+		}
 		var src = fl.getDocumentDOM();
 		if (!src) throw new Error("No document is open.");
 		job = {
@@ -213,7 +239,10 @@
 			outDir: opts.outDir,
 			model: null,
 			// shapes whose strokes are checked for Linear RGB gradients once the SVG shows any
-			strokeChecks: []
+			strokeChecks: [],
+			// bitmap and sound ids by library name (itemId)
+			ids: {},
+			idsUsed: {}
 		};
 		if (!job.outDir) throw new Error("options.outDir is required");
 		if (FLfile.exists(job.outDir)) FLfile.remove(job.outDir);
@@ -1453,7 +1482,7 @@
 	}
 
 	function readBitmap(item) {
-		var id = "bmp" + safeName(item.name);
+		var id = itemId("bmp", item.name);
 		if (job.model.bitmaps[id]) return id;
 		// the pixels without loss (re-encoded by the compiler as the export settings say), and for
 		// "Photo (JPEG)" bitmaps Animate's own JPEG: without a quality argument exportToFile uses the
@@ -1495,7 +1524,7 @@
 	var SOUND_COMPRESSION = { "Default": "default", "ADPCM": "adpcm", "MP3": "mp3", "Raw": "raw", "Speech": "speech" };
 
 	function readSound(item, frame) {
-		var id = "snd" + safeName(item.name);
+		var id = itemId("snd", item.name);
 		if (job.model.sounds[id]) return id;
 		FLfile.createFolder(job.outDir + "/sounds");
 		// sounds imported as WAV/AIFF come out as WAV (PCM), MP3s as the original file
@@ -1877,6 +1906,14 @@
 			var items = d.library.getSelectedItems();
 			for (var i = 0; i < items.length; i++) if (items[i].timeline) sel.push(items[i].name);
 		} catch (e) {}
+		// all scenes in a row: where the open scene starts, and how long they are together
+		var sceneStart = 0, sceneFrames = 0;
+		try {
+			for (var s = 0; s < d.timelines.length; s++) {
+				if (s < d.currentTimeline) sceneStart += d.timelines[s].frameCount;
+				sceneFrames += d.timelines[s].frameCount;
+			}
+		} catch (e) {}
 		return stringify({
 			open: true,
 			name: d.name,
@@ -1890,6 +1927,8 @@
 			isSymbol: !!tl.libraryItem,
 			frameCount: tl.frameCount,
 			currentFrame: tl.currentFrame,
+			sceneStart: tl.libraryItem ? 0 : sceneStart,
+			sceneFrames: sceneFrames,
 			selectedSymbols: sel
 		});
 	}

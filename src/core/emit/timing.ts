@@ -96,7 +96,8 @@ export function playhead(prog: Program): Playhead {
 					break;
 				}
 			}
-			if (target < 0) break;
+			// (a goto to the frame it is on enters nothing again, as in Flash and the player)
+			if (target < 0 || target === frame) break;
 			frame = target;
 		}
 		const state = `${frame}:${playing}:${[...passes.values()].join(",")}`;

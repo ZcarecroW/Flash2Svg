@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { muxMp4, muxWebm } from "../../src/core/mux.ts";
 import { encodeGif, paced, type RasterFrame } from "../../src/core/raster.ts";
 
 const frames = (n: number, fps: number): RasterFrame[] =>
@@ -39,6 +40,65 @@ describe("GIF and WebP frame timing", () => {
 		expect(d.reduce((a, b) => a + b, 0)).toBe(200);
 		// loops: the NETSCAPE2.0 extension with 0 repetitions = forever
 		expect(s.includes(Buffer.from("NETSCAPE2.0"))).toBe(true);
+	});
+
+	it("clears every frame when its time is over (an opaque one showed through the next one's transparent parts)", () => {
+		const opaque = new Uint8ClampedArray(16 * 4).fill(255);
+		const half = Uint8ClampedArray.from({ length: 16 * 4 }, (_, i) => (i < 32 ? 255 : 0));
+		const s = Buffer.from(
+			encodeGif(
+				[opaque, half].map((data) => ({ pixels: { data, width: 4, height: 4 }, ms: 100 })),
+				true,
+			),
+		);
+		const disposal: number[] = [];
+		for (let i = 0; i + 5 < s.length; i++) if (s[i] === 0x21 && s[i + 1] === 0xf9 && s[i + 2] === 4) disposal.push((s[i + 3]! >> 2) & 7);
+		expect(disposal).toEqual([2, 2]);
+	});
+});
+
+describe("MP4 and WebM", () => {
+	const video = { codec: "avc1.640028", width: 4, height: 4, samples: [{ data: new Uint8Array(8), time: 0, duration: 41667, key: true }] };
+	const sound = (description?: Uint8Array) => ({
+		codec: "opus" as const,
+		sampleRate: 48000,
+		channels: 2,
+		samples: [{ data: new Uint8Array(4), time: 0, duration: 20000, key: true }],
+		description,
+	});
+	const find = (bytes: Uint8Array, name: string) => Buffer.from(bytes).indexOf(Buffer.from(name, "latin1"));
+
+	it("writes the unity matrix of MP4 with 1.0 in its last place", () => {
+		const mp4 = Buffer.from(muxMp4(video));
+		for (const name of ["mvhd", "tkhd"]) {
+			// version 0: the matrix is 36 bytes, 9 numbers; the last one is 2.30 fixed point
+			const at = mp4.indexOf(Buffer.from([0x00, 0x01, 0x00, 0x00, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x00, 0x01, 0x00, 0x00]), find(mp4, name));
+			expect(at, name).toBeGreaterThan(0);
+			expect(mp4.readUInt32BE(at + 32), name).toBe(0x40000000);
+		}
+	});
+
+	it("says one start delay for Opus everywhere: the encoder's own, else 312 samples", () => {
+		const head = (d: number) => {
+			const h = new Uint8Array(19);
+			h.set(Buffer.from("OpusHead"));
+			new DataView(h.buffer).setUint16(10, d, true);
+			return h;
+		};
+		for (const [description, samples] of [
+			[undefined, 312],
+			[head(840), 840],
+		] as const) {
+			const webm = Buffer.from(muxWebm({ ...video, codec: "vp09.00.40.08" }, sound(description)));
+			const at = find(webm, "OpusHead");
+			expect(webm.readUInt16LE(at + 10)).toBe(samples);
+			// CodecDelay (0x56AA), in nanoseconds
+			const delay = webm.indexOf(Buffer.from([0x56, 0xaa]));
+			const size = webm[delay + 2]! & 0x7f;
+			expect(Number(webm.readUIntBE(delay + 3, size))).toBe(Math.round((samples / 48000) * 1e9));
+			const mp4 = Buffer.from(muxMp4(video, sound(description)));
+			expect(mp4.readUInt16BE(find(mp4, "dOps") + 4 + 2)).toBe(samples);
+		}
 	});
 });
 

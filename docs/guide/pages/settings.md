@@ -12,7 +12,7 @@ description: Every Flash2SVG setting in one table — where it is in the panel, 
 | Video bit rate | `--video-bitrate` | 0 (automatic) | MP4, WebM |
 | File | `-o` | next to the FLA | all |
 | Source | – (the scene data says) | Current timeline | all |
-| Frames | `--frames a-b` | All | all |
+| Frames | `--frames a-b` | All | all but the JS player (it plays the whole timeline, and says so) |
 | **Animation** | | | |
 | Smooth tweens | `--steps` turns it off | on | animated |
 | Loop | `--loop auto\|always\|never` | Follow timeline | animated |

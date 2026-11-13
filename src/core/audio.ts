@@ -24,6 +24,16 @@ export interface SoundSettings {
 
 export const DEFAULT_SOUND_SETTINGS: SoundSettings = { soundFormat: "mp3", soundBitrate: 0, soundModes: {} };
 
+/**
+ * The formats that carry the document's sounds: the hosts encode them for these (encodeSounds).
+ * Left as Animate exports them a sound is a WAV padded with silence — eleven times the size in the
+ * test document, and a loop would run through the silence.
+ */
+export function carriesSounds(s: { format?: string; lottieSounds?: boolean }): boolean {
+	const f = s.format ?? "smil";
+	return f === "smil" || f === "css" || f === "player" || f === "auto" || f === "mp4" || f === "webm" || (f === "lottie" && !!s.lottieSounds);
+}
+
 /** PCM audio, one Float32Array per channel (-1..1). */
 export interface Pcm {
 	rate: number;

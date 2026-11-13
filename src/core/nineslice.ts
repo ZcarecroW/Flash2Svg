@@ -169,6 +169,8 @@ export function mapPath(d: string, fn: (p: Point) => Point, digits: number): str
 				out.push("Z");
 				cur = start;
 				lastCtrl = null;
+				// (numbers after it belong to no command: without this they closed the path for ever)
+				cmd = "";
 				break;
 			default:
 				i++;
@@ -254,6 +256,8 @@ export function sliceArtwork(a: Artwork, m: SliceMap, id: string, digits: number
 		} else {
 			// images, primitives, text: scale normally
 			const t = fmtMatrix(concat(local, lin), digits + 2);
+			// (a nested <svg> — the edge strips of a clipped bitmap fill — takes no transform: a group around it does)
+			if (t && src.name === "svg") return el("g", { transform: t }, [clone(src)]);
 			if (t) out.attrs.transform = t;
 			out.children = src.children.map((c) => (isNode(c) ? clone(c) : c));
 		}

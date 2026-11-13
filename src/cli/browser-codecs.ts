@@ -119,19 +119,37 @@ const bytes = (s: string) => new Uint8Array(Buffer.from(s, "base64"));
 const unpack = (list: (Omit<Sample, "data"> & { data: string })[]): Sample[] => list.map((s) => ({ ...s, data: bytes(s.data) }));
 
 /** The encoders of an installed browser, for exportVideo; `close()` ends the browser. */
-export async function browserCodecs(exe = findBrowser()): Promise<VideoEncoders & { close(): void; browser: string }> {
+export async function browserCodecs(exe = findBrowser()): Promise<VideoEncoders & { close(): Promise<void>; browser: string }> {
 	if (!exe) throw new Error("MP4 and WebM need Chrome or Edge installed (their video encoders), or the panel; FLASH2SVG_BROWSER can name a browser");
 	const profile = mkdtempSync(join(tmpdir(), "flash2svg-browser-"));
 	let child: ChildProcess | null = null;
 	let cdp: Cdp | null = null;
 	let server: Server | null = null;
-	const close = () => {
-		cdp?.close();
-		child?.kill();
-		server?.close();
-		// (the browser lets go of its profile a moment after it ends)
-		setTimeout(() => rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }), 500).unref();
-	};
+	let closed: Promise<void> | null = null;
+	// Ends the browser and removes its profile (up to 180 MB). Waited for: a timer left behind
+	// never ran, the process ended first and every export kept its profile in the temp folder.
+	const close = () =>
+		(closed ??= (async () => {
+			const c = child;
+			if (c && c.exitCode === null && c.signalCode === null) {
+				const gone = new Promise<void>((done) => c.once("exit", () => done()));
+				const wait = (ms: number) => Promise.race([gone, new Promise<void>((done) => setTimeout(done, ms).unref())]);
+				// asked to close it ends its helper processes too, which hold the profile's files
+				await cdp?.send("Browser.close").catch(() => {});
+				await wait(3000);
+				if (c.exitCode === null && c.signalCode === null) {
+					c.kill();
+					await wait(2000);
+				}
+			}
+			cdp?.close();
+			server?.close();
+			try {
+				rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+			} catch {
+				// still held by a helper process: the system's temp clean-up takes it
+			}
+		})());
 	try {
 		const started = await launch(exe, profile);
 		child = started.child;
@@ -179,7 +197,7 @@ export async function browserCodecs(exe = findBrowser()): Promise<VideoEncoders 
 			},
 		};
 	} catch (e) {
-		close();
+		await close();
 		throw e;
 	}
 }

@@ -1,5 +1,54 @@
 # Changelog
 
+## Unreleased
+
+A review of the whole project for bugs: every part read through, the findings reproduced, fixed and put under test (35 new unit tests; the baked tracks compared with the program at every tick of 3000 random documents and the 102 test documents: 0 differences, before 157 and 1).
+
+- **SMIL, CSS, Lottie: a wait between two tweens was lost.** A keyframe that holds, followed by one that starts a tween from the same value, were merged into one key that took the second tween's ease: the move began where the first tween ended (tween in, 20 frames of waiting, tween out: the object drifted through the wait). Still frames and the JS player were right.
+- **SMIL, CSS, Lottie: a movie clip that stops, or has an intro, on a looping timeline.** On a one-frame main timeline a clip that plays and ends in `stop()` was written as a still picture of its first frame (the horizon was the root's one tick); on a longer looping root it started again with every round. Now it plays once and stays, as in Flash: the first pass, then the root's loop as a tail (played once and held when nothing moves any more). Clips whose last frame jumps back to a later one play their intro once. *Always loop* and a frame range still start everything again.
+- **SMIL, CSS, Lottie: movie clips inside a one-frame clip or a graphic keep running when the root stops** (they froze: only clips directly on the root counted), and a clip that lives through a loop that is only part of the timeline (`gotoAndPlay` back to a later frame) comes round exactly (it jumped back with every round).
+- **SMIL, CSS: a tween that ends on a `stop()` arrives and stays.** It went on for one more frame towards the next keyframe and jumped back.
+- **SMIL: an ease cut in the middle keeps valid `keySplines`.** A piece of a custom ease (a graphic instance shorter than its symbol's tween, a frame range ending inside a tween) could have control points outside 0..1, which SVG doesn't take: the animation stood still. Such pieces are halved until each is a timing function; CSS and Lottie get the exact curve too (its x was clamped before).
+- **A value that leaves and returns by one twip no longer draws at 0.** The fitted ease was NaN (27 of 20 000 random motion-tween samples): the object jumped to the origin in still frames, GIF and WebP.
+- **Still frames, GIF, WebP, "reduce motion": movie clips inside a graphic age** while the graphic shows one frame or comes round its loop (they stood on their first frame).
+- **CSS: a tint that changes over filters that change tints their result too** (the shadow stayed black; SMIL and still frames were right).
+- **Bitmaps under a camera moved in are written large enough** (the layer's depth counted, the camera's didn't).
+- **SMIL, CSS: smaller.** Switches that repeat (a clip drawn frame by frame, its filters) are written once with their own period instead of over the whole horizon: clips of 24, 25 and 26 frames on one frame 661 → 16 KB in SMIL and 424 → 17 KB in CSS; f17 (stress) 151 → 95 KB and 122 → 90 KB. A tint eased over keyframes of which one value stays is written with its keys (10.5 KB of half-tick samples → 0.4 KB). The 102 test documents in four formats: 18.84 → 18.54 MB, no horizon changed.
+- **Sounds in SMIL, CSS, Lottie JSON and the panel's video are encoded.** Only the player's were: the others embedded Animate's WAVs, padded with silence (the sounds document 1163 → 92 KB as SMIL; a loop ran through the silence).
+- **JS player:**
+  - *Play once* and *On scroll* end when the last frame jumps back to the first (that frame is never shown, and the player waited for it for ever).
+  - *Always loop* overrides the root's `stop()` and gotos, as in the other formats; a frame range is said to be ignored (the player plays the whole timeline).
+  - `seek()` on a running player leaves a stopped root stopped and a finished one at its end.
+  - Sounds no longer pile up and start together: a frame entered again before the start (reduce motion, a click start, a goto while paused) has one sound waiting, and sounds that could never start (blocked by the browser) are let go.
+  - A goto to the frame the playhead is on enters nothing again, as in Flash (its sound played again; a frame that jumped to itself did so 16 times).
+  - A `frame` listener that jumps no longer applies the old frame's actions to the new one.
+  - A movie clip whose first frame jumps shows the frame it jumps to at once, also on a player that stands still.
+  - Only the main mouse button clicks (a right or middle click followed a link handler).
+  - SMIL and CSS sounds: the intro's sounds don't play again in every round of a tail, a stream starts again with the loop, and a paused CSS animation holds its sounds.
+  - A player taken out of the page rests, sounds too (a gallery that swaps exports kept the old one's music).
+  - Less work: an opacity or tint that stays isn't written every frame, a finished player isn't drawn again and again, the soundtrack script no longer lists every animation of the document each frame. `clip(name).gotoAndPlay/gotoAndStop` draw at once. The runtime: 15.6 → 16.0 KB.
+- **Frame scripts (AS3):**
+  - `addChild` of an instance that was removed before works (it threw error 2025).
+  - Library clips made with `new` play inside plain Sprites and on the stage (they stood on frame 1), and lines drawn without a closing `endFill()` show wherever the object is.
+  - Names that are words of JavaScript (`var of`, `function export`), `uint` through `|=`, `&=`, `^=` (it came out negative), a type written right before `=` (`a:*=null`, `Vector.<int>=`), `i++ / 2`, names in any script, `for (var i:int in array)` (the keys were text: `i + 1` gave "01"), a `;` inside a string of a `for` loop's declarations, a `catch` variable named like a parameter, `int()`, `key in dictionary`, `Array.insertAt/removeAt`, lines ending in a carriage return. `with` is said to be unsupported instead of failing when the frame runs.
+  - One timeline's script that JavaScript can't read no longer stops every timeline's scripts: that timeline goes without, with a warning.
+  - Listeners removed are let go (objects that ever listened to ENTER_FRAME were asked on every frame for good), gradients and patterns go with `graphics.clear()`, a text field set to the text it has isn't laid out again, and a thousand `addChild` calls no longer sort the display list half a million times.
+  - CreateJS: `Ticker.framerate`, `interval`, `setFPS` and a sound instance's `volume` work (they were fixed numbers); a looping tween of calls only no longer freezes the page; `Sound.play` of a loaded sound loops as often as asked.
+- **Lottie:** a shape tween with a bitmap fill is drawn frame by frame as its warning says (it was left out for the whole tween); a drawing with a bitmap fill or clipping under a colour effect that changes is shown (it vanished); with *Sounds in Lottie JSON*, mattes and the camera's layers keep pointing at their layers.
+- **GIF, WebP, APNG, MP4, WebM:** GIF frames clear when their time is over (an opaque frame showed through the next one's transparent parts); WebP says it has alpha when any pixel is translucent; an APNG picture can stay longer than 65 s; MP4's unity matrix has 1.0 in its last place; Opus says one start delay everywhere (80 ms in its head, 6.5 ms in WebM's CodecDelay); a stage like 8192 × 3 exports as WebP (it stopped with "Target size is zero"). APNG frames are filtered three times as fast (62 → 21 ms for 1280 × 720, the same bytes).
+- **Panel:**
+  - Bitmaps and sounds whose names differ only in characters outside A–Z and digits ("背景.png" and "人物.png", "Größe" and "Grüße") each get their own file (the second showed the first's picture).
+  - A frame range and *Current frame* count on the timeline that is exported — all scenes in a row, a library symbol — not the one open.
+  - *Remember settings in the FLA* writes into the document that is exported (it wrote into the one in front when the export was over), and its output file doesn't stay for the next document without settings (which would have overwritten it).
+  - An export that is cancelled, fails or loses its panel closes its working copy and atlas document in Animate; the next export takes the document in front.
+  - *Keep the scene data* works in Animate 2022 and 2023 (Node 15 has no `fs.cpSync`); several library symbols into a folder are named `hero_spin.svg`, not `hero_spin_spin.svg`; documents on a network share get an absolute default path; embedded fonts whose names differ only in non-Latin characters keep their own glyphs; a cancelled export says how many files were written before.
+  - The extractor says the version it shipped with (it said 4.3.0).
+- **Command line:** MP4 and WebM remove the browser profile they made (every export left up to 180 MB in the temp folder); a second scene is an error, the scene folder does for its `scene.json`, a file named for another format gets the format's extension (`-o x.svg --format gif` wrote a GIF into x.svg), and a file that can't be written ends the export.
+- **Robustness:** an SVG cut short is said to be that (the reader went back to its start for ever), a LUT's input range is checked like its domain, numbers after a path's `Z` no longer loop.
+- **Speed:** a track's value is found by halving (a long document's Lottie export 178 → 73 ms).
+- **Release workflow:** a release made by hand is left as it is (the run failed on it), and one the workflow makes carries the player's two files.
+- **Tests:** the fuzzer reads compiled scripts as JavaScript (it took `NaN` in them for a broken number).
+
 ## 5.2.1 (2026-11-13)
 
 - **Toolchain: Node.js security release of 11 November 2026:** CI and the release build run on Node 26.13.1 (was the newest 26.x on the runner), and `engines` asks for `^24.22.3 || >=26.13.1`. These versions fix 16 CVEs, 7 of them high (HTTP/2, HTTPS and TLS), and update llhttp, undici and sqlite. No breaking changes. The command line and the test scripts only run plain HTTP servers on 127.0.0.1, so exports are unchanged.

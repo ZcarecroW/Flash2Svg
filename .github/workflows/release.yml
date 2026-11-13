@@ -46,8 +46,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $files = Get-ChildItem dist -File | Where-Object { $_.Extension -in ".zxp", ".zip" } | ForEach-Object { $_.FullName }
+          # a release made by hand (its ZXP signed with the project's own certificate, written notes)
+          # stays as it is: publishing it made this tag, and this run
+          gh release view $env:GITHUB_REF_NAME *> $null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Release $env:GITHUB_REF_NAME exists already: its files are kept."
+            exit 0
+          }
+          $files = @(Get-ChildItem dist -File | Where-Object { $_.Extension -in ".zxp", ".zip" } | ForEach-Object { $_.FullName })
           Compress-Archive -Path dist/cli/* -DestinationPath dist/flash2svg-cli.zip -Force
+          # the player for pages that load exports by script (the guide: "both come with every release")
+          $files += "dist/flash2svg-cli.zip", "dist/web/flash2svg-player.js", "dist/web/flash2svg-player.iife.js"
           # only versions with a suffix (v4.1.0-rc.1) are pre-releases
           $pre = if ($env:GITHUB_REF_NAME -match "-") { "--prerelease" } else { "--latest" }
-          gh release create $env:GITHUB_REF_NAME @files dist/flash2svg-cli.zip --title "Flash2SVG $env:GITHUB_REF_NAME" --generate-notes $pre
+          gh release create $env:GITHUB_REF_NAME @files --title "Flash2SVG $env:GITHUB_REF_NAME" --generate-notes $pre

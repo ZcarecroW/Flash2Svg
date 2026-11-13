@@ -29,9 +29,11 @@ describe("loops", () => {
 	});
 
 	it("writes a movie clip's loop once, repeating on its own, inside a longer horizon", () => {
-		// f28-onestop without its stop(): one looping root frame with clips of 8, 10 and 11 frames
+		// f28-onestop without its stop() scripts (the root's, and the intro clip's: with it that
+		// clip would play once and the loops be a tail): one looping root frame with clips of 8, 10
+		// and 11 frames
 		const m = load("f28-onestop");
-		for (const l of m.timelines[m.roots[0]!]!.layers) for (const k of l.keyframes) delete k.script;
+		for (const t of Object.values(m.timelines)) for (const l of t.layers) for (const k of l.keyframes) delete k.script;
 		const smil = compileScene(structuredClone(m), files, { format: "smil" }).files[0]!.svg;
 		// the 8-frame spinner at 24 fps: .3333333 s, repeating (not unrolled over the 440-frame horizon)
 		expect(smil).toContain('dur=".3333333s" repeatCount="indefinite"');

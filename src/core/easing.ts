@@ -228,7 +228,7 @@ export function subBezier(
 	b: readonly [number, number, number, number],
 	u0: number,
 	u1: number,
-): { bezier: [number, number, number, number]; p0: number; p1: number } {
+): { bezier: [number, number, number, number]; p0: number; p1: number; inBox: boolean } {
 	let seg: Segment = { p0: { x: 0, y: 0 }, c1: { x: b[0], y: b[1] }, c2: { x: b[2], y: b[3] }, p1: { x: 1, y: 1 } };
 	if (u1 < 1) {
 		const s1 = solveX(seg, u1);
@@ -240,7 +240,16 @@ export function subBezier(
 		seg = splitSegment(seg, s0)[1];
 	}
 	const p = normalise(seg, false);
-	return { bezier: p.bezier, p0: seg.p0.y, p1: seg.p1.y };
+	// Whether the piece is a timing function as it stands: its control points inside its own box.
+	// A piece of a curve that is one needn't be (normalise then moves its x into the box, which
+	// bends the curve, and SMIL takes no y outside it): cut shorter, it is (see bake.ts).
+	const dx = seg.p1.x - seg.p0.x || 1,
+		dy = seg.p1.y - seg.p0.y;
+	const within = (v: number) => v >= -1e-6 && v <= 1 + 1e-6;
+	const inBox =
+		Math.abs(dy) < 1e-9 ||
+		(within((seg.c1.x - seg.p0.x) / dx) && within((seg.c2.x - seg.p0.x) / dx) && within((seg.c1.y - seg.p0.y) / dy) && within((seg.c2.y - seg.p0.y) / dy));
+	return { bezier: p.bezier, p0: seg.p0.y, p1: seg.p1.y, inBox };
 }
 
 export function isLinearBezier(b: readonly number[], eps = 1e-4): boolean {

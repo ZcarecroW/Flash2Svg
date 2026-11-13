@@ -3,7 +3,7 @@
  * in the panel, then writing the SVG(s) and assets.
  */
 import { compileScene, type CompileOutput, type ExportSettings, type OutputFormat } from "../../core/compile.ts";
-import { encodeSounds, type AudioCodecs, type SoundReport } from "../../core/audio.ts";
+import { carriesSounds, encodeSounds, type AudioCodecs, type SoundReport } from "../../core/audio.ts";
 import type { createAudioCodecs } from "../../core/audio-codecs.ts";
 import { encodeImages, type Codecs, type ImageReport, type WasmLoader } from "../../core/images.ts";
 import type { createCodecs } from "../../core/codecs.ts";
@@ -29,6 +29,20 @@ export interface DocInfo {
 	selectedSymbols?: string[];
 	/** scenes in the document */
 	scenes?: number;
+	/** frames of the scenes before the open one, and of all scenes together */
+	sceneStart?: number;
+	sceneFrames?: number;
+}
+
+/** Whether "All scenes in a row" joins scenes (in a symbol's timeline, or with one scene, it is that timeline). */
+const joinsScenes = (info: DocInfo, source: string) => source === "scenes" && !info.isSymbol && (info.scenes ?? 1) > 1;
+
+/**
+ * The length of what a frame range counts through: the open timeline, or all scenes in a row.
+ * Library symbols have lengths of their own, not known here: the compiler keeps a range inside each.
+ */
+export function rangeFrames(info: DocInfo, source: string): number | undefined {
+	return source === "library" ? undefined : joinsScenes(info, source) ? info.sceneFrames || undefined : info.frameCount;
 }
 
 interface JobStatus {
@@ -285,18 +299,24 @@ async function exportInto(
 	if (req.source === "library" && !items.length) throw new Error("Select one or more symbols in the Library first.");
 	const opts = { outDir: toFileUri(node.path.join(work, "scene")), items, allScenes: req.source === "scenes" };
 	let st = await evalJson<JobStatus>(`Flash2Svg.start(${JSON.stringify(JSON.stringify(opts))})`);
-	while (st.state === "running") {
-		if (isCancelled()) {
-			await evalScript("Flash2Svg.cancel()");
-			throw cancelError();
+	try {
+		while (st.state === "running") {
+			if (isCancelled()) throw cancelError();
+			onProgress(0.05 + 0.75 * (st.progress ?? 0), st.message ?? "Working");
+			st = await evalJson<JobStatus>("Flash2Svg.step(250)");
 		}
-		onProgress(0.05 + 0.75 * (st.progress ?? 0), st.message ?? "Working");
-		st = await evalJson<JobStatus>("Flash2Svg.step(250)");
+	} catch (e) {
+		// cancelled, or a step answered with something unexpected: the working copy and the atlas
+		// document are closed either way
+		await evalScript("Flash2Svg.cancel()").catch(() => {});
+		throw e;
 	}
 	if (st.state === "error") throw new Error(st.message || "Extraction failed");
 	// the encoders and the rasterizer stop at their next picture, sound or frame
+	const written: string[] = [];
 	const check = () => {
-		if (isCancelled()) throw cancelError();
+		// (with what is on disk by then: several symbols are written one by one)
+		if (isCancelled()) throw Object.assign(cancelError(), { written: written.length });
 	};
 	check();
 
@@ -309,17 +329,26 @@ async function exportInto(
 	};
 	const settings: Partial<ExportSettings> = { ...req.settings };
 	if (req.frames === "current") {
-		settings.startFrame = info.currentFrame ?? 0;
+		// the playhead's frame: in the scenes in a row it comes after the scenes before; a library
+		// symbol has it only while it is the timeline open (else its first frame)
+		settings.startFrame =
+			req.source === "library"
+				? info.isSymbol && items.length === 1 && items[0] === info.timeline
+					? (info.currentFrame ?? 0)
+					: 0
+				: (joinsScenes(info, req.source) ? (info.sceneStart ?? 0) : 0) + (info.currentFrame ?? 0);
 		settings.endFrame = settings.startFrame + 1;
 		if (settings.format !== "static") settings.format = "static";
 	} else if (req.frames === "range") {
 		// 1-based and inclusive; swapped ends, empty fields and frames past the end are forgiven
-		const last = Math.max(1, info.frameCount ?? Number.MAX_SAFE_INTEGER);
+		// (counted on the timeline that is exported, not the one open: see rangeFrames)
+		const last = Math.max(1, rangeFrames(info, req.source) ?? Number.MAX_SAFE_INTEGER);
 		const clamp = (n: number, d: number) => Math.max(1, Math.min(last, Number.isFinite(n) ? Math.round(n) : d));
 		const a = clamp(req.rangeStart, 1),
 			b = clamp(req.rangeEnd, last);
 		settings.startFrame = Math.min(a, b) - 1;
-		settings.endFrame = Math.max(a, b);
+		// (no known end: the compiler stops at the timeline's)
+		settings.endFrame = Math.max(a, b) === Number.MAX_SAFE_INTEGER ? undefined : Math.max(a, b);
 	}
 
 	// (after the format is settled: "Current frame" of a GIF is a still SVG, whose bitmaps are graded)
@@ -332,9 +361,9 @@ async function exportInto(
 		imageWarnings.push(...enc.warnings);
 	}
 
-	// only the player plays sounds
+	// (every format that plays sounds: the player, SMIL and CSS with their soundtrack script, Lottie's audio layers, video)
 	let sounds: SoundReport[] = [];
-	if ((settings.format === "player" || settings.format === "auto") && Object.keys(model.sounds).length) {
+	if (carriesSounds(settings) && Object.keys(model.sounds).length) {
 		check();
 		onProgress(0.85, "Encoding sounds");
 		const enc = await encodeSounds(model, files, req.settings, cancellable(await panelAudio(), check));
@@ -363,7 +392,6 @@ async function exportInto(
 		imageWarnings.push(...enc.warnings);
 	}
 
-	const written: string[] = [];
 	let firstStem = "";
 	const usedStems = new Set<string>();
 	const outputs: CompileOutput[] = [];
@@ -394,7 +422,9 @@ async function exportInto(
 		// the format decides the extension (an .svg name chosen before switching to Lottie follows)
 		const fext = out.files[0]?.ext ?? ".svg";
 		const fallback = defaultOutput(info, model.roots.length > 1 || req.source === "library" ? rootName : undefined, fext);
-		const chosen = resolveOutput(req.output, info, fallback ? node.path.basename(fallback) : "animation" + fext);
+		// (several symbols: each one's name is added to the file chosen, so a folder gets the document's name alone)
+		const inFolder = model.roots.length > 1 ? defaultOutput({ ...info, isSymbol: false }, undefined, fext) : fallback;
+		const chosen = resolveOutput(req.output, info, inFolder ? node.path.basename(inFolder) : "animation" + fext);
 		const output = chosen ? withExt(chosen, fext) : "";
 		let target = output || fallback;
 		if (!target) throw new Error("Save the document first, or choose an output file.");
@@ -428,7 +458,17 @@ async function exportInto(
 			throw new Error(`The scene data goes to ${dir}, which exists and holds something else: rename or move it, or choose another file name.`);
 		fsStep(dir, () => {
 			node.fs.rmSync(dir, { recursive: true, force: true });
-			node.fs.cpSync(sceneDir, dir, { recursive: true });
+			// (not fs.cpSync: Animate 2022 and 2023 run Node 15, which has none)
+			const copy = (from: string, to: string) => {
+				node.fs.mkdirSync(to, { recursive: true });
+				for (const e of node.fs.readdirSync(from, { withFileTypes: true })) {
+					const a = node.path.join(from, e.name),
+						b = node.path.join(to, e.name);
+					if (e.isDirectory()) copy(a, b);
+					else node.fs.copyFileSync(a, b);
+				}
+			};
+			copy(sceneDir, dir);
 		});
 	}
 	onProgress(1, "Done");

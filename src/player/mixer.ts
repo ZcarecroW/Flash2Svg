@@ -122,6 +122,14 @@ export class Mixer {
 		if (p.quiet) return;
 		const mine = [...this.voices].filter((v) => v.e[1] === e[1]);
 		if (e[2] === 2) return mine.forEach((v) => v.stop());
+		// Voices that wait (the player stands still before its start or while paused; the page may
+		// not play sound yet): a frame entered again has one waiting, not one per visit that would
+		// all start together; and what would be over by now is let go instead of kept for ever.
+		for (const v of mine)
+			if (!v.src && !v.el) {
+				if (!p.running && v.e === e) v.stop();
+				else this.start(v);
+			}
 		// "start": only when that sound isn't playing yet
 		if (e[2] === 1 && mine.some((v) => !v.done)) return;
 		if (!p.muted) this.voice(e, 0);
@@ -164,7 +172,8 @@ export class Mixer {
 		const endless = loops >= 9999;
 		const L = len || buf?.duration || 0;
 		const a = e[5] ?? 0;
-		const b = Math.min(e[6] ?? L, L || Infinity);
+		// (a length that isn't known — an <audio> element's file without it in the program — is no end)
+		const b = Math.min(e[6] ?? Infinity, L || Infinity);
 		const seg = b - a;
 		const off = Math.max(0, v.pos());
 		if (!(seg > 0) || (!endless && off >= seg * loops)) return v.stop();
@@ -204,8 +213,11 @@ export class Mixer {
 			el.playbackRate = speed;
 			el.ontimeupdate = () => {
 				if (el.currentTime < b && !el.ended) return;
-				if (++n < loops) el.currentTime = a;
-				else v.stop();
+				if (++n < loops) {
+					el.currentTime = a;
+					// (at its end an element has paused)
+					if (el.paused) el.play().catch(() => {});
+				} else v.stop();
 			};
 			el.onended = el.ontimeupdate;
 			el.play().catch(() => {});

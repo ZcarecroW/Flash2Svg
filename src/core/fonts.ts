@@ -295,6 +295,7 @@ export async function encodeFonts(
 	const report: FontReport[] = [];
 	const fonts: EmbeddedFont[] = [];
 	const families = new Map<string, string>();
+	const taken = new Set<string>();
 	for (const u of used.values()) {
 		const style = `${u.face}${u.bold ? " bold" : ""}${u.italic ? " italic" : ""}`;
 		const chars = [...u.chars];
@@ -315,7 +316,14 @@ export async function encodeFonts(
 		const woff2 = await codecs.woff2(sub);
 		// one CSS family per face name: its styles are told apart by weight and style
 		let family = families.get(u.face);
-		if (!family) families.set(u.face, (family = `f2s-${u.face.replace(/[^\w-]+/g, "-")}`));
+		if (!family) {
+			// (its own: "游ゴシック" and "ＭＳ ゴシック" both come out as "f2s--", and one would draw with the other's glyphs)
+			const base = `f2s-${u.face.replace(/[^\w-]+/g, "-")}`;
+			family = base;
+			for (let n = 2; taken.has(family); n++) family = `${base}-${n}`;
+			taken.add(family);
+			families.set(u.face, family);
+		}
 		fonts.push({ face: u.face, bold: u.bold, italic: u.italic, family, woff2: toBase64(woff2), ...metricsOf(font, f!.at, chars) });
 		report.push({ face: u.face, bold: u.bold, italic: u.italic, file: f!.file, chars: chars.length, bytes: woff2.length });
 	}
@@ -373,7 +381,7 @@ export function createFontCodecs(load: WasmLoader, woff2: (sfnt: Uint8Array) => 
 /** The folders installed fonts live in (Windows: system and per user; macOS: system, library, user). */
 export function fontFolders(platform: string, env: Record<string, string | undefined>, home: string, join: (...p: string[]) => string): string[] {
 	if (platform === "win32")
-		return [join(env.WINDIR ?? "C:\Windows", "Fonts"), ...(env.LOCALAPPDATA ? [join(env.LOCALAPPDATA, "Microsoft", "Windows", "Fonts")] : [])];
+		return [join(env.WINDIR ?? "C:\\Windows", "Fonts"), ...(env.LOCALAPPDATA ? [join(env.LOCALAPPDATA, "Microsoft", "Windows", "Fonts")] : [])];
 	if (platform === "darwin") return ["/System/Library/Fonts", "/System/Library/Fonts/Supplemental", "/Library/Fonts", join(home, "Library", "Fonts")];
 	return ["/usr/share/fonts", "/usr/local/share/fonts", join(home, ".fonts"), join(home, ".local", "share", "fonts")];
 }

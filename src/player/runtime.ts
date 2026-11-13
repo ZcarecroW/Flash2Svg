@@ -185,7 +185,7 @@ export class Clip {
 	 */
 	runActions(hops = 0): void {
 		if (this.enteredFrame === this.frame) return;
-		this.enteredFrame = this.frame;
+		const entered = (this.enteredFrame = this.frame);
 		const acts = this.tl.ac?.[this.frame];
 		const label = this.labelAt(this.frame);
 		if (__EVENTS__)
@@ -194,7 +194,12 @@ export class Clip {
 					this.heard.add(l);
 					listen(this.player, this, l);
 				}
-		if (this.kind === -1) this.player.emit({ type: "frame", frame: this.frame, label });
+		if (this.kind === -1) {
+			this.player.emit({ type: "frame", frame: this.frame, label });
+			// a listener that jumped has entered its frame already: this one is left behind (its
+			// sounds and actions would otherwise count for the new frame)
+			if (this.frame !== entered) return;
+		}
 		this.playSounds();
 		if (__SCRIPTS__) this.player.scripts?.frame(this);
 		if (!acts) return;
@@ -210,6 +215,8 @@ export class Clip {
 			else {
 				const target = this.resolve(a[1]!);
 				this.playing = a[2] === 1;
+				// (a goto to the frame it is on enters nothing again, as in Flash: no sound a second time)
+				if (target === entered) return;
 				this.frame = target;
 				if (hops < 15) {
 					this.enteredFrame = -1;
@@ -274,7 +281,8 @@ export class Clip {
 	}
 
 	resolve(target: number | string): number {
-		if (typeof target === "number") return Math.max(0, Math.min(this.tl.n - 1, target));
+		// (whole frames; what is no number — NaN from a page's sum — leaves it where it is)
+		if (typeof target === "number") return target === target ? Math.max(0, Math.min(this.tl.n - 1, Math.floor(target))) : this.frame;
 		// own labels only: "toString" or "constructor" aren't frames
 		const lb = this.tl.lb;
 		const f = lb && Object.prototype.hasOwnProperty.call(lb, target) ? lb[target] : undefined;
@@ -411,9 +419,13 @@ export class Clip {
 	gotoFrame(f: number, play: boolean) {
 		this.ended = false;
 		this.age = 0;
+		// (to the frame it is on: nothing is entered again — Flash runs no script then, and the
+		// frame's sound doesn't start a second time)
+		if (f !== this.frame) this.enteredFrame = -1;
+		// (a page that listens then asks for the frame it is on still hears of it)
+		else if (this.kind === -1 && this.enteredFrame === f) this.player.emit({ type: "frame", frame: f, label: this.labelAt(f) });
 		this.frame = f;
 		this.playing = play;
-		this.enteredFrame = -1;
 		this.runActions();
 		this.streamSync();
 		this.sync();
@@ -453,6 +465,8 @@ export class Inst {
 	private mfra?: number;
 	/** the transform last written (unchanged values aren't written again) */
 	lastM = "";
+	/** The opacity or colour matrix written last. */
+	lastC = "";
 	/** Web Animations playing the transform and/or the alpha (see animate()) */
 	anims: Animation[] | null = null;
 	animTransform = false;
@@ -512,11 +526,11 @@ export class Inst {
 					}
 					if (it.t === 2) this.button(g);
 					if (__EVENTS__ && it.nm && clicks(owner, it.nm)) clickable(g);
-					// (compiled scripts wait in a queue: parents' before their children's)
-					if (__SCRIPTS__ && it.t === 0) this.clip.runActions();
-					this.clip.sync();
-					// its first frame's script runs now, before it advances (a stop() there holds it)
+					// its first frame's script runs now, before it advances (a stop() there holds it) and
+					// before its content is made: a goto there shows the frame it goes to, as a tick
+					// would (compiled scripts wait in a queue: parents' before their children's)
 					if (it.t === 0) this.clip.runActions();
+					this.clip.sync();
 				}
 				// Animate filters work in the parent's orientation (not rotated with the instance):
 				// outer (blend, opacity, colour) > filter > transform > clip
@@ -661,10 +675,14 @@ export class Inst {
 			const cv = it.c.map((tk, i) => trackAt(P, tk, t, i < 4 ? 100 : 0));
 			if (!it.cm) {
 				const a = String(Math.max(0, cv[3]!) / 100);
-				if (!it.sa) this.node.setAttribute("opacity", a);
-				else {
-					if (it.sa & 1) this.node.setAttribute("fill-opacity", a);
-					if (it.sa & 2) this.node.setAttribute("stroke-opacity", a);
+				// (like the transform: a value that stays isn't written every frame)
+				if (a !== this.lastC) {
+					this.lastC = a;
+					if (!it.sa) this.node.setAttribute("opacity", a);
+					else {
+						if (it.sa & 1) this.node.setAttribute("fill-opacity", a);
+						if (it.sa & 2) this.node.setAttribute("stroke-opacity", a);
+					}
 				}
 			} else {
 				if (!this.cm) {
@@ -697,7 +715,8 @@ export class Inst {
 					cv[3]! / 100,
 					cv[7]! / 255,
 				];
-				this.cm.setAttribute("values", v.map(r4).join(" "));
+				const values = v.map(r4).join(" ");
+				if (values !== this.lastC) this.cm.setAttribute("values", (this.lastC = values));
 			}
 		}
 		if (it.f) {
@@ -1054,10 +1073,14 @@ export class Player {
 			this.time -= fd;
 			this.step();
 		}
-		// (held: no tween runs on into the next frame)
-		this.root.render(this.done ? 0 : this.time / fd);
+		// (held: no tween runs on into the next frame; and drawn once — what changes it then, a
+		// goto, a mouse handler, a button, draws for itself — not on every frame for good)
+		const done = this.done && !(__SCRIPTS__ && this.scripts);
+		if (!done || !this.heldDrawn) this.root.render(this.done ? 0 : this.time / fd);
+		this.heldDrawn = done;
 		this.raf = requestAnimationFrame(this.frameLoop);
 	};
+	private heldDrawn = false;
 
 	step() {
 		this.inTick = true;
@@ -1099,6 +1122,8 @@ export class Player {
 	/** Out of view (IntersectionObserver), or in a background tab. */
 	offView = false;
 	hiddenTab = false;
+	/** Taken out of the page (a gallery that swaps exports): it holds until it is put back. */
+	gone = false;
 	private resting = false;
 	/**
 	 * Rests while out of view or in a background tab: no frames, its time stands still, and it goes
@@ -1106,9 +1131,11 @@ export class Player {
 	 * player whose sound is on keeps playing out of view, like a video with sound.
 	 */
 	rest() {
-		const r = this.hiddenTab || (this.offView && !(this.mixer && !this.mute));
+		const r = this.hiddenTab || this.gone || (this.offView && !(this.mixer && !this.mute));
 		if (r === this.resting) return;
 		this.resting = r;
+		// (taken out of the page, its sounds hold too)
+		if (this.gone || !r) this.mixer?.hold(r);
 		if (!this.running) return;
 		if (r) {
 			cancelAnimationFrame(this.raf);
@@ -1180,7 +1207,9 @@ export class Player {
 		this.time = Math.max(0, seconds - ticks * fd);
 		this.clock = seconds;
 		this.root.render(this.done ? 0 : this.time / fd);
-		if (wasRunning) this.play();
+		// (the frame loop again, not play(): a root its script stopped stays stopped, and one that
+		// reached its end stays there)
+		if (wasRunning) this.wake();
 	}
 
 	get currentFrame() {
@@ -1202,8 +1231,15 @@ export class Player {
 						c.updateAdvance();
 						this.root.render(this.time * this.P.fps);
 					},
-					gotoAndPlay: (t: number | string) => c.gotoFrame(c.resolve(typeof t === "number" ? t - 1 : t), true),
-					gotoAndStop: (t: number | string) => c.gotoFrame(c.resolve(typeof t === "number" ? t - 1 : t), false),
+					// (drawn at once: on a player that stands still nothing else would place what the frame brings)
+					gotoAndPlay: (t: number | string) => {
+						c.gotoFrame(c.resolve(typeof t === "number" ? t - 1 : t), true);
+						this.root.render(this.time * this.P.fps);
+					},
+					gotoAndStop: (t: number | string) => {
+						c.gotoFrame(c.resolve(typeof t === "number" ? t - 1 : t), false);
+						this.root.render(this.time * this.P.fps);
+					},
 				}
 			: null;
 	}
@@ -1317,6 +1353,8 @@ function hear(p: Player, e: Event) {
 	// Enter or Space on a focused instance: a click
 	const key = code === 6;
 	if (key && (e as KeyboardEvent).key !== "Enter" && (e as KeyboardEvent).key !== " ") return;
+	// the main button only, as in Flash (a right or middle click would follow a link handler)
+	if ((code === 3 || code === 4) && (e as PointerEvent).button) return;
 	const pressed = code === 3 ? new Set<Node>() : null;
 	let acted = false;
 	for (const [c, l] of p.handlers.slice()) {
@@ -1402,6 +1440,7 @@ function alone(svg: Element): boolean {
 	if (typeof IntersectionObserver === "function")
 		new IntersectionObserver((es) => {
 			player.offView = !es[es.length - 1]!.isIntersecting;
+			player.gone = !svg.isConnected;
 			player.rest();
 		}).observe(svg);
 	document.addEventListener("visibilitychange", () => {
@@ -1425,7 +1464,7 @@ function alone(svg: Element): boolean {
 		svg.addEventListener("click", go, { once: true });
 	} else if (begin === "auto") {
 		start();
-		still?.addEventListener("change", () => (still.matches ? player.pause() : player.play()));
+		still?.addEventListener("change", () => (still.matches ? player.pause() : player.wake()));
 	} else if (__EVENTS__ && begin === "visible") {
 		// when half on screen (or filling half of it)
 		if (typeof IntersectionObserver !== "function") start();

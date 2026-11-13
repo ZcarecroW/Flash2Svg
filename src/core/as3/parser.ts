@@ -66,6 +66,9 @@ const OPS = [
 	"..",
 ];
 
+/** Letters beyond ASCII in names (asked only for such characters). */
+const LETTER = /\p{L}/u;
+const LETTER_OR_DIGIT = /[\p{L}\p{N}\p{Mn}\p{Mc}]/u;
 const KEYWORD_VALUES = new Set(["return", "typeof", "delete", "in", "is", "as", "instanceof", "new", "void", "throw", "case", "else", "do"]);
 
 /** The tokens of a script. A `/` is a regular expression where a value is expected. */
@@ -161,22 +164,25 @@ export function tokenize(src: string): Token[] {
 		if (!t) return true;
 		if (t.kind === "num" || t.kind === "str" || t.kind === "regex") return false;
 		if (t.kind === "id") return KEYWORD_VALUES.has(t.text);
-		return !(t.text === ")" || t.text === "]" || t.text === "}");
+		// (after i++ or i-- a "/" divides: `i++ / 2`)
+		return !(t.text === ")" || t.text === "]" || t.text === "}" || t.text === "++" || t.text === "--");
 	};
 	while (i < n) {
 		const c = src[i]!;
-		if (c === "\n") {
+		// (a line may end in a lone carriage return, as old Mac files do)
+		if (c === "\n" || (c === "\r" && src[i + 1] !== "\n")) {
 			line++;
 			nl = true;
 			i++;
 			continue;
 		}
-		if (c === " " || c === "\t" || c === "\r" || c === "﻿" || c === " ") {
+		// (any other space too: form feeds, the wide space of East Asian keyboards)
+		if (c === "\f" || c === "\v" || (c > "\x7f" && /\s/.test(c)) || c === " " || c === "\t" || c === "\r" || c === "﻿" || c === " ") {
 			i++;
 			continue;
 		}
 		if (c === "/" && src[i + 1] === "/") {
-			while (i < n && src[i] !== "\n") i++;
+			while (i < n && src[i] !== "\n" && src[i] !== "\r") i++;
 			continue;
 		}
 		if (c === "/" && src[i + 1] === "*") {
@@ -193,9 +199,10 @@ export function tokenize(src: string): Token[] {
 		}
 		const at = { nl, line, pos: i };
 		nl = false;
-		if (/[A-Za-z_$]/.test(c)) {
+		// (names in any script: `var größe`, `var 得点`)
+		if (/[A-Za-z_$]/.test(c) || (c > "\x7f" && LETTER.test(c))) {
 			let j = i + 1;
-			while (j < n && /[A-Za-z0-9_$]/.test(src[j]!)) j++;
+			while (j < n && (/[A-Za-z0-9_$]/.test(src[j]!) || (src[j]! > "\x7f" && LETTER_OR_DIGIT.test(src[j]!)))) j++;
 			out.push({ kind: "id", text: src.slice(i, j), ...at });
 			i = j;
 			continue;
@@ -480,6 +487,11 @@ function parser(src: string, classes: boolean) {
 	/** A type name: Number, flash.display.MovieClip, Vector.<int>, *, void. */
 	function typeName(): string {
 		if (eat("*")) return "*";
+		// (`a:*=null` written without a space: the "*=" is the type and the "=")
+		if (peek().text === "*=") {
+			toks[p] = { ...peek(), text: "=" };
+			return "*";
+		}
 		let t = ident();
 		while (is(".") && toks[p + 1]?.kind === "id") {
 			p++;
@@ -496,7 +508,8 @@ function parser(src: string, classes: boolean) {
 	function closeAngle() {
 		const t = peek();
 		if (t.text === ">") p++;
-		else if (t.text === ">>" || t.text === ">>>") toks[p] = { ...t, text: t.text.slice(1) };
+		// (also glued to what follows: `Vector.<int>=new …`)
+		else if (/^>[>=]+$/.test(t.text)) toks[p] = { ...t, text: t.text.slice(1) };
 		else fail("Expected > after a Vector's type");
 	}
 	const annotation = () => (eat(":") ? typeName() : "*");
@@ -842,6 +855,10 @@ function parser(src: string, classes: boolean) {
 					eat(";");
 					return { k: "if", c, a, b: eat("else") ? statement() : null };
 				}
+				case "with":
+					// (said here: read as a call of a function "with", it failed when the frame ran)
+					if (toks[p + 1]?.text === "(") fail("with isn't supported: write the object's name before its properties");
+					break;
 				case "while": {
 					p++;
 					expect("(");

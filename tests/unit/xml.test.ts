@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cdata, el, escapeAttr, escapeText, serialize } from "../../src/core/xml.ts";
+import { cdata, el, escapeAttr, escapeText, parseXml, serialize } from "../../src/core/xml.ts";
 
 describe("XML writer", () => {
 	it("escapes markup in text and attributes", () => {
@@ -20,5 +20,17 @@ describe("XML writer", () => {
 
 	it("keeps CDATA sections closed", () => {
 		expect(serialize(cdata("x]]>y" + String.fromCharCode(0)))).toBe("<![CDATA[x]]]]><![CDATA[>y]]>");
+	});
+});
+
+describe("XML reader", () => {
+	it("says that a file ends in the middle (it went back to the start for ever)", () => {
+		for (const cut of ["<svg><g></g></svg", "<svg><g></g", '<svg><path d="M0 0', "<svg><g/"]) expect(() => parseXml(cut), cut).toThrow(/ends in the middle/);
+		expect(parseXml('<svg><g a="1"/></svg>').children.length).toBe(1);
+	});
+
+	it("leaves a character reference beyond Unicode as it is written", () => {
+		const svg = parseXml("<svg><text>&#x110000;&#65;</text></svg>");
+		expect(JSON.stringify(svg)).toContain("&#x110000;A");
 	});
 });

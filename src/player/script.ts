@@ -180,6 +180,9 @@ class Dispatcher {
 		if (!l) return;
 		const i = l.findIndex((e) => e.fn === fn && e.capture === capture);
 		if (i >= 0) l.splice(i, 1);
+		// (nobody listening any more: off the list of those every frame's event goes to — it
+		// would be asked on every frame, and kept alive, for good)
+		if (!l.length) current?.heard.get(type)?.delete(this);
 	}
 	hasEventListener(type: string) {
 		return !!this._on?.get(type)?.length;
@@ -840,7 +843,8 @@ class DisplayObjectContainer extends DisplayObject {
 		if (index < 0 || index > this._list().filter((x) => x !== o).length) throw fail(RangeError, 2006, "The supplied index is out of bounds.");
 		const on = o._onStage();
 		const same = o._parent === this && !o._gone;
-		if (o._parent && !same) o._parent.removeChild(o);
+		// (an instance taken off the stage before keeps its parent for coming back: it isn't a child now)
+		if (o._parent && !same && !o._gone) o._parent.removeChild(o);
 		if (o._c) current.orphans.delete(o._c);
 		o._parent = this;
 		o._gone = false;
@@ -860,6 +864,11 @@ class DisplayObjectContainer extends DisplayObject {
 		if (next) next._node.parentNode!.insertBefore(o._node, next._node);
 		else this._host().appendChild(o._node);
 		current.ver++;
+		// (its list is known now: kept, not sorted anew by the nodes' places — a thousand addChild
+		// calls made half a million comparisons of nodes)
+		rest.splice(next ? Math.max(0, index) : rest.length, 0, o);
+		this._lc = rest;
+		this._lv = current.ver;
 	}
 	_host(): Element {
 		return this._c ? this._c.node : this._node;
@@ -1570,9 +1579,13 @@ class TextField extends DisplayObject {
 		return current.base ? this._text : this._text.replace(/\r/g, "\n");
 	}
 	set text(v: string) {
-		this._text = (v === null || v === undefined ? "" : String(v)).replace(/\n/g, "\r");
-		this._html = null;
+		const text = (v === null || v === undefined ? "" : String(v)).replace(/\n/g, "\r");
 		const f = this._def;
+		// the text it has, set again (a score written on every frame): nothing to measure and lay
+		// out anew (22 font changes and measurements for 21 characters each time)
+		if (text === this._text && this._html === null && !this._in && this._chars.every((c) => c === f)) return;
+		this._text = text;
+		this._html = null;
 		this._chars = Array.from({ length: this._text.length }, () => f);
 		// (new text: the selection starts again)
 		this._selected = [0, 0];
@@ -1835,6 +1848,8 @@ class FGraphics {
 	private y = 0;
 	private layer: SVGElement | null = null;
 	private host: SVGElement;
+	/** The gradients and patterns made for its fills (in <defs>). */
+	private paints: Element[] = [];
 	/** What it covers, without and with its lines. */
 	private inner = noBox();
 	private outer = noBox();
@@ -1850,6 +1865,8 @@ class FGraphics {
 		return !!this.layer && covers(this.layer, x, y);
 	}
 	private pt(x: number, y: number) {
+		// (drawn on: a path still open shows with the frame, wherever its object is — see present)
+		current.open.add(this);
 		addPoint(this.inner, x, y);
 		const h = this.stroke === "none" ? 0 : this.sw / 2;
 		addPoint(this.outer, x - h, y - h);
@@ -1875,6 +1892,8 @@ class FGraphics {
 	}
 	clear() {
 		this.layer?.replaceChildren();
+		// (its gradients and patterns go with it: drawn anew every frame they would pile up)
+		for (const p of this.paints.splice(0)) p.remove();
 		this.d = "";
 		this.fill = this.stroke = "none";
 		this.inner = noBox();
@@ -1907,7 +1926,7 @@ class FGraphics {
 		if (linear) for (const [k, v] of [["x1", -819.2], ["y1", 0], ["x2", 819.2], ["y2", 0]] as const) e.setAttribute(k, String(v));
 		else for (const [k, v] of [["cx", 0], ["cy", 0], ["r", 819.2], ["fx", focal * 819.2], ["fy", 0]] as const) e.setAttribute(k, String(v));
 		colors.forEach((c, i) => e.appendChild(svgEl("stop", { offset: String(ratios[i]! / 255), "stop-color": colorOf(c), "stop-opacity": String(alphas[i]) })));
-		current.player.defs.appendChild(e);
+		this.paints.push(current.player.defs.appendChild(e));
 		this.fill = `url(#${id})`;
 		this.fo = 1;
 	}
@@ -1919,7 +1938,7 @@ class FGraphics {
 		const img = svgEl("image", { width: String(bd.width), height: String(bd.height), href: bd._url() });
 		if (!smooth) img.style.imageRendering = "pixelated";
 		p.appendChild(img);
-		current.player.defs.appendChild(p);
+		this.paints.push(current.player.defs.appendChild(p));
 		this.fill = `url(#${id})`;
 		this.fo = 1;
 	}
@@ -2215,6 +2234,8 @@ export class Scripts {
 	private front = -1;
 	/** Movie clips scripts took off the stage. */
 	orphans = new Set<Clip>();
+	/** Graphics drawn on since the last frame shown: their open paths are closed for it. */
+	open = new Set<FGraphics>();
 	private objs = new WeakMap<Inst, DisplayObject>();
 	private clips = new WeakMap<Clip, MovieClip>();
 	private nodes = new WeakMap<Node, Inst>();
@@ -2377,6 +2398,8 @@ export class Scripts {
 			key: dictKey,
 			keys: dictKeys,
 			sort: sortArray,
+			insertAt: (a: any, i: number, v: unknown) => (typeof a.insertAt === "function" ? a.insertAt(i, v) : void a.splice(i, 0, v)),
+			removeAt: (a: any, i: number) => (typeof a.removeAt === "function" ? a.removeAt(i) : a.splice(i, 1)[0]),
 			sortOn: (a: Record<string, unknown>[], f: string, o = 0) =>
 				sortArray(a, (x: Record<string, unknown>, y: Record<string, unknown>) => {
 					const p = x[f],
@@ -3008,17 +3031,44 @@ export class Scripts {
 	/** Children scripts added move and draw with their parent. */
 	dynTick(c: Clip) {
 		const o = c.obj as DisplayObjectContainer | undefined;
-		if (o) for (const d of o._dyn) d._c?.tick();
+		if (o) this.tickIn(o);
+		// (what scripts put on the stage itself moves with the root)
+		if (c.kind === -1) this.tickIn(this.stage);
+	}
+	/**
+	 * The timelines among a container's script-made children, also inside plain Sprites there
+	 * (`box.addChild(new Ball())`: the ball has a timeline, the box has none to move it).
+	 */
+	private tickIn(o: DisplayObjectContainer) {
+		for (const d of o._dyn as any[]) {
+			if (d._c) {
+				if (d._c.kind !== -1) d._c.tick();
+			} else if (!d._i && d._dyn?.length) this.tickIn(d);
+		}
 	}
 	dynRender(c: Clip, frac: number) {
 		const o = c.obj as DisplayObjectContainer | undefined;
-		if (o) for (const d of o._dyn) if (!d._i) d._c?.render(frac);
-		for (const d of (o?._dyn ?? []) as any[]) d._g?._end?.();
-		if (c.kind === -1) this.present();
+		if (o) this.renderIn(o, frac);
+		if (c.kind === -1) {
+			this.renderIn(this.stage, frac);
+			this.present();
+		}
+	}
+	private renderIn(o: DisplayObjectContainer, frac: number) {
+		for (const d of o._dyn as any[]) {
+			if (d._i) continue;
+			if (d._c) {
+				if (d._c.kind !== -1) d._c.render(frac);
+			} else if (d._dyn?.length) this.renderIn(d, frac);
+		}
 	}
 
 	/** What a frame shows of pixels and masks that scripts changed. */
 	private present() {
+		if (this.open.size) {
+			for (const g of this.open) g._end();
+			this.open.clear();
+		}
 		for (const b of this.bitmaps) if (!b._gone) b._show();
 		this.bitmaps.clear();
 		for (const o of this.masked) o._maskNow(`${this.player.svg.id}_m${this.uid}`);

@@ -111,8 +111,14 @@ export function bitmapScales(model: SceneModel, files: FileSource, opts: { inclu
 			// layer parenting: the parent's matrix per frame (none = not parented in that frame)
 			let rig = layer.rig?.length ? 0 : 1;
 			for (const m of layer.rig ?? []) rig = Math.max(rig, m ? norm(m) : 1);
-			// a near layer is drawn larger
-			for (const z of layer.depth ?? []) if (z < 0 && z > -DEPTH_FOCAL) rig = Math.max(rig, DEPTH_FOCAL / (DEPTH_FOCAL + z));
+			// a near layer is drawn larger: its depth, less the camera's (a camera moved in draws
+			// everything larger that isn't attached to it), as zOf in program.ts
+			const depth = layer.depth;
+			const cam = layer.attached ? undefined : tl.camera;
+			for (let f = 0, n = Math.max(depth?.length ?? 0, cam?.length ?? 0); f < n; f++) {
+				const z = (depth?.[Math.min(f, depth.length - 1)] ?? 0) - (cam?.[f]?.z ?? 0);
+				if (z < 0 && z > -DEPTH_FOCAL) rig = Math.max(rig, DEPTH_FOCAL / (DEPTH_FOCAL + z));
+			}
 			layer.keyframes.forEach((kf, k) => {
 				for (const e of kf.elements) {
 					if (e.kind === "bitmap") {

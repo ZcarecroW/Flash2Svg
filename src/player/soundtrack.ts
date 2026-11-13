@@ -33,10 +33,14 @@ export default function soundtrack(S: SoundSchedule, id: string) {
 				return null;
 			}
 		}
-		const a = svg.getAnimations?.({ subtree: true })[0];
+		// (kept: listing every animation of the document each frame, to read one clock, costs;
+		// an animation its element let go of — a start trigger set another — is idle: asked anew)
+		if (!css || css.playState === "idle") css = svg.getAnimations?.({ subtree: true })[0];
+		const a = css;
 		if (a) return a.playState === "paused" || typeof a.currentTime !== "number" ? null : a.currentTime / 1000;
 		return null;
 	};
+	let css: Animation | undefined;
 	const streams = new Map<PFrameSound, Voice>();
 	const span = S.ticks - S.from;
 	/** The tick a time is on, looped; each pass of the loop has its own number. */
@@ -51,14 +55,19 @@ export default function soundtrack(S: SoundSchedule, id: string) {
 	const frame = () => {
 		requestAnimationFrame(frame);
 		const t = now();
-		if (t === null || document.hidden) return;
+		// (a paused animation — a hover start the pointer left — holds its sounds where they are)
+		const still = t === null || document.hidden;
+		if (still !== mixer.held) mixer.hold(still);
+		if (t === null || still) return;
 		host.clock = t;
 		const [k, p] = place(t);
 		const wrapped = p !== pass;
-		if (last > k && !wrapped) streams.forEach((v) => v.stop());
+		// (back in time, or round the loop: streams start again where the animation is)
+		if (last > k || wrapped) streams.forEach((v) => v.stop());
 		for (const e of S.ev) {
 			const at = e[0];
-			const due = wrapped ? at > last || at <= k : at > last && at <= k;
+			// round the loop: the rest of this pass, then the loop's own ticks (not the intro's before it)
+			const due = wrapped ? at > last || (at >= S.from && at <= k) : at > last && at <= k;
 			if (e[2] === 3) {
 				// a stream plays between its ticks, from where the animation is
 				const on = k >= at && k < e[4];
@@ -76,5 +85,4 @@ export default function soundtrack(S: SoundSchedule, id: string) {
 	// (ticks start at 0: a sound on the first frame is due at once)
 	last = -1;
 	requestAnimationFrame(frame);
-	document.addEventListener("visibilitychange", () => mixer.hold(document.hidden));
 }

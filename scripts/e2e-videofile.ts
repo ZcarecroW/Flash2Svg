@@ -258,7 +258,7 @@ for (const name of names) {
 	}
 }
 await browser.close();
-cli?.close();
+await cli?.close();
 server.close();
 console.log(failures ? `\n${failures} failed` : "\nVideo files are good");
 process.exit(failures ? 1 : 0);

@@ -541,9 +541,15 @@ class FSound extends Dispatcher {
 		} else if (this._el) {
 			const a = this._el.cloneNode() as HTMLAudioElement;
 			a.currentTime = start / 1000;
-			a.loop = loops > 0;
+			// (as often as asked, then it is over: `loop` would go on for ever)
+			let left = Math.max(1, loops) - 1;
 			void a.play().catch(() => {});
-			a.onended = () => current.safely(() => c.dispatchEvent(new FEvent(FEvent.SOUND_COMPLETE)));
+			a.onended = () => {
+				if (left-- > 0) {
+					a.currentTime = start / 1000;
+					void a.play().catch(() => {});
+				} else current.safely(() => c.dispatchEvent(new FEvent(FEvent.SOUND_COMPLETE)));
+			};
 			c._v = { stop: () => a.pause(), pos: () => a.currentTime };
 		}
 		if (transform) c.soundTransform = transform;

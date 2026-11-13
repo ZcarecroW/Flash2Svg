@@ -10,7 +10,7 @@ kind of animation in the file:
 | --- | --- | --- | --- |
 | **SMIL** | `<animate>` / `<animateTransform>` with exact `keySplines` easing | ✓ | button states via CSS, web links, start on click / hover / when visible, scroll |
 | **CSS** | `@keyframes` on the individual transform properties, `cubic-bezier()` or `linear()` easing, class based | ✓ | button states, web links, pause from your page CSS, scroll-driven (inline) |
-| **JS player** | artwork + compact timeline + a 15.6 KB runtime with real Flash semantics (6.3 KB gzipped; 18 KB with shape-tween morphs, 18.7 KB with mouse handlers, 86 KB with frame scripts) | poster frame only | ✓ `play()`, `stop()`, `gotoAndPlay("label")`, buttons, Animate's code snippets, scroll, sounds |
+| **JS player** | artwork + compact timeline + a 16.0 KB runtime with real Flash semantics (6.5 KB gzipped; 18.5 KB with shape-tween morphs, 19.1 KB with mouse handlers, 87 KB with frame scripts) | poster frame only | ✓ `play()`, `stop()`, `gotoAndPlay("label")`, buttons, Animate's code snippets, scroll, sounds |
 | **Frames** | one still SVG per frame | ✓ | – |
 | **MP4** / **WebM** | video files with their sound, for social media and video players (H.264 or VP9, through the browser's encoders in Animate, or an installed Chrome or Edge from the command line) | – | – |
 | **GIF** / **WebP** / **APNG** | animated raster fallbacks of the first pass, running movie clips included (GIF: 256 colours a frame; WebP: full colour with alpha, lossless for flat drawings, only the changed rectangle per frame), for e-mail and apps without SVG animation | ✓ | – |

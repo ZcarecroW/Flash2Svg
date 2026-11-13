@@ -104,7 +104,7 @@ function visualEntry(v: VideoTrack): Uint8Array {
 
 function audioEntry(a: AudioTrack): Uint8Array {
 	const head = [new Uint8Array(6), u16(1), new Uint8Array(8), u16(a.channels), u16(16), u32(0), u32((a.sampleRate * 65536) >>> 0)];
-	if (a.codec === "opus") return box("Opus", ...head, box("dOps", u8(0), u8(a.channels), u16(3840), u32(a.sampleRate), u16(0), u8(0)));
+	if (a.codec === "opus") return box("Opus", ...head, box("dOps", u8(0), u8(a.channels), u16(opusPreSkip(a)), u32(a.sampleRate), u16(0), u8(0)));
 	const asc = a.description ?? new Uint8Array();
 	const dec = concat([u8(0x40), u8(0x15), be(0, 3), u32(0), u32(0), u8(5), u8(asc.length), asc]);
 	const es = concat([u16(1), u8(0), u8(4), u8(dec.length), dec, u8(6), u8(1), u8(2)]);
@@ -151,7 +151,7 @@ function trak(t: Track, offset: number, movieScale: number): Uint8Array {
 	const keys = t.samples.flatMap((s, i) => (s.key ? [i + 1] : []));
 	const sound = t.handler === "soun";
 	const movie = Math.round((total * movieScale) / t.timescale);
-	const unit = [1, 0, 0, 0, 1, 0, 0, 0, 0x4000].map((v, i) => u32(i === 0 || i === 4 ? 0x10000 : v));
+	const unit = [1, 0, 0, 0, 1, 0, 0, 0, 0x40000000].map((v, i) => u32(i === 0 || i === 4 ? 0x10000 : v));
 	const stbl = box(
 		"stbl",
 		full("stsd", 0, 0, u32(1), t.entry),
@@ -185,8 +185,26 @@ export function muxMp4(video: VideoTrack, audio?: AudioTrack): Uint8Array {
 	const moov = (at: number[]) => {
 		const traks = tracks.map((t, i) => trak(t, at[i]!, movieScale));
 		const end = Math.max(...tracks.flatMap((t) => t.samples.map((s) => s.time + s.duration)));
-		const unit = [1, 0, 0, 0, 1, 0, 0, 0, 0x4000].map((v, i) => u32(i === 0 || i === 4 ? 0x10000 : v));
-		return box("moov", full("mvhd", 0, 0, u32(0), u32(0), u32(movieScale), u32(Math.round(end / 1000)), u32(0x10000), u16(0x100), new Uint8Array(10), ...unit, new Uint8Array(24), u32(tracks.length + 1)), ...traks);
+		const unit = [1, 0, 0, 0, 1, 0, 0, 0, 0x40000000].map((v, i) => u32(i === 0 || i === 4 ? 0x10000 : v));
+		return box(
+			"moov",
+			full(
+				"mvhd",
+				0,
+				0,
+				u32(0),
+				u32(0),
+				u32(movieScale),
+				u32(Math.round(end / 1000)),
+				u32(0x10000),
+				u16(0x100),
+				new Uint8Array(10),
+				...unit,
+				new Uint8Array(24),
+				u32(tracks.length + 1),
+			),
+			...traks,
+		);
 	};
 	// (its size doesn't depend on the offsets: asked once with zeros)
 	const head = ftyp.length + moov(tracks.map(() => 0)).length + 8;
@@ -231,12 +249,22 @@ const float = (id: number, v: number): Uint8Array => {
 };
 const text = (id: number, s: string) => el(id, ascii(s));
 
+/**
+ * The samples (at 48 kHz) a decoder drops at the start of Opus: what the encoder's own head says,
+ * else libopus's usual 312 (6.5 ms). One number for the head, MP4's dOps and WebM's CodecDelay:
+ * 80 ms in one and 6.5 in the other let a player that goes by the head cut 80 ms of sound.
+ */
+function opusPreSkip(a: AudioTrack): number {
+	const d = a.description;
+	return d && d.length >= 12 && d[0] === 0x4f && d[1] === 0x70 ? d[10]! | (d[11]! << 8) : 312;
+}
+
 function opusHead(a: AudioTrack): Uint8Array {
 	const h = new DataView(new ArrayBuffer(19));
 	"OpusHead".split("").forEach((c, i) => h.setUint8(i, c.charCodeAt(0)));
 	h.setUint8(8, 1);
 	h.setUint8(9, a.channels);
-	h.setUint16(10, 3840, true);
+	h.setUint16(10, opusPreSkip(a), true);
 	h.setUint32(12, a.sampleRate, true);
 	return new Uint8Array(h.buffer);
 }
@@ -248,8 +276,32 @@ export function muxWebm(video: VideoTrack, audio?: AudioTrack): Uint8Array {
 	const hasAudio = !!audio?.samples.length;
 	const tracks = el(
 		0x1654ae6b,
-		el(0xae, uint(0xd7, 1), uint(0x73c5, 1), uint(0x83, 1), uint(0x9c, 0), text(0x86, id), uint(0x23e383, Math.round(1e9 / fps)), el(0xe0, uint(0xb0, video.width), uint(0xba, video.height))),
-		...(hasAudio ? [el(0xae, uint(0xd7, 2), uint(0x73c5, 2), uint(0x83, 2), uint(0x9c, 0), text(0x86, "A_OPUS"), el(0x63a2, opusHead(audio!)), uint(0x56aa, 6500000), uint(0x56bb, 80000000), el(0xe1, float(0xb5, audio!.sampleRate), uint(0x9f, audio!.channels)))] : []),
+		el(
+			0xae,
+			uint(0xd7, 1),
+			uint(0x73c5, 1),
+			uint(0x83, 1),
+			uint(0x9c, 0),
+			text(0x86, id),
+			uint(0x23e383, Math.round(1e9 / fps)),
+			el(0xe0, uint(0xb0, video.width), uint(0xba, video.height)),
+		),
+		...(hasAudio
+			? [
+					el(
+						0xae,
+						uint(0xd7, 2),
+						uint(0x73c5, 2),
+						uint(0x83, 2),
+						uint(0x9c, 0),
+						text(0x86, "A_OPUS"),
+						el(0x63a2, opusHead(audio!)),
+						uint(0x56aa, Math.round((opusPreSkip(audio!) / 48000) * 1e9)),
+						uint(0x56bb, 80000000),
+						el(0xe1, float(0xb5, audio!.sampleRate), uint(0x9f, audio!.channels)),
+					),
+				]
+			: []),
 	);
 	const end = Math.max(...[video, ...(hasAudio ? [audio!] : [])].flatMap((t) => t.samples.map((s) => s.time + s.duration)));
 	const info = el(0x1549a966, uint(0x2ad7b1, 1000000), float(0x4489, end / 1000), text(0x4d80, "Flash2SVG"), text(0x5741, "Flash2SVG"));

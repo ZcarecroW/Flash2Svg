@@ -138,6 +138,11 @@ const transparentAny = (d: Uint8ClampedArray) => {
 	return false;
 };
 
+const translucentAny = (d: Uint8ClampedArray) => {
+	for (let i = 3; i < d.length; i += 4) if (d[i]! < 255) return true;
+	return false;
+};
+
 /**
  * Frame durations in units of `unit` ms as the frames come, rounded on the running total (a 24 fps
  * GIF alternates 4 and 5 hundredths, keeping its length). Browsers show a frame of 10 ms or less
@@ -211,14 +216,16 @@ function gifWriter(loop: boolean): Writer {
 		const palette = quantize(data, 256, { format, oneBitAlpha: alpha });
 		const index = applyPalette(data, palette, format);
 		const t = alpha ? palette.findIndex((c: number[]) => c[3] === 0) : -1;
-		// transparent frames clear what was there (disposal 2), opaque ones simply cover it
+		// Every frame clears what was there when its time is over (disposal 2): each is a whole
+		// picture. An opaque frame left in place would show through the transparent parts of the
+		// next one (a fade-in over an empty stage that loops).
 		gif.writeFrame(index, width, height, {
 			palette,
 			delay: cs * 10,
 			repeat: loop ? 0 : -1,
 			transparent: t >= 0,
 			transparentIndex: Math.max(0, t),
-			dispose: alpha ? 2 : 1,
+			dispose: 2,
 		});
 	});
 	return {
@@ -304,7 +311,8 @@ function webpWriter(loop: boolean, codecs: Codecs, quality: number, lossless: bo
 		}
 		const r = !prev ? { x: 0, y: 0, w: W, h: H } : (changed(prev, p) ?? { x: 0, y: 0, w: 2, h: 2 });
 		const part = r.w === W && r.h === H ? p : crop(p, r);
-		alpha ||= transparentAny(part.data);
+		// (any alpha at all: WebP keeps all of it, and its header has to say so)
+		alpha ||= translucentAny(part.data);
 		const webp = await codecs.webp(part, lossless ? { lossless: 1, exact: 1 } : { quality });
 		const payload = [u24(r.x / 2), u24(r.y / 2), u24(r.w - 1), u24(r.h - 1), u24(Math.min(0xffffff, ms)), Uint8Array.of(2), ...frameChunks(webp)];
 		chunks.push(chunk("ANMF", concat(payload)));
@@ -328,10 +336,15 @@ function pngData(p: Pixels): Uint8Array {
 	const row = w * 4;
 	const raw = new Uint8Array((row + 1) * h);
 	const tries = [0, 1, 2, 3, 4].map(() => new Uint8Array(row));
+	const [t0, t1, t2, t3, t4] = tries as [Uint8Array, Uint8Array, Uint8Array, Uint8Array, Uint8Array];
 	for (let y = 0; y < h; y++) {
 		const cur = y * row;
 		const up = cur - row;
-		const sums = [0, 0, 0, 0, 0];
+		let s0 = 0,
+			s1 = 0,
+			s2 = 0,
+			s3 = 0,
+			s4 = 0;
 		for (let i = 0; i < row; i++) {
 			const v = data[cur + i]!;
 			const a = i >= 4 ? data[cur + i - 4]! : 0;
@@ -341,13 +354,25 @@ function pngData(p: Pixels): Uint8Array {
 				pb = Math.abs(a - c),
 				pc = Math.abs(a + b - 2 * c);
 			const paeth = pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
-			const out = [v, v - a, v - b, v - ((a + b) >> 1), v - paeth];
-			for (let k = 0; k < 5; k++) {
-				const d = out[k]! & 255;
-				tries[k]![i] = d;
-				sums[k]! += d < 128 ? d : 256 - d;
-			}
+			// (the five candidates one by one: an array of them for every byte of every frame cost
+			// more than the compression — 62 ms for 1280 × 720, now 21)
+			let d = v;
+			t0[i] = d;
+			s0 += d < 128 ? d : 256 - d;
+			d = (v - a) & 255;
+			t1[i] = d;
+			s1 += d < 128 ? d : 256 - d;
+			d = (v - b) & 255;
+			t2[i] = d;
+			s2 += d < 128 ? d : 256 - d;
+			d = (v - ((a + b) >> 1)) & 255;
+			t3[i] = d;
+			s3 += d < 128 ? d : 256 - d;
+			d = (v - paeth) & 255;
+			t4[i] = d;
+			s4 += d < 128 ? d : 256 - d;
 		}
+		const sums = [s0, s1, s2, s3, s4];
 		let best = 0;
 		for (let k = 1; k < 5; k++) if (sums[k]! < sums[best]!) best = k;
 		const at = y * (row + 1);
@@ -394,7 +419,20 @@ function apngWriter(loop: boolean): Writer {
 		const r = !prev ? { x: 0, y: 0, w: W, h: H } : (changed(prev, p) ?? { x: 0, y: 0, w: 1, h: 1 });
 		const part = r.w === W && r.h === H ? p : crop(p, r);
 		const body = pngData(part);
-		chunks.push(pngChunk("fcTL", concat([be32(seq++), be32(r.w), be32(r.h), be32(r.x), be32(r.y), be16(Math.min(65535, ms)), be16(1000), Uint8Array.of(0, 0)])));
+		chunks.push(
+			pngChunk(
+				"fcTL",
+				concat([
+					be32(seq++),
+					be32(r.w),
+					be32(r.h),
+					be32(r.x),
+					be32(r.y),
+					...(ms > 65535 ? [be16(Math.min(65535, Math.round(ms / 10))), be16(100)] : [be16(ms), be16(1000)]),
+					Uint8Array.of(0, 0),
+				]),
+			),
+		);
 		chunks.push(frames ? pngChunk("fdAT", concat([be32(seq++), body])) : pngChunk("IDAT", body));
 		frames++;
 		prev = p;
@@ -494,7 +532,8 @@ export async function exportRaster(
 		// lossy or lossless: decided on the first, middle and last tick, drawn for it at most 640
 		// pixels wide (the kind of drawing decides, not its size: a full 8192 px stage took 21 s more)
 		const { width, height } = model.doc;
-		const k = Math.min(1, SAMPLE_SIZE / Math.max(1, width, height));
+		// (the short side keeps a pixel: a stage of 8192 × 3 would be drawn 640 × 0)
+		const k = Math.min(1, Math.max(SAMPLE_SIZE / Math.max(1, width, height), 1 / Math.max(1, Math.min(width, height))));
 		const samples: Pixels[] = [];
 		for (const t of new Set([0, src.count >> 1, src.count - 1])) samples.push(await src.draw(t, k));
 		writer = webpWriter(src.loop, codecs!, quality, await webpLossless(samples, codecs!, quality));
