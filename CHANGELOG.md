@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 5.2.3 (2026-11-14)
 
 What the review of 5.2.2 left open, done — each case that is about Flash checked against Animate's own rendering or Flash Player line by line.
 

@@ -364,7 +364,7 @@ draws a 1 px softer rim than Animate (~0.1 % of the filters demo).
 
 ## Part 3: after 5.0.0 (goals of 2026-11-07)
 
-Parts 1 and 2 were released in 4.1.0–5.0.0; Part 3 is done and released in 5.1.0 (2026-11-08). 5.2.0 (2026-11-11) added, besides the roadmap, colour grading with LUTs and a panel that spreads out in width; 5.2.2 (2026-11-14) is a review of the whole project for bugs (a wait between two tweens, movie clips that stop on a looping timeline, sounds in SMIL and CSS, the JS player's play once, frame scripts, Lottie, GIF and video files, the panel). These were the goals, biggest first; work started when
+Parts 1 and 2 were released in 4.1.0–5.0.0; Part 3 is done and released in 5.1.0 (2026-11-08). 5.2.0 (2026-11-11) added, besides the roadmap, colour grading with LUTs and a panel that spreads out in width; 5.2.2 (2026-11-14) is a review of the whole project for bugs (a wait between two tweens, movie clips that stop on a looping timeline, sounds in SMIL and CSS, the JS player's play once, frame scripts, Lottie, GIF and video files, the panel); 5.2.3 (2026-11-14) does what it left open (Visible and blend modes per keyframe, frame ranges in the JS player, flipped 9-slice instances, instances on layers with effects in frame scripts, and script details measured against Flash Player). These were the goals, biggest first; work started when
 the user said go (2026-11-08), in this order. Each is compared with Flash Player or
 Animate as before: an own test document, real keys and clicks where a user is involved.
 
