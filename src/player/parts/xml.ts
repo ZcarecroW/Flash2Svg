@@ -372,6 +372,15 @@ export default function xml(L: any): Record<string, unknown> {
 			const nodes: XNode[] = isList ? t._l : [t._n];
 			if (/^\d+$/.test(k)) {
 				const old = nodes[+k];
+				// (not XML: the item keeps its name and gets the value as its content, as E4X does)
+				if (old && !(v instanceof XMLClass || v instanceof XMLListClass)) {
+					if (old._k === ELEMENT) {
+						for (const c of old._kids) c._up = null;
+						old._kids = [];
+						adopt(old, [new XNode(TEXT, "", String(v))], 0);
+					} else old._v = String(v);
+					return true;
+				}
 				if (old?._up) {
 					const up = old._up;
 					const at = up._kids.indexOf(old);
@@ -708,6 +717,9 @@ export default function xml(L: any): Record<string, unknown> {
 			if (this._l.length !== 1) throw bad(1086, `The ${k} method only works on lists containing one item.`);
 			return (wrap(this._l[0]) as any)[k](...a);
 		};
+	// (the methods aren't enumerable, as a class's are: for..in over a list gives its indices only)
+	for (const proto of [XMLClass.prototype, XMLListClass.prototype])
+		for (const k of Object.keys(proto)) Object.defineProperty(proto, k, { enumerable: false });
 
 	class NamespaceClass {
 		prefix: string | undefined;
@@ -796,6 +808,11 @@ export default function xml(L: any): Record<string, unknown> {
 		xn(x: any, name: string, outside: unknown) {
 			const c = childrenOf(nodes(x), name);
 			return c.length ? list(c) : outside;
+		},
+		/** a + b, a += b: XML and XML make a list of both (E4X), anything else adds as text or numbers */
+		xadd(a: any, b: any) {
+			const xml = (v: any) => v instanceof XMLClass || v instanceof XMLListClass;
+			return xml(a) && xml(b) ? list([...nodes(a), ...nodes(b)]) : a + b;
 		},
 		/** o.@name = v */
 		xs(o: any, name: string, v: unknown) {

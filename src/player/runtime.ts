@@ -298,7 +298,9 @@ export class Clip {
 			if (this.fresh) {
 				this.fresh = false;
 			} else if (this.playing) {
-				this.frame = this.frame + 1 >= this.tl.n ? 0 : this.frame + 1;
+				// (the root of a frame range goes round within it)
+				const rg = this.kind === -1 ? this.P.rg : undefined;
+				this.frame = this.frame + 1 >= (rg ? rg[1] : this.tl.n) ? (rg ? rg[0] : 0) : this.frame + 1;
 			}
 			this.runActions();
 			this.streamSync();
@@ -467,6 +469,8 @@ export class Inst {
 	lastM = "";
 	/** The opacity or colour matrix written last. */
 	lastC = "";
+	/** Display and blend mode written last (PInst.hv, bm). */
+	lastV = "";
 	/** Web Animations playing the transform and/or the alpha (see animate()) */
 	anims: Animation[] | null = null;
 	animTransform = false;
@@ -647,6 +651,21 @@ export class Inst {
 			return;
 		}
 		if (it.k !== "i") return;
+		// (in the build with morphs, which the exporter picks for such instances)
+		if (__MORPH__ && (it.hv || it.bm)) {
+			// Visible off on some keyframes, another blend mode on others (a movie clip in it plays on)
+			const f = Math.floor(t + 1e-6);
+			let shown = "";
+			if (it.hv) for (const [a, b] of it.hv) if (f >= a && f < b) shown = "none";
+			let mode = it.b ?? "";
+			if (it.bm) for (const [a, b, m] of it.bm) if (f >= a && f < b) mode = m;
+			const now = shown + "|" + mode;
+			if (now !== this.lastV) {
+				this.lastV = now;
+				this.node.style.display = shown;
+				this.node.style.mixBlendMode = mode;
+			}
+		}
 		const tr = it.tr;
 		if (this.anims) {
 			const player = this.owner.player;
@@ -772,6 +791,9 @@ export class Inst {
 			a.cancel();
 			this.owner.player.anims.delete(a);
 		}
+		// (a named clip that leaves the stage isn't the page's to drive any more: clip(name) says null)
+		const nm = (this.it as PInst).nm;
+		if (nm && this.clip && this.owner.player.named.get(nm) === this.clip) this.owner.player.named.delete(nm);
 		this.clip?.dispose();
 		this.hit?.dispose();
 		// its own filters go with it (movie clips are made anew each time they appear)
@@ -994,6 +1016,10 @@ export class Player {
 	get done() {
 		return !this.loop && !this.root.playing;
 	}
+	/** Where the root starts: its first frame, or a frame range's. */
+	get first() {
+		return this.P.rg?.[0] ?? 0;
+	}
 	/** Running, and not held: Web Animations run. */
 	get live() {
 		return this.running && !this.done;
@@ -1038,7 +1064,7 @@ export class Player {
 		this.root.node.setAttribute("class", "f2s-stage");
 		this.svg.appendChild(this.root.node);
 		if (__SCRIPTS__) this.scripts?.started(this.root);
-		this.root.gotoFrame(0, true);
+		this.root.gotoFrame(this.first, true);
 		this.time = 0;
 		this.root.render(0);
 	}
@@ -1104,7 +1130,7 @@ export class Player {
 	play() {
 		const r = this.root;
 		// a non-looping animation that ran to its end plays again from the start
-		if (!this.loop && !r.playing && r.ended) r.gotoFrame(0, true);
+		if (!this.loop && !r.playing && r.ended) r.gotoFrame(this.first, true);
 		r.playing = true;
 		r.updateAdvance();
 		this.wake();
@@ -1457,7 +1483,7 @@ function alone(svg: Element): boolean {
 		player.root.gotoFrame(P.pf ?? 0, false);
 		player.root.render(0);
 		const go = () => {
-			player.root.gotoFrame(0, true);
+			player.root.gotoFrame(player.first, true);
 			player.root.render(0);
 			start();
 		};
@@ -1521,7 +1547,7 @@ function alone(svg: Element): boolean {
 	else if (begin === "hover") {
 		// (played to its end without looping: from the start again)
 		svg.addEventListener("pointerenter", () => {
-			if (player.root.ended) player.root.gotoFrame(0, true);
+			if (player.root.ended) player.root.gotoFrame(player.first, true);
 			player.wake();
 		});
 		svg.addEventListener("pointerleave", () => player.pause());

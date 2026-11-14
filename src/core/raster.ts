@@ -67,24 +67,27 @@ export function tickSource(model: SceneModel, files: FileSource, s: ExportSettin
 	const grade = s.grade && !s.grade.empty ? s.grade : null;
 	const W = Math.max(1, Math.round(width)),
 		H = Math.max(1, Math.round(height));
+	// The picture drawn last: a tick that draws the same (a hold, a stop) isn't drawn again — the
+	// SVG costs microseconds, the picture milliseconds (seconds with large filters). The pixels are
+	// only read after this (GIF, WebP and APNG writers, video).
+	let last: { svg: string; scale: number; px: Pixels } | null = null;
 	return {
 		count,
 		loop: horizon.loop || horizon.tail > 0,
 		tickMs: 1000 / frameRate,
 		draw: async (t, scale = 1) => {
-			const px = await rasterize(
-				renderStatic(ctx, rootId, {
-					frame: rootFrames[t]!,
-					ticks: t,
-					movieClips: "play",
-					includeBackground: s.includeBackground,
-					embedImages: true,
-					textAsOutlines: true,
-				}).svg,
-				Math.max(1, Math.round(W * scale)),
-				Math.max(1, Math.round(H * scale)),
-			);
+			const svg = renderStatic(ctx, rootId, {
+				frame: rootFrames[t]!,
+				ticks: t,
+				movieClips: "play",
+				includeBackground: s.includeBackground,
+				embedImages: true,
+				textAsOutlines: true,
+			}).svg;
+			if (last && last.svg === svg && last.scale === scale) return last.px;
+			const px = await rasterize(svg, Math.max(1, Math.round(W * scale)), Math.max(1, Math.round(H * scale)));
 			grade?.pixels(px.data);
+			last = { svg, scale, px };
 			return px;
 		},
 	};
@@ -124,6 +127,7 @@ export async function rasterFrames(
 }
 
 function same(a: Uint8ClampedArray, b: Uint8ClampedArray): boolean {
+	if (a === b) return true;
 	if (a.length !== b.length) return false;
 	for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
 	return true;

@@ -87,8 +87,10 @@ describe("all scenes as GIF", () => {
 			async (_svg, width, height) => (drawn++, { data: new Uint8ClampedArray(width * height * 4), width, height }),
 			null,
 		);
-		// "always": every frame of both scenes in order
-		expect(drawn).toBe(15);
+		// "always": every frame of both scenes in order (drawn once: without artwork they are all
+		// the same picture, which isn't drawn again)
+		expect(out.stats.frames).toBe(15);
+		expect(drawn).toBe(1);
 		expect(out.files[0]!.ext).toBe(".gif");
 	});
 });

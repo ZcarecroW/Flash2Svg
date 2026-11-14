@@ -91,8 +91,14 @@ export interface InstanceItem extends ItemBase {
 	color: ColorTracks | null;
 	/** Filters by frame (keyframe changes / samples); static when one entry. */
 	filters: FilterSet[];
+	/** The first keyframe's (see `blends` for the others). */
 	blendMode: string;
+	/** False when no keyframe of the span shows it (see `hidden` for some of them). */
 	visible: boolean;
+	/** Frames [from, to) whose keyframe has *Visible* off, when others have it on: drawn nowhere then, a movie clip in it plays on (as Flash moves the same object). */
+	hidden?: [number, number][];
+	/** The blend mode per keyframe range, when it changes over the span. */
+	blends?: BlendRange[];
 	cacheAsBitmap: boolean;
 	/** Bounds of the first keyframe element, in the parent timeline space. */
 	bounds: { left: number; top: number; width: number; height: number };
@@ -108,6 +114,29 @@ export interface InstanceItem extends ItemBase {
 	 * as they are for the formats that draw frames.
 	 */
 	motion?: { curve: GuideCurve; at: Track; rot?: Track };
+}
+
+export interface BlendRange {
+	start: number;
+	end: number;
+	mode: string;
+}
+
+/** Whether frame `f` of the parent is one the instance's keyframe hides (*Visible* off). */
+export function hiddenAt(it: InstanceItem, f: number): boolean {
+	if (it.hidden) for (const [a, b] of it.hidden) if (f >= a && f < b) return true;
+	return false;
+}
+
+/** The instance's blend mode at frame `f` of the parent. */
+export function blendAt(it: InstanceItem, f: number): string {
+	if (it.blends) for (const r of it.blends) if (f >= r.start && f < r.end) return r.mode;
+	return it.blendMode;
+}
+
+/** Every blend mode the instance has on some keyframe. */
+export function blendModes(it: InstanceItem): string[] {
+	return it.blends ? [...new Set(it.blends.map((r) => r.mode))] : [it.blendMode];
 }
 
 export interface GraphicRange {
@@ -171,7 +200,8 @@ export interface ProgramLayer {
 }
 
 /** Layer effects (advanced layers) are applied by wrapping the layer in a synced graphic. */
-const LAYER_FX = "#fx";
+/** In the id of a layer's own symbol (layer effects): see wrapLayerEffects. */
+export const LAYER_FX = "#fx";
 
 export type FrameAction = ({ type: "stop" } | { type: "play" } | { type: "goto"; target: number | string; play: boolean }) & {
 	/** Only on the passes over the frame (1 = first) in [from, before); 0 = open. */
@@ -297,6 +327,8 @@ export function buildPrograms(model: SceneModel, options: CompileOptions): Compi
  * (1 fills, 2 strokes, 4 images).
  */
 const GROUP_BLENDS = new Set(["layer", "invert", "subtract", "alpha", "erase"]);
+/** Blend modes that change how an instance is built (white copies, masks): not switched between keyframes. */
+const STRUCTURAL_BLENDS = new Set(["invert", "subtract", "alpha", "erase"]);
 
 export function markShapeAlpha(programs: Record<string, Program>, roots: string[], paint: (art: string) => number) {
 	const known = new Map<string, number>();
@@ -324,7 +356,7 @@ export function markShapeAlpha(programs: Record<string, Program>, roots: string[
 	};
 	const shapeAlpha = (it: InstanceItem): number => {
 		const c = it.color;
-		if (!c || GROUP_BLENDS.has(it.blendMode) || it.filters.some((f) => f.filters.length) || it.symbol.includes(LAYER_FX)) return 0;
+		if (!c || blendModes(it).some((m) => GROUP_BLENDS.has(m)) || it.filters.some((f) => f.filters.length) || it.symbol.includes(LAYER_FX)) return 0;
 		const all = (p: ColorProp, v: number) => c[p].every((k) => k.v === v);
 		if (!(all("rP", 100) && all("gP", 100) && all("bP", 100) && all("rA", 0) && all("gA", 0) && all("bA", 0) && all("aA", 0)) || all("aP", 100)) return 0;
 		const paints = paintsOf(it.symbol);
@@ -730,7 +762,9 @@ function wrapLayerEffects(programs: Record<string, Program>, prog: Program, tl: 
 			slot: 0,
 			symbol: id,
 			symbolType: "graphic",
-			name: "",
+			// (named after its layer: with layer effects Animate makes each layer a movie clip of that
+			// name, the instances on it its children — measured, f103-layerfx-names)
+			name: pl.name,
 			transform,
 			color,
 			filters,
@@ -1133,7 +1167,9 @@ function buildLayerItems(tl: TimelineData, layer: LayerData, li: number, opts: C
 			switch (e.kind) {
 				case "instance": {
 					const s = open.get(slot);
-					if (s && s.item.symbol === e.symbol && s.item.end === kf.index) {
+					// (the same symbol in the same slot is the same object, unless its type changes:
+					// a graphic that becomes a movie clip is one of another kind)
+					if (s && s.item.symbol === e.symbol && s.item.symbolType === e.symbolType && s.item.end === kf.index) {
 						s.item.end = kEnd;
 						s.kfs.push(kf);
 					} else {
@@ -1293,6 +1329,40 @@ function finishInstance(
 	}
 
 	if (opts.perspective && segs.some((s) => s.el.m3)) inPerspective(item, truth, segs, opts.perspective);
+
+	// *Visible* and the blend mode per keyframe: Flash moves the same object, so a movie clip in it
+	// plays on while it is hidden or blends otherwise (the span isn't split, it would start again)
+	const shown = segs.filter((s) => s.el.visible !== false);
+	if (!shown.length) item.visible = false;
+	else if (shown.length < segs.length) {
+		item.visible = true;
+		const hidden: [number, number][] = [];
+		for (const s of segs) {
+			if (s.el.visible !== false) continue;
+			const a = s.a + item.start,
+				b = s.b + item.start;
+			const last = hidden[hidden.length - 1];
+			if (last && last[1] === a) last[1] = b;
+			else hidden.push([a, b]);
+		}
+		item.hidden = hidden;
+	}
+	const modes = new Set(segs.map((s) => s.el.blendMode || "normal"));
+	if (modes.size > 1) {
+		if ([...modes].some((m) => STRUCTURAL_BLENDS.has(m))) {
+			const m = `${tl.name}: an instance of ${item.symbol.replace(/^sym:/, "")} changes to or from the ${[...modes].filter((x) => STRUCTURAL_BLENDS.has(x)).join(", ")} blend mode between keyframes: its first keyframe's mode (${item.blendMode}) is used throughout`;
+			if (!warnings.includes(m)) warnings.push(m);
+		} else {
+			const blends: BlendRange[] = [];
+			for (const s of segs) {
+				const mode = s.el.blendMode || "normal";
+				const last = blends[blends.length - 1];
+				if (last && last.mode === mode) last.end = s.b + item.start;
+				else blends.push({ start: s.a + item.start, end: s.b + item.start, mode });
+			}
+			item.blends = blends;
+		}
+	}
 
 	// Graphic frame selection
 	if (item.symbolType === "graphic") {

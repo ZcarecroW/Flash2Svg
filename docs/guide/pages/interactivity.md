@@ -133,7 +133,7 @@ loader.addEventListener(Event.COMPLETE, function (e:Event):void {
 
 Put `menu.xml` next to the exported file. The XML code comes with a part of the player of 16 KB (5.7 KB gzipped), only for documents that use XML.
 
-Plain `stop()`, `play()` and frame jumps, simple mouse handlers and counted loops don't need any of this: they work in every format, and the player stays small (16.0 KB; 87 KB with scripts, and pixels and sounds, filters, classes or CreateJS add to it only if the scripts use them).
+Plain `stop()`, `play()` and frame jumps, simple mouse handlers and counted loops don't need any of this: they work in every format, and the player stays small (16.3 KB; 88 KB with scripts, and pixels and sounds, filters, classes or CreateJS add to it only if the scripts use them).
 
 `BitmapData.draw()` works on display objects too: the player paints the movie clip, sprite or text onto the pixels at once, as Flash Player does (blurs and shadows aren't painted). Library bitmaps have their pixels at once as well, so a frame 1 script can read a collision map or a colour table from them.
 

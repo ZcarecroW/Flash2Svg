@@ -8,7 +8,7 @@
  */
 import { subBezier } from "../easing.ts";
 import { fmt } from "../geom.ts";
-import { COLOR_PROPS, TRANSFORM_PROPS, type ColorProp, type InstanceItem, type Item, type Program, type ProgramLayer, type TransformProp } from "../program.ts";
+import { blendAt, COLOR_PROPS, hiddenAt, TRANSFORM_PROPS, type ColorProp, type InstanceItem, type Item, type Program, type ProgramLayer, type TransformProp } from "../program.ts";
 import { valueAt, type Ease, type Track } from "../tracks.ts";
 import type { Context } from "../context.ts";
 import type { MorphPart } from "../morph.ts";
@@ -240,8 +240,15 @@ export function rootTicks(ctx: Context, rootId: string, opts: Pick<BakeOptions, 
 				else tooLong = true;
 			}
 		}
-		if (start + (period > 1 ? period : 0) > maxTicks) tooLong = true;
+		// (intros longer than the cap: everything holds when the root stops; a common period that
+		// doesn't fit after them: as much of it as fits, the clips jump when it repeats — warned,
+		// as for a loop — instead of all of them standing still)
+		if (start >= maxTicks) tooLong = true;
 		else {
+			if (period > 1 && start + period > maxTicks) {
+				tooLong = true;
+				period = maxTicks - start;
+			}
 			if (period > 1) tail = start;
 			H = start + (period > 1 ? period : 0);
 		}
@@ -498,6 +505,28 @@ class Baker {
 					const state = (f: number) => this.timeline(childProg, new Int32Array(this.H).fill(f), depth + 1);
 					node.states = [1, 2].filter((f) => f < childProg.frameCount).map(state);
 					node.hit = state(childProg.frameCount > 3 ? 3 : 0);
+				}
+				if (item.hidden || item.blends) {
+					// Visible off on some keyframes, another blend mode on others: shown on the ticks
+					// it is visible, one node a blend mode, all sharing the same content (a movie clip
+					// in it plays on through them)
+					const byMode = new Map<string, number[]>();
+					for (let t = 0; t < this.H; t++) {
+						const f = frames[t]!;
+						if (f < item.start || f >= item.end || hiddenAt(item, f)) continue;
+						const mode = blendAt(item, f);
+						(byMode.get(mode) ?? byMode.set(mode, []).get(mode)!).push(t);
+					}
+					let i = 0;
+					for (const [mode, ticks] of byMode)
+						bl.nodes.push({
+							...node,
+							item: mode === item.blendMode ? item : { ...item, blendMode: mode },
+							vis: tickIntervals(ticks),
+							uid: i++ ? `${item.uid}#b${i}` : item.uid,
+						});
+					bt.animated = true;
+					return;
 				}
 				bl.nodes.push(node);
 				return;

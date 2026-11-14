@@ -3965,6 +3965,78 @@
 		extendAll(30);
 	});
 
+	// ---------------------------------------------------------------- f102: 9-slice flipped
+	// The same 9-slice symbol scaled 2 x 1.5 as it is, flipped across, flipped up and down, and
+	// both: are the corners kept in each (Animate's own rendering says)?
+	build("f102-nineslice-flip", function () {
+		newDoc("timeline", 600, 400, 24);
+		symbol("panel9", "movie clip", function () {
+			rect(0, 0, 80, 50, "#88AA44", "#000000");
+			rect(4, 4, 14, 14, "#CC3333");
+			rect(66, 36, 76, 46, "#3355CC");
+		});
+		var p = lib.items[lib.findItemIndex("panel9")];
+		p.scalingGrid = true;
+		p.scalingGridRect = { left: 15, top: 12, right: 65, bottom: 38 };
+		var cases = [
+			[2, 1.5, 40, 40],
+			[-2, 1.5, 520, 40],
+			[2, -1.5, 40, 300],
+			[-2, -1.5, 520, 300],
+		];
+		for (var i = 0; i < cases.length; i++) {
+			var c = cases[i];
+			var el = place("panel9", 100, 100, 0);
+			var m = el.matrix;
+			m.a = c[0];
+			m.b = 0;
+			m.c = 0;
+			m.d = c[1];
+			m.tx = c[2];
+			m.ty = c[3];
+			el.matrix = m;
+		}
+	});
+
+	// ---------------------------------------------------------------- f103: layer effects and scripts
+	// Named instances on layers with a filter and a blend mode (advanced layers): what do frame
+	// scripts find of them, and where in the display list?
+	build("f103-layerfx-names", function () {
+		newDoc("timeline", 400, 200, 24);
+		boxSymbol();
+		var t = tl();
+		t.layers[0].name = "plain";
+		var a = place("box", 60, 60, 0);
+		a.name = "flat";
+		layer("fxFilter");
+		var el = place("box", 160, 60, 0);
+		el.name = "blurred";
+		doc.selectNone(); el.selected = true;
+		doc.addFilter("blurFilter");
+		var fs = el.filters;
+		doc.removeAllFilters(); doc.selectNone();
+		try { t.layers[t.currentLayer].setFiltersAtFrame(0, fs); } catch (e) { log.push("f103 setFiltersAtFrame: " + e); }
+		layer("fxBlend");
+		var b = place("box", 260, 60, 0);
+		b.name = "multiplied";
+		try { t.layers[t.currentLayer].setBlendModeAtFrame(0, "multiply"); } catch (e) { log.push("f103 setBlendModeAtFrame: " + e); }
+		layer("actions");
+		// (Flash Player also shows that with layer effects every layer is a movie clip of its name,
+		// with an empty "<name>_prop_" one beside it: children 6, plain, plain_prop_, fxFilter… —
+		// the JS player makes clips of the layers with effects only, see Limits)
+		t.layers[t.currentLayer].frames[0].actionScript = [
+			'import flash.system.fscommand;',
+			'import flash.display.*;',
+			'for each (var n:String in ["blurred", "multiplied"]) {',
+			'	var o:DisplayObject = this[n] as DisplayObject;',
+			'	trace("named", n, o != null, o ? o.name : "", o ? Math.round(o.x) : -1, o ? o.parent == this : false, o ? (o.parent ? o.parent.name : "none") : "", o ? o.blendMode : "", o ? o.filters.length : -1, getChildByName(n) != null);',
+			'}',
+			'trace("flat", flat.name, Math.round(flat.x), flat.blendMode);',
+			'trace("END");',
+			'fscommand("quit");',
+		].join("\n");
+	});
+
 	FLfile.write(outDir + "/build-log.txt", log.join("\n"));
 	fl.closeAll(false);
 	fl.quit(false);

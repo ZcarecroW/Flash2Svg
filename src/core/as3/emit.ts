@@ -520,15 +520,27 @@ export class Emitter {
 					if (t === "Number" || INT.has(t)) return '"number"';
 					if (t === "*" && this.lookup(x.x.name) === undefined && !this.members.has(x.x.name) && /^[A-Z]/.test(x.x.name) && (GLOBALS.has(x.x.name) || FLASH_API.has(x.x.name))) return '"object"';
 				}
+				if (x.op === "delete" && x.x.k === "index" && this.isDictionary(x.x.o)) return `$r.ddel(${this.expr(x.x.o)},${this.expr(x.x.i)})`;
 				if (x.op === "delete" || x.op === "typeof" || x.op === "void") return `(${x.op} ${this.expr(x.x)})`;
 				return `(${x.op}${this.expr(x.x)})`;
 			case "update": {
 				if (x.x.k === "index" && this.isVector(x.x.o)) {
-					const o = this.expr(x.x.o),
-						i = this.expr(x.x.i);
+					// (the Vector and the index once each: `v[i++]++` moves i by one)
 					const step = x.op === "++" ? 1 : -1;
-					const set = `$r.vset(${o},${i},$r.vget(${o},${i})+${step})`;
-					return x.prefix ? set : `(${set}-${step})`;
+					const set = `$r.vset($$vo,$$vi,$r.vget($$vo,$$vi)+${step})`;
+					return `(($$vo,$$vi)=>${x.prefix ? set : `${set}-${step}`})(${this.expr(x.x.o)},${this.expr(x.x.i)})`;
+				}
+				if (x.x.k === "index" && this.isDictionary(x.x.o)) {
+					// (written through the dictionary: it holds an object key it is given)
+					const step = x.op === "++" ? "+1" : "-1";
+					return `(($$do,$$dk)=>{const $$dv=+$$do[$r.key($$dk)];$r.dset($$do,$$dk,$$dv${step});return ${x.prefix ? `$$dv${step}` : "$$dv"}})(${this.expr(x.x.o)},${this.expr(x.x.i)})`;
+				}
+				if (x.x.k === "xattr") {
+					// x.@n++: the attribute's value as a number, one more (postfix: the value before)
+					const o = x.x.o ? this.plain(x.x.o) : "$x";
+					const n = x.x.name !== null ? JSON.stringify(x.x.name) : `(${this.plain(x.x.i!)})`;
+					const step = x.op === "++" ? "+1" : "-1";
+					return `(($$xo,$$xn)=>{const $$xv=+$r.xa($$xo,$$xn);$r.xs($$xo,"@"+$$xn,$$xv${step});return ${x.prefix ? `$$xv${step}` : "$$xv"}})(${o},${n})`;
 				}
 				const js = this.expr(x.x);
 				const t = this.typeOfTarget(x.x);
@@ -556,12 +568,24 @@ export class Emitter {
 					const o = this.expr(x.a.o),
 						i = this.expr(x.a.i),
 						v = this.expr(x.b);
-					return x.op === "=" ? `$r.vset(${o},${i},${v})` : `$r.vset(${o},${i},$r.vget(${o},${i})${x.op.slice(0, -1)}(${v}))`;
+					// (compound: the Vector and the index once each — `v[i++] += 10` moves i by one)
+					return x.op === "=" ? `$r.vset(${o},${i},${v})` : `(($$vo,$$vi)=>$r.vset($$vo,$$vi,$r.vget($$vo,$$vi)${x.op.slice(0, -1)}(${v})))(${o},${i})`;
 				}
+				if (x.a.k === "index" && this.isDictionary(x.a.o)) {
+					// (written through the dictionary: it holds an object key it is given, as long as it has it)
+					const o = this.expr(x.a.o),
+						i = this.expr(x.a.i),
+						v = this.expr(x.b);
+					return x.op === "=" ? `$r.dset(${o},${i},${v})` : `(($$do,$$dk)=>$r.dset($$do,$$dk,$$do[$r.key($$dk)]${x.op.slice(0, -1)}(${v})))(${o},${i})`;
+				}
+				// a Vector made longer gets its type's default value in the new places (not holes)
+				if (x.op === "=" && x.a.k === "member" && x.a.name === "length" && this.isVector(x.a.o)) return `$r.vlen(${this.expr(x.a.o)},${this.expr(x.b)})`;
 				const a = this.expr(x.a);
 				const b = this.expr(x.b);
 				const t = this.typeOfTarget(x.a);
 				if (x.op === "=") return `(${a}=${this.coerce(t, b, x.b)})`;
+				// (XML on either side: a list of both, as E4X adds them; text with anything else)
+				if (x.op === "+=" && (XMLISH.has(t) || XMLISH.has(this.typeIn(x.b)))) return `(${a}=$r.xadd(${a},${b}))`;
 				if (t === "*" || (t !== "int" && t !== "uint" && t !== "Number" && t !== "String" && t !== "Boolean")) {
 					if (x.op === "&&=" || x.op === "||=") return `(${a}=${a}${x.op.slice(0, 2)}${b})`;
 					return `(${a}${x.op}${b})`;
@@ -637,6 +661,7 @@ export class Emitter {
 
 	protected binary(x: Extract<Expr, { k: "bin" }>): string {
 		if ((x.op === "==" || x.op === "!=") && (XMLISH.has(this.typeIn(x.a)) || XMLISH.has(this.typeIn(x.b)))) return `(${x.op === "!=" ? "!" : ""}$r.xeq(${this.plain(x.a)},${this.plain(x.b)}))`;
+		if (x.op === "+" && XMLISH.has(this.typeIn(x.a)) && XMLISH.has(this.typeIn(x.b))) return `$r.xadd(${this.plain(x.a)},${this.plain(x.b)})`;
 		const a = this.expr(x.a);
 		if (x.op === "as" || x.op === "is") {
 			if (x.b.k === "vector") return `$r.${x.op}(${a},${this.expr(x.b)})`;
@@ -777,6 +802,8 @@ export class Emitter {
 					const k = `$k${this.forKeys++}`;
 					return `for(const ${k} in ${o}){${target}=${this.coerce(type, k)};${this.stmt(s.body, top)}}`;
 				}
+				// an untyped key: a number for an array's places too (measured in Flash Player), text for an object's
+				if (type === "*" || type === "Object") return `for(${target} of $r.ink(${o}))${this.branch(s.body, top)}`;
 				return `for(${target} in ${o})${this.branch(s.body, top)}`;
 			}
 			case "switch":

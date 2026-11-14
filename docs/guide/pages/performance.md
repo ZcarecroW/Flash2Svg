@@ -16,7 +16,7 @@ After every export, the **Result** splits the file into its parts and names the 
 | **images** | embedded bitmaps | WebP or AVIF, lower quality, *Resolution* 1× |
 | **sounds** | embedded sounds | Opus, a lower bit rate, mono |
 | **fonts** | embedded font subsets | fewer fonts and styles, or *Embed fonts* off |
-| **runtime** | the JS player's script (6.5 KB gzipped) | SMIL or CSS when you don't need the player |
+| **runtime** | the JS player's script (6.6 KB gzipped) | SMIL or CSS when you don't need the player |
 | **linked** | files next to the SVG | — |
 
 *Biggest drawings* lists the symbols and layers whose shapes take the most, for example "Scene 1 › fbf: 38.5 KB (150 drawings)" — frame-by-frame animation is usually the first thing to look at.

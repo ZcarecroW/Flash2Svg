@@ -4,7 +4,7 @@
  *
  *   flash2svg <scene.json> [-o out.svg] [--format smil|css|player|static|lottie|dotlottie] [options]
  */
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { gzipSync } from "node:zlib";
 import { compileScene, DEFAULT_SETTINGS, type ExportSettings } from "../core/compile.ts";
@@ -338,7 +338,7 @@ async function main(argv: string[]) {
 			const first = stem;
 			for (let n = 2; used.has(stem.toLowerCase()); n++) stem = first + "_" + n;
 			used.add(stem.toLowerCase());
-			for (const f of result.files) writeFileSync(stem + f.suffix + ext, f.bytes ?? f.svg);
+			for (const f of result.files) writeAtomic(stem + f.suffix + ext, f.bytes ?? f.svg);
 			for (const a of result.assets) {
 				const dst = join(dirname(target), a.path);
 				mkdirSync(dirname(dst), { recursive: true });
@@ -351,7 +351,7 @@ async function main(argv: string[]) {
 					continue;
 				}
 				// (a file that can't be written — a full disk — ends the export with its error)
-				writeFileSync(dst, bytes);
+				writeAtomic(dst, bytes);
 			}
 			for (const w of result.warnings) process.stderr.write(`warning: ${w}\n`);
 			const written =
@@ -367,6 +367,21 @@ async function main(argv: string[]) {
 		await codecs?.close();
 	}
 	void DEFAULT_SETTINGS;
+}
+
+/**
+ * Writes a file whole or not at all: into a file next to it first, then in its place (an export
+ * stopped on its way, or a full disk, leaves the file there was, not half of a new one).
+ */
+function writeAtomic(path: string, data: string | Uint8Array) {
+	const tmp = `${path}.${process.pid}.${Date.now().toString(36)}.tmp`;
+	try {
+		writeFileSync(tmp, data);
+		renameSync(tmp, path);
+	} catch (e) {
+		rmSync(tmp, { force: true });
+		throw e;
+	}
 }
 
 /** The extensions the formats write (a name ending in another one's gets the format's own). */

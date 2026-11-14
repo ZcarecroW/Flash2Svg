@@ -13,7 +13,7 @@ import { muxMp4, muxWebm, type AudioTrack, type VideoTrack } from "./mux.ts";
 import { webCodecs, type VideoEncoders } from "./video-codecs.ts";
 import { tickSource, type Rasterize } from "./raster.ts";
 
-/** About 3 minutes at 24 fps... a video may be longer than a GIF. */
+/** 12.5 minutes at 24 fps (5 at 60): a video may be longer than a GIF. */
 export const MAX_VIDEO_FRAMES = 18000;
 
 const CODECS: Record<"mp4" | "webm", string[]> = {

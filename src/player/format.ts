@@ -34,6 +34,8 @@ export interface PProgram {
 	bf?: string;
 	/** not looping: the root ends after this many ticks (frame scripts loop it; default: on its last frame) */
 	on?: number;
+	/** a frame range of the root [from, to): it starts at from and goes round there after to - 1 */
+	rg?: [number, number];
 	/** the poster frame (root, 0-based; default 0): shown still when the system asks for reduced motion */
 	pf?: number;
 	/** scripts: library classes (linkage): name -> timeline or sound id */
@@ -211,6 +213,12 @@ export interface PInst extends PBase {
 	g?: [number, number, number, number, number][];
 	/** hidden */
 	hd?: 1;
+	/** a layer's own symbol (layer effects): the instances in it are its timeline's by name, as in Flash */
+	lf?: 1;
+	/** Parent frames [from, to) its keyframe hides it (*Visible* off): not drawn, a movie clip in it plays on. */
+	hv?: [number, number][];
+	/** The css blend mode per parent frame range [from, to, mode] when it changes ("" = normal). */
+	bm?: [number, number, string][];
 	/** Id of a filter that paints the instance white (invert blend). */
 	w?: string;
 	/** Subtract blend: id of the white filter for the two inverting copies around the instance. */

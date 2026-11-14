@@ -65,3 +65,16 @@ describe("sliced artwork", () => {
 		expect(artworkBounds(art)).toEqual({ l: -1, t: -1, r: 61, b: 41 });
 	});
 });
+
+describe("9-slice instances", () => {
+	it("are sliced only when not flipped, as Animate draws them (f102-nineslice-flip)", async () => {
+		const { readFileSync } = await import("node:fs");
+		const { createContext } = await import("../../src/core/context.ts");
+		const model = JSON.parse(readFileSync(new URL("../fixtures/models/f102-nineslice-flip.json", import.meta.url), "utf8"));
+		const files = { readText: () => `<svg xmlns="http://www.w3.org/2000/svg"><path fill="#336699" d="M0 0L80 0 80 50 0 50Z"/></svg>`, readBinary: () => new Uint8Array() };
+		const ctx = createContext(model, files, { smooth: true, includeHiddenLayers: true, includeGuides: false });
+		const symbols = ctx.programs[model.roots[0]]!.layers.flatMap((l) => l.items.map((i) => (i.kind === "instance" ? i.symbol : "")));
+		// as it is: a sliced copy; across, up and down, both: the symbol itself, scaled
+		expect(symbols.map((s) => (s.includes("#9s") ? "sliced" : "whole"))).toEqual(["sliced", "whole", "whole", "whole"]);
+	});
+});

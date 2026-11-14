@@ -73,6 +73,25 @@ trace("has", shop.hasOwnProperty("item"), shop.hasOwnProperty("nothing"), shop.i
 trace("escape", <t a={"<&\">"}>{"1 < 2 & 3"}</t>.toXMLString());
 XML.prettyPrinting = false;
 trace(shop.item[0].toXMLString());
+// an item of a list given a value, not XML: does it keep its name?
+var d:XML = <r><c>1</c><c>2</c><s><v>x</v></s></r>;
+d.c[0] = "4";
+d..v[0] = "A";
+trace("put", d.toXMLString());
+// adding XML to XML: a list of both
+var joined:XMLList = <><a>1</a></>;
+joined += <b>2</b>;
+trace("add", joined.length(), joined[1].name(), (d.c[1] + d.c[0]).length(), d.c[1] + "-");
+var sum:XMLList = d.c + d.s;
+trace("plus", sum.length(), sum[2].name());
+// the keys of a list
+var keys:Array = [];
+for (var key:String in d.c) keys.push(key);
+trace("keys", keys.join(","));
+// ++ on an attribute
+var counter:XML = <c n="1"/>;
+counter.@n++;
+trace("attr++", counter.@n, counter.toXMLString());
 XML.prettyPrinting = true;
 
 // XML from a file

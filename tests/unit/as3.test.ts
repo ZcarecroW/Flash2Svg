@@ -24,6 +24,15 @@ function run(code: string, frames: number[] = [0], t: Record<string, unknown> = 
 		insertAt: (a: unknown[], i: number, v: unknown) => void a.splice(i, 0, v),
 		removeAt: (a: unknown[], i: number) => a.splice(i, 1)[0],
 		vec: (_of: string, ...a: unknown[]) => (Array.isArray(a[0]) ? a[0].slice() : new Array(Number(a[0]) | 0).fill(0)),
+		vget: (v: unknown[], i: number) => v[i],
+		vset: (v: unknown[], i: number, x: unknown) => (v[i] = x),
+		vlen: (v: unknown[], n: number) => {
+			const old = v.length;
+			v.length = n;
+			v.fill(0, old);
+			return n;
+		},
+		ink: (o: object) => Object.keys(o).map((k) => (Array.isArray(o) && /^\d+$/.test(k) ? +k : k)),
 	};
 	const fs = new Function(`return ${c.js}`)()(t, $f, $r) as Record<number, () => void>;
 	for (const f of frames) fs[f]!();
@@ -221,6 +230,23 @@ describe("AS3 as scripts are written", () => {
 		expect(run("var a:Array = [1, 3]; a.insertAt(1, 2); trace(a.join()); trace(a.removeAt(0), a.join());").log).toEqual(["1,2,3", [1, "2,3"]]);
 	});
 
+	// (these as Flash Player does them: f81-as3language compares them line by line)
+	it("takes a Vector and its index once in a compound assignment, and fills a Vector made longer", () => {
+		expect(run("var v:Vector.<int> = new Vector.<int>(); v.push(1, 2, 3); var i:int = 0; v[i++] += 10; trace(v.join(), i); v[i++]++; trace(v.join(), i); v.length = 5; trace(v.join());").log).toEqual([
+			["11,2,3", 1],
+			["11,3,3", 2],
+			"11,3,3,0,0",
+		]);
+	});
+
+	it("gives an untyped for..in key over an array as a number, over an object as text", () => {
+		expect(run('for (var k in ["x", "y"]) trace(k + 1); for (var n:* in {a: 1}) trace(n + 1);').log).toEqual([1, 2, "a1"]);
+	});
+
+	it("goes through an array by place in for each (a place taken out is skipped)", () => {
+		expect(run("var a:Array = [1, 2, 3, 4]; var seen:Array = []; for each (var n:int in a) { seen.push(n); if (n == 2) a.splice(2, 1); } trace(seen.join());").log).toEqual(["1,2,4"]);
+	});
+
 	it("says that with isn't supported, instead of failing when the frame runs", () => {
 		const c = compileScripts([{ frame: 0, code: "var o:Object = {x: 1};\nwith (o)\n{ trace(x); }" }]);
 		expect(c.failed).toEqual([{ frame: 0, line: 2, message: "with isn't supported: write the object's name before its properties" }]);
@@ -277,6 +303,14 @@ describe("E4X", () => {
 		);
 		expect(parseScript("default xml namespace = atom;")[0]).toEqual({ k: "xmlns", x: { k: "id", name: "atom" } });
 		expect(parseScript("x.@id = 2; delete x.@id;").length).toBe(2);
+	});
+
+	it("compiles XML + XML, += and ++ on an attribute to the XML part's helpers", () => {
+		const c = compileScripts([{ frame: 0, code: "var a:XMLList = <><a/></>; a += <b/>; var s:XMLList = a + a; var x:XML = <c n=\"1\"/>; x.@n++;" }]);
+		expect(c.failed).toEqual([]);
+		expect(c.js.match(/\$r\.xadd\(/g)?.length).toBe(2);
+		expect(c.js).toMatch(/\$r\.xs\(\$\$xo,"@"\+\$\$xn/);
+		expect(() => new Function(`return ${c.js}`)).not.toThrow();
 	});
 
 	it("compiles E4X to the XML part's helpers, == between XML values too", () => {

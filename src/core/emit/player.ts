@@ -6,7 +6,7 @@ import type { ExportSettings } from "../compile.ts";
 import type { Context } from "../context.ts";
 import { fmt } from "../geom.ts";
 import type { TextElement } from "../model.ts";
-import { COLOR_PROPS, TRANSFORM_PROPS, type InstanceItem, type Item, type Program } from "../program.ts";
+import { COLOR_PROPS, LAYER_FX, TRANSFORM_PROPS, type InstanceItem, type Item, type Program } from "../program.ts";
 import { valueAt, type Track } from "../tracks.ts";
 import { cdata, serialize, el, walk, type XmlNode } from "../xml.ts";
 import { MASTER, PIXEL_READS } from "../images.ts";
@@ -234,6 +234,10 @@ export function renderPlayer(
 		}
 		const blend = cssBlendMode(it.blendMode, warn);
 		if (blend) p.b = blend;
+		// (a layer's own symbol: its id ends in LAYER_FX and the layer's number)
+		if (it.symbol.slice(0, it.symbol.lastIndexOf(LAYER_FX) + LAYER_FX.length).endsWith(LAYER_FX) && /^\d+$/.test(it.symbol.slice(it.symbol.lastIndexOf(LAYER_FX) + LAYER_FX.length))) p.lf = 1;
+		if (it.hidden) p.hv = it.hidden.map(([a, b]) => [a, b]);
+		if (it.blends) p.bm = it.blends.map((r) => [r.start, r.end, cssBlendMode(r.mode, warn) ?? ""]);
 		if (blendWhite(it.blendMode)) p.w = doc.whiteFilter().slice(5, -1);
 		if (blendSubtract(it.blendMode)) p.su = doc.whiteFilter(false, true).slice(5, -1);
 		if (it.graphic) p.g = it.graphic.map((g) => [g.start, g.end, LOOP_CODES[g.loop] ?? 0, g.firstFrame, g.lastFrame]);
@@ -246,14 +250,25 @@ export function renderPlayer(
 	const rootRuns = !!scripts?.timelines.has(ctx.programs[rootId]?.source ?? rootId);
 	const always = s.loop === "always" && !rootRuns;
 	if (s.loop === "always" && rootRuns) warn("Always loop: the timeline's scripts run in the JS player, so they decide where it stops or jumps");
-	if (s.startFrame !== undefined || s.endFrame !== undefined) warn("The JS player plays the whole timeline: a frame range takes SMIL, CSS or still frames");
+	// A frame range: those frames go round (or play once), the root's own stop() and gotos left
+	// out, as in SMIL and CSS. Scripts that run decide where the timeline goes: there it can't be kept.
+	const rootFrames = Math.max(1, ctx.programs[rootId]?.frameCount ?? 1);
+	const ranged = s.startFrame !== undefined || s.endFrame !== undefined;
+	let range: [number, number] | null = null;
+	if (ranged && rootRuns) warn("The timeline's scripts run in the JS player and decide where it goes: the frame range is left out (SMIL, CSS and still frames keep it)");
+	else if (ranged) {
+		const a = Math.max(0, Math.min(rootFrames - 1, s.startFrame ?? 0));
+		range = [a, Math.max(a + 1, Math.min(rootFrames, s.endFrame ?? rootFrames))];
+		if (range[0] === 0 && range[1] === rootFrames) range = null;
+	}
+	const own = always || ranged;
 	const timeline = (prog: Program): PTimeline => {
 		const t: PTimeline = { n: prog.frameCount, ly: [] };
 		if (prog.labels.length) t.lb = Object.fromEntries(prog.labels.map((l) => [l.name, l.frame]));
 		// (its scripts run: they do what the lists of actions and mouse handlers would say)
 		const run = !!scripts?.timelines.has(prog.source ?? prog.id);
 		// ("Always loop" overrides the root's stop() and gotos, as in SMIL and CSS: left out)
-		const acts = run || (always && prog.id === rootId) ? [] : Object.entries(prog.actions);
+		const acts = run || (own && !rootRuns && prog.id === rootId) ? [] : Object.entries(prog.actions);
 		if (acts.length) {
 			t.ac = {};
 			for (const [f, list] of acts) {
@@ -340,13 +355,16 @@ export function renderPlayer(
 
 	// Poster: the static frame, removed by the runtime when it starts
 	const root = ctx.programs[rootId]!;
-	const ph = always ? { prefix: [], cycle: Array.from({ length: Math.max(1, root.frameCount) }, (_, i) => i) } : playhead(root);
+	const [from, to] = range ?? [0, rootFrames];
+	const ph = own && !rootRuns ? { prefix: [], cycle: Array.from({ length: to - from }, (_, i) => from + i) } : playhead(root);
+	if (range) P.rg = range;
 	// the first pass: the prefix and one round of the cycle (frame scripts may loop to any frame)
 	const pass = [...ph.prefix, ...ph.cycle];
 	// (also a pass that ends before the last frame: gotoAndPlay(1) there means that frame is never
 	// shown, and "play once" would wait for it for ever)
 	if (ph.cycle.length && (ph.prefix.length || pass.length !== root.frameCount || pass.some((f, i) => f !== i))) P.on = pass.length;
-	const posterFrame = s.posterFrame === "last" ? (pass[pass.length - 1] ?? 0) : 0;
+	// (the first frame shown: frame 1 may jump on at once, a range starts where it starts)
+	const posterFrame = s.posterFrame === "last" ? (pass[pass.length - 1] ?? 0) : (pass[0] ?? 0);
 	// (also the still frame for "reduce motion")
 	if (posterFrame) P.pf = posterFrame;
 	const sr = new StaticRenderer(ctx, doc, { movieClips: "first", textAsOutlines: s.textAsOutlines });
@@ -393,8 +411,9 @@ export function renderPlayer(
 		P.sc = rootTimeline?.scenes ?? [[rootTimeline?.name ?? "Scene 1", 0, rootTimeline?.frameCount ?? 1]];
 	}
 	svg.children.push(el("script", { type: "application/json" }, [cdata(JSON.stringify(P).replace(/</g, "\\u003c"))]));
-	// the runtime with morphs also animates filters (shape tweens, filters with changing numbers)
-	const morphs = Object.values(P.tl).some((t) => t.ly.some((l) => l.it.some((i) => (i.k === "q" && i.mp) || (i.k === "i" && (i.fa || i.p3)))));
+	// the runtime with morphs also animates filters (shape tweens, filters with changing numbers),
+	// 3D, and Visible or blend modes that change between an instance's keyframes
+	const morphs = Object.values(P.tl).some((t) => t.ly.some((l) => l.it.some((i) => (i.k === "q" && i.mp) || (i.k === "i" && (i.fa || i.p3 || i.hv || i.bm)))));
 	// mouse handlers and the start triggers share a build
 	const events = s.begin === "visible" || s.begin === "scroll" || Object.values(P.tl).some((t) => t.ev);
 	const build = (Object.keys(P.snd).length ? 1 : 0) + (morphs ? 2 : 0);

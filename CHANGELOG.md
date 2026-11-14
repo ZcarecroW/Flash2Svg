@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+What the review of 5.2.2 left open, done — each case that is about Flash checked against Animate's own rendering or Flash Player line by line.
+
+- **An instance's *Visible* setting and blend mode follow its keyframes** (SMIL, CSS, Lottie, JS player, still frames, GIF, WebP). An instance that stays over several keyframes kept its first keyframe's: one hidden on a later keyframe was drawn all the same, a blend mode set on a later keyframe never showed. It stays one object as in Flash — a movie clip in it plays on while it is hidden. Changes to or from *Invert*, *Subtract*, *Alpha* or *Erase* keep the first mode (warned). An instance that changes from a graphic to a movie clip (or back) starts anew there, as another kind of object.
+- **The JS player plays a frame range** (`--frames`, the panel's *Range*): from its first frame, round within it (or once), the timeline's own `stop()` and gotos left out — as SMIL and CSS do. Where frame scripts run they decide (warned). *First* as the poster frame is the first frame shown (frame 1 may jump on at once).
+- **9-slice: flipped instances are scaled as a whole**, as Animate draws them (measured with a new test document, f102: only the unflipped one is sliced). An instance flipped up and down was sliced.
+- **Frame scripts, as Flash Player runs them** (each added to the test documents and compared line by line):
+  - `for each` goes through an array by place (a place taken out in the loop is skipped);
+  - a Vector and its index are taken once in `v[i++] += 10` and `v[i++]++`; a Vector made longer gets 0 (or `null`, `false`) in its new places;
+  - an untyped `for..in` key over an array is a number (`k + 1` was "01");
+  - E4X: an item of a list given a value keeps its name (`d.c[0] = "4"` gives `<c>4</c>`), XML plus XML is a list of both (`list += <b/>`), `for..in` over a list gives its indices only, `x.@n++` counts up;
+  - a Dictionary holds an object used as a key as long as it has it (a table of every object ever used as a key kept them all alive — a game's sprites with their nodes).
+- **Frame scripts find instances on layers with effects** (advanced layers): `this.blurred` was `undefined` and the script stopped. As in Flash Player (measured, f103-layerfx-names) such a layer is a movie clip named after it, the instance its child. Flash also makes the layers without effects clips then; the JS player doesn't (see Limits).
+- **JS player:** `clip(name)` says null for a named clip that has left the stage (it drove a clip no longer shown).
+- **CSS sounds:** the soundtrack finds the animation's clock through the document where the browser doesn't list it under the SVG (as the scroll start does for WebKit).
+- **GIF, WebP, APNG, video:** a tick that draws what the tick before drew isn't drawn again (holds, stops).
+- **SMIL, CSS:** when the main timeline stops and the clips running on have no common period within the limit, as much of it as fits is written (warned) instead of everything standing still.
+- **Command line:** files are written whole or not at all (a stopped export, a full disk left half a file).
+- **JS player runtime:** 16.3 KB (was 16.0); *Visible* and blend modes that change go into the build with morphs, which only such documents get.
+
 ## 5.2.2 (2026-11-14)
 
 A review of the whole project for bugs: every part read through, the findings reproduced, fixed and put under test (35 new unit tests; the baked tracks compared with the program at every tick of 3000 random documents and the 102 test documents: 0 differences, before 157 and 1).

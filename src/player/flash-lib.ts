@@ -481,6 +481,15 @@ export function vectorGet(v: FVector, i: number) {
 	return v[i];
 }
 
+/** v.length = n: the new places get the type's default value (0, null, false), as in Flash. */
+export function vectorLength(v: FVector, n: number) {
+	if (v.fixed) throw fail(RangeError, 1126, "Cannot change the length of a fixed Vector.");
+	const old = v.length;
+	v.length = n >>> 0;
+	for (let i = old; i < v.length; i++) v[i] = none(v._t);
+	return n;
+}
+
 export function vectorSet(v: FVector, i: number, x: unknown) {
 	if (i > v.length || i < 0 || (i === v.length && v.fixed)) throw fail(RangeError, 1125, `The index ${i} is out of range ${v.length}.`);
 	return (v[i] = v._in(x));

@@ -6,8 +6,10 @@ import type { Context } from "../context.ts";
 import { fmt, fmtMatrix } from "../geom.ts";
 import type { Mat } from "../model.ts";
 import {
+	blendAt,
 	COLOR_PROPS,
 	fromProps,
+	hiddenAt,
 	TRANSFORM_PROPS,
 	type ColorProp,
 	type InstanceItem,
@@ -188,9 +190,11 @@ export class StaticRenderer {
 	}
 
 	instance(prog: Program, item: InstanceItem, frame: number, ticks: number, depth: number): XmlNode | null {
-		if (!item.visible) return null;
-		if (blendHides(item.blendMode)) {
-			cssBlendMode(item.blendMode, this.warn);
+		// (Visible off on this keyframe: nothing drawn, a movie clip in it has aged all the same)
+		if (!item.visible || hiddenAt(item, frame)) return null;
+		const mode = blendAt(item, frame);
+		if (blendHides(mode)) {
+			cssBlendMode(mode, this.warn);
 			return null;
 		}
 		const child = this.ctx.programs[item.symbol];
@@ -245,10 +249,10 @@ export class StaticRenderer {
 		// shadow direction): applied on a group around the transformed <use>
 		const size = { w: item.bounds.width, h: item.bounds.height };
 		const filter = filters.length || colorForFilter ? this.doc.filter(filters, colorForFilter, { x: 1, y: 1 }, this.warn, size) : null;
-		const blend = cssBlendMode(item.blendMode, this.warn);
+		const blend = cssBlendMode(mode, this.warn);
 		const style: string[] = [];
 		if (blend) style.push(`mix-blend-mode:${blend}`);
-		if (item.blendMode === "layer") style.push("isolation:isolate");
+		if (mode === "layer") style.push("isolation:isolate");
 		let node: XmlNode = el("use", attrs);
 		// (only at the top: inside a shared symbol a <use> would drop the foreignObject)
 		if (item.persp?.box && depth === 0) {
@@ -263,8 +267,8 @@ export class StaticRenderer {
 			node = el("g", { filter, opacity }, [node]);
 		}
 		if (!style.length) return node;
-		if (blendWhite(item.blendMode)) return el("g", { filter: this.doc.whiteFilter(), style: style.join(";") }, [node]);
-		if (blendSubtract(item.blendMode)) {
+		if (blendWhite(mode)) return el("g", { filter: this.doc.whiteFilter(), style: style.join(";") }, [node]);
+		if (blendSubtract(mode)) {
 			const white = () => el("g", { filter: this.doc.whiteFilter(false, true), style: "mix-blend-mode:difference" }, [clone(node)]);
 			const first = white();
 			node.attrs.style = style.join(";");

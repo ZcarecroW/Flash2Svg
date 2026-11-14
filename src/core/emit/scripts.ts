@@ -17,7 +17,7 @@ const ACTIONS = new Set(["stop", "play", "gotoAndPlay", "gotoAndStop"]);
 
 /** What frame scripts say when they need a part of the runtime. */
 const MEDIA = /\$f\.(Bitmap|BitmapData|ByteArray|Sound|SoundChannel|SoundMixer|Video|URLLoader|NetConnection|NetStream|SharedObject|Tween|TweenEvent|None|Regular|Strong|Back|Bounce|Elastic|Loader|ProLoader|ProgressEvent|IOErrorEvent|HTTPStatusEvent|NetStatusEvent)\b|graphics\.beginBitmapFill/;
-const XML = /\$f\.(XML|XMLList|isXMLName|Namespace|QName)\b|\$r\.x(ml|a|d|c|f|n|s|q|del|eq|dns)\(/;
+const XML = /\$f\.(XML|XMLList|isXMLName|Namespace|QName)\b|\$r\.x(ml|a|d|c|f|n|s|q|del|eq|dns|add)\(/;
 const FLV = /\$f\.(FLVPlayback|VideoEvent|VideoState|MetadataEvent|VideoScaleMode|CuePointType)\b/;
 const INPUT = /\$f\.TextFieldType\b|"input"/;
 const PANES = /\$f\.(TileList|ScrollPane|UIScrollBar|ScrollBar|ScrollEvent|ScrollBarDirection)\b/;

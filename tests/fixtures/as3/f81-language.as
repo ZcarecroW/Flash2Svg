@@ -114,5 +114,43 @@ trace(undefined, null, NaN, Infinity, -Infinity, true, false);
 trace();
 trace("");
 trace("a", "", "b");
+// Error called as a function; for each over an array changed in the loop; a Vector's index
+// with a side effect in a compound assignment, a Vector made longer; the key of a for..in
+var boom:Error = new Error("boom");
+var asCall:* = Error(boom);
+trace("error call", asCall === boom, asCall is Error, asCall.message);
+var each:Array = [1, 2, 3, 4];
+var seenEach:Array = [];
+for each (var en:int in each) {
+	seenEach.push(en);
+	if (en == 2) each.splice(2, 1);
+}
+trace("each spliced", seenEach.join(","), each.join(","));
+var grown:Vector.<int> = new Vector.<int>();
+grown.push(1, 2, 3);
+var gi:int = 0;
+grown[gi++] += 10;
+trace("vector compound", grown.join(","), gi);
+grown.length = 5;
+trace("vector longer", grown.join(","), grown.length, grown[4] === 0);
+var named:Vector.<String> = new Vector.<String>(2);
+trace("vector strings", named[0] === null, named.length);
+for (var untyped:* in ["x", "y"]) trace("array key", untyped, typeof untyped, untyped + 1);
+// a Dictionary with objects as keys: written with = += ++, keys after a delete, `in`
+var dict:Dictionary = new Dictionary();
+var keyA:Object = {n: 1};
+var keyB:Sprite = new Sprite();
+dict[keyA] = 5;
+dict[keyA] += 1;
+dict[keyB] = 1;
+dict[keyB]++;
+dict["s"] = "t";
+var dictCount:int = 0;
+for (var dictKey:* in dict) dictCount++;
+delete dict[keyA];
+var dictLeft:Array = [];
+for (var dictKey2:* in dict) dictLeft.push(dictKey2 === keyB ? "sprite" : dictKey2);
+dictLeft.sort();
+trace("dictionary", dictCount, dictLeft.join(","), keyA in dict, keyB in dict, dict[keyB], dict[keyA]);
 trace("END");
 fscommand("quit");

@@ -35,7 +35,8 @@ export default function soundtrack(S: SoundSchedule, id: string) {
 		}
 		// (kept: listing every animation of the document each frame, to read one clock, costs;
 		// an animation its element let go of — a start trigger set another — is idle: asked anew)
-		if (!css || css.playState === "idle") css = svg.getAnimations?.({ subtree: true })[0];
+		// (the document's animations where the subtree's aren't found: WebKit, see triggers.ts)
+		if (!css || css.playState === "idle") css = svg.getAnimations?.({ subtree: true })[0] ?? document.getAnimations?.().find((a) => svg.contains((a.effect as KeyframeEffect | null)?.target ?? null));
 		const a = css;
 		if (a) return a.playState === "paused" || typeof a.currentTime !== "number" ? null : a.currentTime / 1000;
 		return null;

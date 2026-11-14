@@ -288,9 +288,15 @@ describe("the JS player", () => {
 		expect(program(compileScene(structuredClone(m), files, { format: "player", loop: "always" }).files[0]!.svg).tl.root!.ac).toBeUndefined();
 	});
 
-	it("says that it plays the whole timeline when a frame range is asked for", () => {
+	it("plays a frame range: from its first frame, round within it, the root's scripts left out", () => {
 		const out = compileScene(looped(), files, { format: "player", startFrame: 2, endFrame: 6 });
-		expect(out.warnings.join("\n")).toContain("The JS player plays the whole timeline");
+		const P = program(out.files[0]!.svg) as ReturnType<typeof program> & { rg?: number[]; pf?: number };
+		expect(P.rg).toEqual([2, 6]);
+		expect(P.on).toBe(4);
+		expect(P.pf).toBe(2);
+		expect(P.tl.root!.ac).toBeUndefined();
+		// the whole timeline is no range
+		expect((program(compileScene(looped(), files, { format: "player", startFrame: 0, endFrame: 12 }).files[0]!.svg) as { rg?: number[] }).rg).toBeUndefined();
 	});
 });
 
@@ -325,5 +331,55 @@ describe("tracks", () => {
 		expect(valueAt(track, 10)).toBe(30);
 		expect(valueAt(track, 99)).toBe(30);
 		expect(valueAt([], 3)).toBe(0);
+	});
+});
+
+describe("an instance whose keyframes change Visible or the blend mode", () => {
+	// a 6-frame clip on 9 root frames: keyframes at 1 (shown), 4 (Visible off), 7 (shown, multiply)
+	const spin = flipbook("spin", 6);
+	const root = tl("root", "scene", 9, [[kf(0, 3, [inst("spin")]), kf(3, 3, [inst("spin", { visible: false })]), kf(6, 3, [inst("spin", { blendMode: "multiply" })])]]);
+	const m = model([root, spin]);
+	const named = { ...files, readText: (rel: string) => `<svg xmlns="http://www.w3.org/2000/svg"><path id="${rel}" d="M0 0H5V5H0z"/></svg>` };
+	const still = (frame: number) => compileScene(structuredClone(m), named, { format: "static", frames: [frame] }).files[0]!.svg;
+
+	it("is one object: hidden on those frames, its movie clip playing on", () => {
+		expect(still(1)).toMatch(/spin_1/);
+		// hidden: nothing of it drawn
+		expect(still(4)).not.toMatch(/spin_\d/);
+		// back: the clip went on through the hidden frames (frame 7 of the root is its 7th, round its 6: 0)
+		expect(/id="[^"]*spin_(\d)"/.exec(still(6))?.[1]).toBe("0");
+		expect(/id="[^"]*spin_(\d)"/.exec(still(8))?.[1]).toBe("2");
+	});
+
+	it("blends as its keyframe says", () => {
+		expect(still(1)).not.toContain("mix-blend-mode");
+		expect(still(7)).toContain("mix-blend-mode:multiply");
+		const smil = moving(compileScene(structuredClone(m), files, { format: "smil" }).files[0]!.svg);
+		expect(smil).toContain("mix-blend-mode:multiply");
+		expect(smil).toMatch(/attributeName="display"/);
+		const css = compileScene(structuredClone(m), files, { format: "css" }).files[0]!.svg;
+		expect(css).toContain("mix-blend-mode:multiply");
+	});
+
+	it("tells the JS player where it is hidden and how it blends", () => {
+		const svg = compileScene(structuredClone(m), files, { format: "player" }).files[0]!.svg;
+		const P = JSON.parse(/<script type="application\/json">(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/script>/s.exec(svg)![1]!);
+		const it = P.tl.root.ly[0].it[0];
+		expect(it.hd).toBeUndefined();
+		expect(it.hv).toEqual([[3, 6]]);
+		expect(it.bm).toEqual([
+			[0, 6, ""],
+			[6, 9, "multiply"],
+		]);
+	});
+
+	it("starts anew where it changes from a graphic to a movie clip", () => {
+		const r = tl("root", "scene", 6, [[kf(0, 3, [inst("spin", { symbolType: "graphic" })]), kf(3, 3, [inst("spin")])]]);
+		const ctx = createContext(model([r, spin]), files, { smooth: true, includeHiddenLayers: true, includeGuides: false });
+		const items = ctx.programs["root"]!.layers[0]!.items;
+		expect(items.map((i) => [i.start, i.end, i.kind === "instance" && i.symbolType])).toEqual([
+			[0, 3, "graphic"],
+			[3, 6, "movie clip"],
+		]);
 	});
 });

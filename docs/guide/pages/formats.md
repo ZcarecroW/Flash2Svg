@@ -36,7 +36,7 @@ Pick CSS when your page wants to control the animation: `animation-play-state: p
 
 ## JS player
 
-The artwork plus a compact timeline and a small runtime (16.0 KB; with sound 19.7 KB) that plays it with Flash's own rules: frame scripts, movie clips that keep running after the main timeline stops, buttons with *Up*, *Over* and *Down* states, the mouse handlers that Animate's Code Snippets panel writes, and frame sounds with their sync, loops and envelopes. Your page can control it: `play()`, `stop()`, `gotoAndPlay("label")`, `seek(seconds)` — see [Player API](player-api.md).
+The artwork plus a compact timeline and a small runtime (16.3 KB; with sound 19.9 KB) that plays it with Flash's own rules: frame scripts, movie clips that keep running after the main timeline stops, buttons with *Up*, *Over* and *Down* states, the mouse handlers that Animate's Code Snippets panel writes, and frame sounds with their sync, loops and envelopes. Your page can control it: `play()`, `stop()`, `gotoAndPlay("label")`, `seek(seconds)` — see [Player API](player-api.md).
 
 Scripts don't run in `<img>`, so put the file in an `<object>`, inline it, or use the [`<flash2svg-player>`](player-api.md#the-web-component) element.
 
@@ -73,4 +73,4 @@ Measured on this guide's demos (gzipped, the way a server sends them):
 | Easing | {{size easing smil}} | {{size easing css}} | {{size easing player}} | {{size easing lottie}} |
 | Hero | {{size hero smil}} | {{size hero css}} | {{size hero player}} | {{size hero lottie}} |
 
-The JS player's numbers include its runtime: 6.5 KB of the gzipped size (more with sounds, shape tween morphs or mouse handlers).
+The JS player's numbers include its runtime: 6.6 KB of the gzipped size (more with sounds, shape tween morphs or mouse handlers).

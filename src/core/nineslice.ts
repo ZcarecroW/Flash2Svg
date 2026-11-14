@@ -574,6 +574,9 @@ export function applyNineSlice(
 				if (!grid || !child) return it;
 				const tr = it.transform;
 				if (!isZeroAngle(tr.rot) || !isZeroAngle(tr.skw)) return it; // Flash ignores the grid when rotated
+				// and when flipped, either way (measured in Animate: f102-nineslice-flip; a flip across is a
+				// half turn with a negative height here, so the angle alone doesn't tell)
+				if (tr.sx.some((k) => k.v < 0) || tr.sy.some((k) => k.v < 0)) return it;
 				const animated = !isConstant(tr.sx, 1e-4) || !isConstant(tr.sy, 1e-4);
 				const sx = valueAt(tr.sx, it.start),
 					sy = valueAt(tr.sy, it.start);

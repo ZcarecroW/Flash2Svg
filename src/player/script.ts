@@ -33,6 +33,7 @@ import {
 	URLRequest,
 	URLVariables,
 	vectorGet,
+	vectorLength,
 	vectorSet,
 	type Mat,
 } from "./flash-lib.ts";
@@ -2385,7 +2386,16 @@ export class Scripts {
 		this.helpers = {
 			str: (x: unknown) => (x === null || x === undefined ? null : String(x)),
 			text: (x: unknown) => String(x),
-			vals: (o: unknown) => (o === null || o === undefined ? [] : Array.isArray(o) ? o.slice() : Object.values(o as object)),
+			// (an array as it is: Flash goes through it by index, so a place taken out in the loop is skipped)
+			vals: (o: unknown) => (o === null || o === undefined ? [] : Array.isArray(o) ? o : Object.values(o as object)),
+			// for..in with an untyped key: an array's (or Vector's) places are numbers in AS3, an object's names text
+			ink(o: unknown) {
+				const out: (string | number)[] = [];
+				const list = Array.isArray(o);
+				for (const k in o as object) out.push(list && /^\d+$/.test(k) ? +k : k);
+				return out;
+			},
+			vlen: vectorLength,
 			is: (x: unknown, c: unknown) => isType(x, c),
 			as: (x: unknown, c: unknown) => (isType(x, c) ? x : null),
 			cls: (n: string, t: Record<string, unknown> | null) => self.classOf(n) ?? t?.[n],
@@ -2397,6 +2407,8 @@ export class Scripts {
 			re: (s: string, f: string) => Object.defineProperty(new RegExp(s, f), "extended", { value: true }),
 			key: dictKey,
 			keys: dictKeys,
+			dset: dictSet,
+			ddel: dictDelete,
 			sort: sortArray,
 			insertAt: (a: any, i: number, v: unknown) => (typeof a.insertAt === "function" ? a.insertAt(i, v) : void a.splice(i, 0, v)),
 			removeAt: (a: any, i: number) => (typeof a.removeAt === "function" ? a.removeAt(i) : a.splice(i, 1)[0]),
@@ -2670,7 +2682,13 @@ export class Scripts {
 		}
 		// the names of the timeline's instances: Animate declares them as the class's variables
 		const names = new Set<string>();
-		for (const l of c.tl.ly) for (const it of l.it) if ((it as PInst).nm) names.add((it as PInst).nm!);
+		for (const l of c.tl.ly)
+			for (const it of l.it) {
+				const pi = it as PInst;
+				if (pi.nm) names.add(pi.nm);
+				// (the instances on a layer with effects are the timeline's by name too, as in Flash)
+				if (pi.lf) for (const l2 of this.P.tl[pi.y]?.ly ?? []) for (const it2 of l2.it) if ((it2 as PInst).nm) names.add((it2 as PInst).nm!);
+			}
 		for (const k of names) {
 			if (k in o) continue;
 			Object.defineProperty(o, k, {
@@ -2686,6 +2704,8 @@ export class Scripts {
 		const kid = t._list().find((x: DisplayObject) => x.name === k);
 		if (kid) return kid;
 		for (const i of c.items.values()) if ((i.it as PInst).nm === k) return this.objOfInst(i);
+		// on a layer with effects: in the layer's own clip
+		for (const i of c.items.values()) if ((i.it as PInst).lf && i.clip) for (const j of i.clip.items.values()) if ((j.it as PInst).nm === k) return this.objOfInst(j);
 		return null;
 	}
 
@@ -2777,8 +2797,11 @@ export class Scripts {
 				if (kid) return kid;
 				// (taken elsewhere by a script: the variable still holds it)
 				for (const i of c.items.values()) if ((i.it as PInst).nm === k) return self.objOfInst(i);
+				// (on a layer with effects: in the layer's own clip, still the timeline's variable)
+				for (const i of c.items.values()) if ((i.it as PInst).lf && i.clip) for (const j of i.clip.items.values()) if ((j.it as PInst).nm === k) return self.objOfInst(j);
 				// (an instance of this timeline that isn't there now: its variable is null)
-				return c.tl.ly.some((l) => l.it.some((i) => (i as PInst).nm === k)) ? null : undefined;
+				const has = (tl: PTimeline | undefined): boolean => !!tl?.ly.some((l) => l.it.some((i) => (i as PInst).nm === k || (!!(i as PInst).lf && has(self.P.tl[(i as PInst).y]))));
+				return has(c.tl) ? null : undefined;
 			},
 			set(t, k, v) {
 				(t as any)[k] = v;
@@ -3293,21 +3316,42 @@ Object.defineProperties(RegExp.prototype, {
 	return this.stack ?? null;
 };
 
-/** Objects as keys of a Dictionary: JavaScript would make them strings. */
+/**
+ * Objects as keys of a Dictionary: JavaScript would make them strings, so each gets a text of its
+ * own, and the dictionary holds the objects it has as keys — as long as it has them (a table of
+ * all objects ever used as keys kept every one alive: a game's sprites, with their nodes).
+ */
 const keyOf = new WeakMap<object, string>();
-const keyed = new Map<string, unknown>();
+const held = new WeakMap<object, Map<string, unknown>>();
 let keys = 0;
 function dictKey(k: unknown): unknown {
 	if (typeof k !== "object" && typeof k !== "function") return k;
 	if (k === null) return k;
 	let s = keyOf.get(k as object);
-	if (!s) {
-		keyOf.set(k as object, (s = `\u0001${++keys}`));
-		keyed.set(s, k);
-	}
+	if (!s) keyOf.set(k as object, (s = `\u0001${++keys}`));
 	return s;
 }
-const dictKeys = (d: object) => Object.keys(d).map((k) => (keyed.has(k) ? keyed.get(k) : k));
+/** d[k] = v */
+function dictSet(d: Record<string, unknown>, k: unknown, v: unknown) {
+	const s = dictKey(k) as string;
+	if (s !== k) {
+		let h = held.get(d);
+		if (!h) held.set(d, (h = new Map()));
+		h.set(s, k);
+	}
+	d[s] = v;
+	return v;
+}
+/** delete d[k] */
+function dictDelete(d: Record<string, unknown>, k: unknown) {
+	const s = dictKey(k) as string;
+	held.get(d)?.delete(s);
+	return delete d[s];
+}
+const dictKeys = (d: object) => {
+	const h = held.get(d);
+	return Object.keys(d).map((k) => (h?.has(k) ? h.get(k) : k));
+};
 
 const KEYS: Record<string, number> = { BACKSPACE: 8, TAB: 9, ENTER: 13, SHIFT: 16, CONTROL: 17, ALTERNATE: 18, ESCAPE: 27, SPACE: 32, PAGE_UP: 33, PAGE_DOWN: 34, END: 35, HOME: 36, LEFT: 37, UP: 38, RIGHT: 39, DOWN: 40, INSERT: 45, DELETE: 46 };
 for (let i = 48; i <= 57; i++) KEYS[`NUMBER_${i - 48}`] = i;
